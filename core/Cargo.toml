@@ -1,0 +1,16 @@
+[workspace]
+members = ["crates/core", "crates/cli"]
+resolver = "3"
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.99"
+license = "FSL-1.1-ALv2"
+repository = "https://github.com/ark-232/dewline"
+publish = false
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = true

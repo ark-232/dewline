@@ -1,0 +1,15 @@
+[package]
+name = "dewline-core"
+description = "The Dewline engine: it owns the bytes of every open file."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+name = "dewline_core"
+
+[dev-dependencies]
+proptest = "=1.12.0"

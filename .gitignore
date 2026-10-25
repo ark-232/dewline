@@ -1,0 +1,14 @@
+.DS_Store
+
+# Rust (scripts default CARGO_TARGET_DIR outside the repo; this catches plain cargo runs)
+/core/target/
+
+# XcodeGen output: regenerate with `xcodegen generate --spec app/project.yml`
+/app/Dewline.xcodeproj/
+/app/Dewline/Info.plist
+
+# Xcode
+/build/
+DerivedData/
+xcuserdata/
+*.xcuserstate
