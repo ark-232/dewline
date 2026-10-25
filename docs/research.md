@@ -6,7 +6,7 @@ What the October 2026 studies found, in brief. Four multi-agent studies ran: the
 
 | Signal | Evidence |
 |---|---|
-| Inline rendering of plain files | Obsidian's in-place editing request: 1,079 likes. A Zed discussion calls inline editing the one feature keeping its author on VS Code. |
+| Inline rendering of plain files | Obsidian forum: WYSIWYG editing 799 likes, editing embedded notes in place 1,079. In Zed's inline-markdown discussion (25 votes), users call it the one feature keeping them on VS Code. |
 | Native speed, no Electron | The most repeated complaint across Hacker News and Reddit threads; MarkEdit's 4 MB download is praised. |
 | Clean native design | 153 App Store mentions; iA Writer holds 59 of 67 recent reviews at 4-5 stars at $49.99. |
 | Outline and folding | 395 votes across four issue trackers |
@@ -19,7 +19,7 @@ Electron weight; subscriptions or paywalls before writing (31 of 72 recent low U
 
 ## The gap
 
-Many native Mac markdown editors launched in 2026, and most drew 2-5 points on Hacker News. Typora on macOS is native WebKit, not Electron, so "a native Typora" is not a pitch. The open problem is agents: Claude Code, Codex, git and sync apps rewrite files that are open in an editor, and no editor shows what changed and who changed it while keeping the old version. A 2026 benchmark found that none of six WYSIWYG editors saved files byte for byte.
+Many native Mac markdown editors launched in 2026, and most drew 2-5 points on Hacker News. Typora on macOS is native WebKit, not Electron, so "a native Typora" is not a pitch. The open problem is agents: Claude Code, Codex, git and sync apps rewrite files that are open in an editor, and no editor shows what changed and who changed it while keeping the old version. A 2026 benchmark found that none of six WYSIWYG serializers round-tripped files byte for byte.
 
 Closest projects: Stet (reviewing AI edits in local Markdown), editmd (live agent edits through Yjs) and Lettera (from Bear's makers).
 
