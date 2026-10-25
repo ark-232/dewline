@@ -11,5 +11,8 @@ publish.workspace = true
 [lib]
 name = "dewline_core"
 
+[dependencies]
+pulldown-cmark = { version = "=0.13.5", default-features = false }
+
 [dev-dependencies]
 proptest = "=1.12.0"
