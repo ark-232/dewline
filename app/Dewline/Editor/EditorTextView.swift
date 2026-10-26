@@ -130,10 +130,11 @@ final class EditorTextView: NSTextView {
         if let picture { cacheDisplay(in: visible, to: picture) }
         caretView?.isHidden = caretWasHidden
 
-        // The viewport and a screen either side change first, so the fade starts before the rest of the document restyles.
-        let above = index(visible.minX, visible.minY - visible.height)
-        let below = index(visible.maxX, visible.maxY + visible.height)
-        styler.toggleSource(restyling: NSRange(location: above, length: max(below - above, 0)))
+        // The visible text and as much again on either side change first, so the fade starts before the rest restyles. TextKit 2
+        // has no index for a point outside its laid-out viewport, so the margin counts characters, not points.
+        let margin = max(last - first, 0)
+        let lower = max(first - margin, 0)
+        styler.toggleSource(restyling: NSRange(location: lower, length: min(last + margin, storage.length) - lower))
         if let offset { hold(anchor, at: offset) }
         if let picture {
             let cover = Snapshot(frame: visibleRect)

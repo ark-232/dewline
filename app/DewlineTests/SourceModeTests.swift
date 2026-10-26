@@ -255,6 +255,30 @@ struct SourceModeTests {
     }
 
     @Test(arguments: TextKitVariant.allCases)
+    func theFirstFrameShowsTheNewModeOnScreen(_ variant: TextKitVariant) throws {
+        let caret = (Self.long as NSString).range(of: "rain", options: [], range: NSRange(location: Self.long.utf16.count / 2, length: 300)).location
+        let editor = Editor(variant, Self.long, caret: caret)
+        let view = editor.view
+        view.scrollRangeToVisible(NSRange(location: caret, length: 0))
+        editor.settle()
+        var onScreen: [NSFont] = []
+        let witness = Witness(frame: NSRect(x: 0, y: 0, width: 1, height: 1))
+        witness.drawn = {
+            let visible = view.visibleRect
+            let first = view.characterIndexForInsertion(at: NSPoint(x: visible.minX, y: visible.minY + 1))
+            let last = view.characterIndexForInsertion(at: NSPoint(x: visible.maxX, y: visible.maxY - 1))
+            onScreen = stride(from: first, to: last, by: 37).map { view.textStorage!.attribute(.font, at: $0, effectiveRange: nil) as! NSFont }
+        }
+        editor.window.contentView?.addSubview(witness)
+        editor.display()
+        witness.needsDisplay = true
+        view.toggleSource(nil)
+        #expect(!onScreen.isEmpty)
+        #expect(onScreen.allSatisfy { $0.isFixedPitch }, "the first frame after the toggle still shows prose")
+        editor.expectTextKitUnchanged()
+    }
+
+    @Test(arguments: TextKitVariant.allCases)
     func findWorksAcrossToggles(_ variant: TextKitVariant) {
         let text = HideSyntaxTests.soft + "\n" + String(repeating: "Plain filler words.\n", count: 80) + "Another **soft** word\n"
         let editor = Editor(variant, text, caret: 0)
@@ -284,5 +308,14 @@ struct SourceModeTests {
         find(.nextMatch)
         #expect(view.selectedRange() == first)
         editor.expectTextKitUnchanged()
+    }
+}
+
+/// Runs `drawn` when the window draws it, to see what the window shows in that frame.
+private final class Witness: NSView {
+    var drawn: () -> Void = {}
+
+    override func draw(_ dirtyRect: NSRect) {
+        drawn()
     }
 }
