@@ -31,30 +31,13 @@ final class BlockLine: NSObject {
         case .error(let message): message.hashValue
         }
     }
-
-    static func draw(_ picture: BlockPicture, at origin: CGPoint, in context: CGContext) {
-        context.saveGState()
-        context.translateBy(x: origin.x, y: origin.y + picture.size.height)
-        context.scaleBy(x: 1, y: -1)
-        context.draw(picture.image, in: CGRect(origin: .zero, size: picture.size))
-        context.restoreGState()
-    }
-
-    static func draw(error message: String, at origin: CGPoint, in context: CGContext) {
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
-        NSAttributedString(string: message, attributes: [
-            .font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.secondaryLabelColor,
-        ]).draw(at: CGPoint(x: origin.x, y: origin.y + 3))
-        NSGraphicsContext.restoreGraphicsState()
-    }
 }
 
 extension NSAttributedString.Key {
     static let dewlineBlock = NSAttributedString.Key("DewlineBlock")
 }
 
-/// TextKit 2: paragraphs that carry `.dewlineBlock` lay out as `BlockFragment`s.
+/// Paragraphs that carry `.dewlineBlock` lay out as `BlockFragment`s.
 final class BlockFragments: NSObject, NSTextLayoutManagerDelegate {
     func textLayoutManager(
         _ textLayoutManager: NSTextLayoutManager,
@@ -101,35 +84,21 @@ final class BlockFragment: NSTextLayoutFragment {
     override func draw(at point: CGPoint, in context: CGContext) {
         switch line.role {
         case .picture(let picture, _):
-            BlockLine.draw(picture, at: point, in: context)
+            context.saveGState()
+            context.translateBy(x: point.x, y: point.y + picture.size.height)
+            context.scaleBy(x: 1, y: -1)
+            context.draw(picture.image, in: CGRect(origin: .zero, size: picture.size))
+            context.restoreGState()
         case .collapsed:
             break
         case .error(let message):
             super.draw(at: point, in: context)
-            BlockLine.draw(error: message, at: CGPoint(x: point.x, y: point.y + textBottom), in: context)
-        }
-    }
-}
-
-/// TextKit 1: draws block pictures and error lines behind the glyphs. `HiddenGlyphs` sets the line heights.
-final class BlockLayoutManager: NSLayoutManager {
-    override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
-        super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
-        guard let storage = textStorage, let context = NSGraphicsContext.current?.cgContext else { return }
-        enumerateLineFragments(forGlyphRange: glyphsToShow) { rect, used, container, glyphs, _ in
-            let characters = self.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
-            guard characters.location < storage.length else { return }
-            var run = NSRange()
-            guard let line = storage.attribute(.dewlineBlock, at: characters.location, effectiveRange: &run) as? BlockLine else { return }
-            let left = origin.x + rect.minX + container.lineFragmentPadding
-            switch line.role {
-            case .picture(let picture, _):
-                BlockLine.draw(picture, at: CGPoint(x: left, y: origin.y + rect.minY), in: context)
-            case .error(let message) where NSMaxRange(characters) >= NSMaxRange(run):
-                BlockLine.draw(error: message, at: CGPoint(x: left, y: origin.y + used.maxY), in: context)
-            default:
-                break
-            }
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+            NSAttributedString(string: message, attributes: [
+                .font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.secondaryLabelColor,
+            ]).draw(at: CGPoint(x: point.x, y: point.y + textBottom + 3))
+            NSGraphicsContext.restoreGraphicsState()
         }
     }
 }

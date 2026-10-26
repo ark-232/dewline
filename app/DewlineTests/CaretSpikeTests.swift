@@ -16,8 +16,8 @@ private struct Stock {
     let window: KeyWindow
     let view: NSTextView
 
-    init(_ variant: TextKitVariant, size: CGFloat = 17, screen: NSScreen? = nil) {
-        view = NSTextView(usingTextLayoutManager: variant == .textKit2)
+    init(size: CGFloat = 17, screen: NSScreen? = nil) {
+        view = NSTextView(usingTextLayoutManager: true)
         view.font = .systemFont(ofSize: size)
         view.string = "Hello world\nSecond line\n"
         window = KeyWindow(contentRect: NSRect(x: 100, y: 100, width: 400, height: 300), styleMask: [.titled], backing: .buffered, defer: false, screen: screen)
@@ -69,14 +69,13 @@ private func corners(_ path: CGPath?) -> [CGPoint] {
     return Array(points.prefix(4))
 }
 
-/// Section 5.6 of the motion spec on this Mac, for both TextKit stacks.
+/// Section 5.6 of the motion spec on this Mac.
 @MainActor
 struct CaretSpikeTests {
     /// S1 and S3: the drawn bar takes `insertionPointColor`, resolved per appearance; `.clear` leaves it with no
     /// color while the indicator stays in place with its effects view option.
-    @Test(arguments: TextKitVariant.allCases)
-    func s1BarFollowsInsertionPointColor(_ variant: TextKitVariant) throws {
-        let stock = Stock(variant)
+    @Test func s1BarFollowsInsertionPointColor() throws {
+        let stock = Stock()
         defer { stock.close() }
         stock.view.insertionPointColor = CaretTextView.accent
         for appearance in [NSAppearance.Name.aqua, .darkAqua] {
@@ -97,10 +96,9 @@ struct CaretSpikeTests {
     }
 
     /// S2: the indicator is a direct subview once the view is first responder in a key window; `.visible` holds
-    /// with no input; a selection change puts it back to automatic on both stacks, and a layout pass does on TextKit 2.
-    @Test(arguments: TextKitVariant.allCases)
-    func s2IndicatorIsReachableAndHoldsVisible(_ variant: TextKitVariant) throws {
-        let stock = Stock(variant)
+    /// with no input; a selection change puts it back to automatic, and so does a layout pass.
+    @Test func s2IndicatorIsReachableAndHoldsVisible() throws {
+        let stock = Stock()
         defer { stock.close() }
         let indicator = try #require(stock.indicator)
         #expect(indicator.superview === stock.view)
@@ -114,16 +112,15 @@ struct CaretSpikeTests {
         indicator.displayMode = .visible
         stock.view.needsLayout = true
         stock.view.layoutSubtreeIfNeeded()
-        #expect((indicator.displayMode == .visible) == (variant == .textKit1))
+        #expect(indicator.displayMode != .visible)
     }
 
     /// S4: the bar is 2 pt wide and centered on the insertion point at every size, on every screen this Mac has.
-    @Test(arguments: TextKitVariant.allCases)
-    func s4BarIsTwoPointsWide(_ variant: TextKitVariant) throws {
+    @Test func s4BarIsTwoPointsWide() throws {
         let screens: [NSScreen?] = NSScreen.screens.isEmpty ? [nil] : NSScreen.screens
         for screen in screens {
             for size in [13.0, 17.0, 24.0] {
-                let stock = Stock(variant, size: size, screen: screen)
+                let stock = Stock(size: size, screen: screen)
                 defer { stock.close() }
                 let bar = try #require(stock.bar)
                 let label = "\(size) pt at \(stock.window.backingScaleFactor)x"

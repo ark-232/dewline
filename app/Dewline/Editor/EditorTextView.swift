@@ -3,7 +3,6 @@ import AppKit
 /// The markdown editor: hides syntax through `MarkdownStyler` and defers styling while an input method composes.
 final class EditorTextView: CaretTextView {
     let styler = MarkdownStyler()
-    private let hiddenGlyphs = HiddenGlyphs()
     private let blockFragments = BlockFragments()
     private var composing = false
     private var toggleWaits = false
@@ -21,28 +20,15 @@ final class EditorTextView: CaretTextView {
     // The root of the TextKit object graph, which a text view built on a given container does not retain.
     private let content: NSObject
 
-    init(variant: TextKitVariant) {
+    init() {
         let container = NSTextContainer(size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
-        switch variant {
-        case .textKit1:
-            let storage = NSTextStorage()
-            let layoutManager = BlockLayoutManager()
-            storage.addLayoutManager(layoutManager)
-            layoutManager.addTextContainer(container)
-            content = storage
-        case .textKit2:
-            let layoutManager = NSTextLayoutManager()
-            layoutManager.textContainer = container
-            let storage = NSTextContentStorage()
-            storage.addTextLayoutManager(layoutManager)
-            content = storage
-        }
+        let layout = NSTextLayoutManager()
+        layout.textContainer = container
+        let storage = NSTextContentStorage()
+        storage.addTextLayoutManager(layout)
+        content = storage
         super.init(frame: .zero, textContainer: container)
-        if variant == .textKit1 {
-            layoutManager?.delegate = hiddenGlyphs
-        } else {
-            textLayoutManager?.delegate = blockFragments
-        }
+        textLayoutManager?.delegate = blockFragments
         styler.textView = self
         styler.blocks.textView = self
         delegate = styler
@@ -62,8 +48,8 @@ final class EditorTextView: CaretTextView {
         fatalError("EditorTextView is built in code")
     }
 
-    static func scrollView(variant: TextKitVariant) -> NSScrollView {
-        let textView = EditorTextView(variant: variant)
+    static func scrollView() -> NSScrollView {
+        let textView = EditorTextView()
         let scrollView = NSScrollView()
         scrollView.hasVerticalScroller = true
         scrollView.backgroundColor = textView.backgroundColor
@@ -247,24 +233,18 @@ final class EditorTextView: CaretTextView {
 
     /// Scrolls so the baseline of the line holding `anchor` sits `offset` below the top of the visible rect.
     func hold(_ anchor: Int, at offset: CGFloat) {
+        guard let layout = textLayoutManager else { return }
         let visible = visibleRect
-        if let layout = textLayoutManager {
-            // TextKit 2 sizes the view and stacks the viewport from estimates it refreshes as it lays the viewport out:
-            // lay out, scroll to the line, lay out again, correct. A refresh can leave the clip view a fraction of a pixel
-            // off the grid, where a scroll to a point lands up to a pixel from it, so the scroll moves by whole pixels and
-            // lands within half of one.
-            let pixel = 1 / (window?.backingScaleFactor ?? 1)
-            for _ in 0..<2 {
-                layout.textViewportLayoutController.layoutViewport()
-                guard let now = baseline(at: anchor) else { return }
-                let top = visibleRect.minY
-                scroll(NSPoint(x: visible.minX, y: top + ((now - offset - top) / pixel).rounded() * pixel))
-            }
-        } else if let layout = layoutManager, let container = textContainer, let restyled = baseline(at: anchor) {
-            let target = NSRect(x: visible.minX, y: restyled - offset, width: visible.width, height: visible.height)
-            // TextKit 1 sizes the view only as far as it has laid out.
-            layout.ensureLayout(forBoundingRect: target.offsetBy(dx: -textContainerOrigin.x, dy: -textContainerOrigin.y), in: container)
-            scroll(target.origin)
+        // TextKit 2 sizes the view and stacks the viewport from estimates it refreshes as it lays the viewport out:
+        // lay out, scroll to the line, lay out again, correct. A refresh can leave the clip view a fraction of a pixel
+        // off the grid, where a scroll to a point lands up to a pixel from it, so the scroll moves by whole pixels and
+        // lands within half of one.
+        let pixel = 1 / (window?.backingScaleFactor ?? 1)
+        for _ in 0..<2 {
+            layout.textViewportLayoutController.layoutViewport()
+            guard let now = baseline(at: anchor) else { return }
+            let top = visibleRect.minY
+            scroll(NSPoint(x: visible.minX, y: top + ((now - offset - top) / pixel).rounded() * pixel))
         }
     }
 
@@ -275,20 +255,14 @@ final class EditorTextView: CaretTextView {
 
     /// The baseline of the line holding the character at `index`, in this view's coordinates.
     func baseline(at index: Int) -> CGFloat? {
-        guard index >= 0, index < textStorage!.length else { return nil }
-        if let layout = textLayoutManager {
-            guard let content = layout.textContentManager,
-                let location = content.location(content.documentRange.location, offsetBy: index)
-            else { return nil }
-            layout.ensureLayout(for: NSTextRange(location: location))
-            guard let fragment = layout.textLayoutFragment(for: location) else { return nil }
-            let offset = content.offset(from: fragment.rangeInElement.location, to: location)
-            guard let line = fragment.textLineFragments.first(where: { NSLocationInRange(offset, $0.characterRange) }) else { return nil }
-            return textContainerOrigin.y + fragment.layoutFragmentFrame.minY + line.typographicBounds.minY + line.glyphOrigin.y
-        }
-        guard let layout = layoutManager else { return nil }
-        let glyph = layout.glyphIndexForCharacter(at: index)
-        return textContainerOrigin.y + layout.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil).minY + layout.location(forGlyphAt: glyph).y
+        guard index >= 0, index < textStorage!.length, let layout = textLayoutManager, let content = layout.textContentManager,
+            let location = content.location(content.documentRange.location, offsetBy: index)
+        else { return nil }
+        layout.ensureLayout(for: NSTextRange(location: location))
+        guard let fragment = layout.textLayoutFragment(for: location) else { return nil }
+        let offset = content.offset(from: fragment.rangeInElement.location, to: location)
+        guard let line = fragment.textLineFragments.first(where: { NSLocationInRange(offset, $0.characterRange) }) else { return nil }
+        return textContainerOrigin.y + fragment.layoutFragmentFrame.minY + line.typographicBounds.minY + line.glyphOrigin.y
     }
 
     override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {

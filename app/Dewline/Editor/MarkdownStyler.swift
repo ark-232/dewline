@@ -31,7 +31,7 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
     /// The attributes styling owns; restyling leaves every other attribute in the storage as it is.
     private static let keys = [
         NSAttributedString.Key.font, .foregroundColor, .backgroundColor, .paragraphStyle, .underlineStyle, .strikethroughStyle, .kern,
-        .dewlineHidden, .dewlineMarkerFont, .dewlineBlock, .dewlineQuote,
+        .dewlineMarkerFont, .dewlineBlock, .dewlineQuote,
     ].map { $0.rawValue as NSString }
     /// Fonts with added traits by font and traits, since matching a font descriptor costs more than styling a run.
     private static var traited: [NSFont: [UInt32: NSFont]] = [:]
@@ -182,9 +182,9 @@ extension MarkdownStyler {
     }
 
     /// Styles the next chunk of unstyled text in text order and schedules the next. Once the view is past the first
-    /// unstyled character, the rest is styled in one pass: each chunk styled above the view would make TextKit 1 lay
-    /// out again all the text down to the view, and TextKit 2 place the view again. That pass holds the caret's line,
-    /// or the first visible line, in place, as switching to the source does.
+    /// unstyled character, the rest is styled in one pass: each chunk styled above the view would make TextKit 2 place
+    /// the view again. That pass holds the caret's line, or the first visible line, in place, as switching to the
+    /// source does.
     private func styleSome() {
         scheduled = false
         guard let textView, !textView.defersStyling, let first = unstyled.first else { return }
@@ -209,18 +209,12 @@ extension MarkdownStyler {
         if !unstyled.isEmpty { schedule() }
     }
 
-    /// Whether the top of the view is past the line holding `index`, found without laying out any text. TextKit 1 has
-    /// not laid out text past its first unlaid character, so styling it costs no second layout.
+    /// Whether the top of the view is past the line holding `index`, found without laying out any text.
     private func isPast(_ index: Int) -> Bool {
         let textView = textView!
         let visible = textView.visibleRect
-        guard textView.textLayoutManager == nil else {
-            // TextKit 2 answers a point in the top inset with an index near the end of the text.
-            return index < textView.characterIndexForInsertion(at: NSPoint(x: visible.minX, y: max(visible.minY, textView.textContainerOrigin.y)))
-        }
-        let layout = textView.layoutManager!
-        guard index < layout.firstUnlaidCharacterIndex() else { return false }
-        return textView.textContainerOrigin.y + layout.lineFragmentRect(forGlyphAt: layout.glyphIndexForCharacter(at: index), effectiveRange: nil).maxY < visible.minY
+        // TextKit 2 answers a point in the top inset with an index near the end of the text.
+        return index < textView.characterIndexForInsertion(at: NSPoint(x: visible.minX, y: max(visible.minY, textView.textContainerOrigin.y)))
     }
 
     private func restyle(_ range: NSRange, in storage: NSTextStorage, selection: [NSRange]) {
@@ -318,9 +312,6 @@ extension MarkdownStyler {
             if revealed {
                 let font = storage.attribute(.dewlineMarkerFont, at: marker.location, effectiveRange: nil)!
                 storage.addAttributes([.font: font, .foregroundColor: ThemeStore.shared.color(showsSource ? .ink2 : .syntax)], range: marker)
-                storage.removeAttribute(.dewlineHidden, range: marker)
-            } else if textView!.textLayoutManager == nil {
-                storage.addAttributes([.dewlineHidden: true, .foregroundColor: NSColor.clear], range: marker)
             } else {
                 storage.addAttributes([.font: Self.hiddenFont, .foregroundColor: NSColor.clear], range: marker)
             }
@@ -377,4 +368,8 @@ extension MarkdownStyler {
         style.maximumLineHeight = height
         return style
     }
+}
+
+extension NSAttributedString.Key {
+    static let dewlineMarkerFont = NSAttributedString.Key("DewlineMarkerFont")
 }

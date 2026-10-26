@@ -79,12 +79,8 @@ final class RenderedBlocks {
                     let paragraph = NSIntersectionRange(enclosing, whole)
                     styled.addAttribute(.dewlineBlock, value: BlockLine(role), range: paragraph)
                     styled.addAttribute(.foregroundColor, value: NSColor.clear, range: line)
-                    if textView.textLayoutManager == nil {
-                        styled.addAttribute(.dewlineHidden, value: true, range: line)
-                    } else {
-                        styled.addAttribute(.font, value: MarkdownStyler.hiddenFont, range: line)
-                        styled.addAttribute(.paragraphStyle, value: first ? Self.lines(fitted.height) : Self.collapsedLines, range: paragraph)
-                    }
+                    styled.addAttribute(.font, value: MarkdownStyler.hiddenFont, range: line)
+                    styled.addAttribute(.paragraphStyle, value: first ? Self.lines(fitted.height) : Self.collapsedLines, range: paragraph)
                 }
                 continue
             }

@@ -8,8 +8,8 @@ private struct Caret {
     let window: KeyWindow
     let view: EditorTextView
 
-    init(_ variant: TextKitVariant, lines: Int = 60) throws {
-        let scrollView = EditorTextView.scrollView(variant: variant)
+    init(lines: Int = 60) throws {
+        let scrollView = EditorTextView.scrollView()
         window = KeyWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 640), styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = scrollView
@@ -65,9 +65,8 @@ private let systemAllowsLively = systemAllowsMotion && !ProcessInfo.processInfo.
 
 @MainActor
 struct CaretTests {
-    @Test(arguments: TextKitVariant.allCases)
-    func caretTakesTheAccent(_ variant: TextKitVariant) throws {
-        let caret = try Caret(variant)
+    @Test func caretTakesTheAccent() throws {
+        let caret = try Caret()
         defer { caret.close() }
         #expect(caret.view.insertionPointColor == CaretTextView.accent)
         #expect(caret.view.indicator?.color == CaretTextView.accent)
@@ -75,9 +74,8 @@ struct CaretTests {
 
     /// Acceptance test 3 in the test host: solid five seconds after the last input, through NSTextView's own
     /// indicator updates and selection changes from code, and automatic again on the next input.
-    @Test(arguments: TextKitVariant.allCases)
-    func caretTurnsSolidFiveSecondsAfterInput(_ variant: TextKitVariant) async throws {
-        let caret = try Caret(variant)
+    @Test func caretTurnsSolidFiveSecondsAfterInput() async throws {
+        let caret = try Caret()
         defer { caret.close() }
         let indicator = try #require(caret.view.indicator)
         let solid = Moment()
@@ -116,9 +114,8 @@ struct CaretTests {
         #expect(indicator.displayMode != .visible)
     }
 
-    @Test(.enabled(if: systemAllowsMotion), arguments: TextKitVariant.allCases)
-    func jumpStreaksOntoTheSystemCaret(_ variant: TextKitVariant) throws {
-        let caret = try Caret(variant)
+    @Test(.enabled(if: systemAllowsMotion)) func jumpStreaksOntoTheSystemCaret() throws {
+        let caret = try Caret()
         defer { caret.close() }
         try motion(.calm) {
             caret.view.jump(toLine: 6)
@@ -133,9 +130,8 @@ struct CaretTests {
         }
     }
 
-    @Test(.enabled(if: systemAllowsMotion), arguments: TextKitVariant.allCases)
-    func jumpThatScrollsMarksTheLine(_ variant: TextKitVariant) throws {
-        let caret = try Caret(variant)
+    @Test(.enabled(if: systemAllowsMotion)) func jumpThatScrollsMarksTheLine() throws {
+        let caret = try Caret()
         defer { caret.close() }
         try motion(.calm) {
             let top = caret.view.visibleRect.minY
@@ -178,9 +174,8 @@ private struct SplitMix: RandomNumberGenerator {
 extension CaretTests {
     /// Acceptance test 2: with a streak in flight, typing ends it before `insertText` returns and leaves the glyph
     /// left of the caret; the first commit after the edit holds both, and no later commit moves the caret.
-    @Test(.enabled(if: systemAllowsMotion), arguments: TextKitVariant.allCases)
-    func glyphLandsBeforeTheCaretInOneCommit(_ variant: TextKitVariant) throws {
-        let caret = try Caret(variant)
+    @Test(.enabled(if: systemAllowsMotion)) func glyphLandsBeforeTheCaretInOneCommit() throws {
+        let caret = try Caret()
         defer { caret.close() }
         let view = caret.view
         try motion(.lively) {
@@ -214,9 +209,8 @@ extension CaretTests {
 
     /// Acceptance test 2's property: 1,000 random edits at Lively, half of them right after a jump that may start
     /// a streak; once the text changes no streak runs, and an edit never starts one.
-    @Test(.enabled(if: systemAllowsMotion), arguments: TextKitVariant.allCases)
-    func editsNeverRunTheStreak(_ variant: TextKitVariant) throws {
-        let caret = try Caret(variant, lines: 40)
+    @Test(.enabled(if: systemAllowsMotion)) func editsNeverRunTheStreak() throws {
+        let caret = try Caret(lines: 40)
         defer { caret.close() }
         let view = caret.view
         let undo = view.styler.undoManager
@@ -275,9 +269,8 @@ extension CaretTests {
 
 extension CaretTests {
     /// Lively adds the streak to long keyboard moves and clicks; Calm snaps them, and so do plain arrows.
-    @Test(.enabled(if: systemAllowsLively), arguments: TextKitVariant.allCases)
-    func livelyStreaksLongMovesAndClicks(_ variant: TextKitVariant) throws {
-        let caret = try Caret(variant)
+    @Test(.enabled(if: systemAllowsLively)) func livelyStreaksLongMovesAndClicks() throws {
+        let caret = try Caret()
         defer { caret.close() }
         let view = caret.view
         motion(.calm) {
@@ -319,9 +312,8 @@ extension CaretTests {
 
     /// Acceptance test 8 through Off, the level Reduce Motion runs: the streak layer never gets an animation, every
     /// jump gets the static landing mark until the next input, and a new level applies at the next jump.
-    @Test(.enabled(if: systemAllowsMotion), arguments: TextKitVariant.allCases)
-    func offMarksJumpsWithoutMotion(_ variant: TextKitVariant) throws {
-        let caret = try Caret(variant)
+    @Test(.enabled(if: systemAllowsMotion)) func offMarksJumpsWithoutMotion() throws {
+        let caret = try Caret()
         defer { caret.close() }
         let effects = caret.view.effects
         try motion(.off) {
@@ -348,9 +340,8 @@ extension CaretTests {
 extension CaretTests {
     /// Find Next is a jump: a match in view gets the streak; a match it scrolls to gets neither streak nor landing
     /// mark, because the selected match marks it.
-    @Test(.enabled(if: systemAllowsMotion), arguments: TextKitVariant.allCases)
-    func findNextIsAJump(_ variant: TextKitVariant) throws {
-        let caret = try Caret(variant)
+    @Test(.enabled(if: systemAllowsMotion)) func findNextIsAJump() throws {
+        let caret = try Caret()
         defer { caret.close() }
         let view = caret.view
         view.usesFindBar = true
@@ -383,9 +374,8 @@ extension CaretTests {
     }
 
     /// A key repeat snaps every move, a jump included.
-    @Test(.enabled(if: systemAllowsMotion), arguments: TextKitVariant.allCases)
-    func keyRepeatSnapsJumps(_ variant: TextKitVariant) throws {
-        let caret = try Caret(variant)
+    @Test(.enabled(if: systemAllowsMotion)) func keyRepeatSnapsJumps() throws {
+        let caret = try Caret()
         defer { caret.close() }
         try motion(.calm) {
             for (repeating, line) in [(true, 8), (false, 12)] {
@@ -404,9 +394,8 @@ extension CaretTests {
 
     /// The landing mark ends on the caret's line on wrapped paragraphs, both on a document opened just before the
     /// jump, while the layout above the target still moves, and on one already laid out.
-    @Test(.enabled(if: systemAllowsMotion), arguments: TextKitVariant.allCases)
-    func landingMarkSettlesOnTheCaretLine(_ variant: TextKitVariant) throws {
-        let caret = try Caret(variant)
+    @Test(.enabled(if: systemAllowsMotion)) func landingMarkSettlesOnTheCaretLine() throws {
+        let caret = try Caret()
         defer { caret.close() }
         let view = caret.view
         view.string = (1...3000).map { "Line \($0) " + String(repeating: "wrapping words ", count: 20) }.joined(separator: "\n")

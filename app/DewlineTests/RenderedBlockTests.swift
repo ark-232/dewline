@@ -5,13 +5,11 @@ import Testing
 /// An editor in a window that is never ordered front, waiting for its pictures.
 @MainActor
 private struct BlockEditor {
-    let variant: TextKitVariant
     let window: NSWindow
     let view: EditorTextView
 
-    init(_ variant: TextKitVariant, _ text: String, caret: Int, folder: URL? = nil) {
-        self.variant = variant
-        let scrollView = EditorTextView.scrollView(variant: variant)
+    init(_ text: String, caret: Int, folder: URL? = nil) {
+        let scrollView = EditorTextView.scrollView()
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 640), styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = scrollView
@@ -54,7 +52,7 @@ private struct BlockEditor {
     }
 
     func expectTextKitUnchanged() {
-        #expect((view.textLayoutManager != nil) == (variant == .textKit2))
+        #expect(view.textLayoutManager != nil)
     }
 }
 
@@ -82,18 +80,17 @@ struct RenderedBlockTests {
         return folder
     }
 
-    @Test(arguments: TextKitVariant.allCases)
-    func collapsedBlocksTakeThePicturesHeight(_ variant: TextKitVariant) async throws {
+    @Test func collapsedBlocksTakeThePicturesHeight() async throws {
         let folder = try Self.imageFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
         for block in [Self.diagram, Self.formula, "![a dot](\(Self.picturePath))"] {
             let text = "Above\n\n\(block)\n\nBelow\n"
             let start = 7
             let below = text.utf16.count - 6
-            let editor = BlockEditor(variant, text, caret: 0, folder: folder)
+            let editor = BlockEditor(text, caret: 0, folder: folder)
             await editor.wait { editor.picture(at: start) != nil }
             let picture = try #require(editor.picture(at: start), "\(block)")
-            let plain = BlockEditor(variant, "Above\n\n\nBelow\n", caret: 0)
+            let plain = BlockEditor("Above\n\n\nBelow\n", caret: 0)
             let height = editor.rect(0, 1).minY - editor.rect(below, 1).maxY - (plain.rect(0, 1).minY - plain.rect(8, 1).maxY)
             #expect(abs(height - picture.size.height) <= 1, "\(block): block is \(height) pt, picture \(picture.size.height) pt")
             let moved = plain.rect(8, 1).maxY - editor.rect(below, 1).maxY
@@ -102,13 +99,12 @@ struct RenderedBlockTests {
         }
     }
 
-    @Test(arguments: TextKitVariant.allCases)
-    func renderingNeverChangesTheString(_ variant: TextKitVariant) async throws {
+    @Test func renderingNeverChangesTheString() async throws {
         let text = "Notes\n\n\(Self.diagram)\n\n\(Self.formula)\n\n![a dot](\(Self.picturePath))\n\nEnd\n"
         let starts = [Self.diagram, Self.formula, "![a dot]"].map { (text as NSString).range(of: $0).location }
         let folder = try Self.imageFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
-        let editor = BlockEditor(variant, text, caret: 0, folder: folder)
+        let editor = BlockEditor(text, caret: 0, folder: folder)
         await editor.wait { starts.allSatisfy { editor.picture(at: $0) != nil } }
         #expect(starts.allSatisfy { editor.picture(at: $0) != nil })
         #expect(editor.view.string == text)
@@ -136,12 +132,11 @@ struct RenderedBlockTests {
 
     /// Light and dark take the light and dark slots' themes, so switching the window's appearance changes the theme
     /// without touching the owner's defaults.
-    @Test(arguments: TextKitVariant.allCases)
-    func blocksRedrawInTheThemeOfEachAppearance(_ variant: TextKitVariant) async {
+    @Test func blocksRedrawInTheThemeOfEachAppearance() async {
         let text = "Above\n\(Self.diagram)\n\(Self.formula)\nBelow"
         let diagram = 6
         let formula = diagram + Self.diagram.utf16.count + 1
-        let editor = BlockEditor(variant, text, caret: 0)
+        let editor = BlockEditor(text, caret: 0)
         let store = ThemeStore.shared
         let increased = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         var drawn: [CGImage] = []
@@ -184,12 +179,11 @@ struct RenderedBlockTests {
         return Array(UnsafeBufferPointer(start: context.data!.assumingMemoryBound(to: UInt8.self), count: image.width * image.height * 4))
     }
 
-    @Test(arguments: TextKitVariant.allCases)
-    func theCaretRevealsTheSource(_ variant: TextKitVariant) async {
+    @Test func theCaretRevealsTheSource() async {
         let text = "Above\n\(Self.diagram)\nBelow"
         let start = 6
         let end = start + Self.diagram.utf16.count
-        let editor = BlockEditor(variant, text, caret: 0)
+        let editor = BlockEditor(text, caret: 0)
         await editor.wait { editor.picture(at: start) != nil }
         let moves = [
             (editor.view.moveRight, Array((start - 1)...(end + 1))),
@@ -211,7 +205,7 @@ struct RenderedBlockTests {
             }
             #expect(visited == path)
         }
-        // Undoing an edit above a revealed block moves the block; in TextKit 1 it also takes the caret to the edit.
+        // Undoing an edit above a revealed block moves the block.
         editor.place(0)
         editor.view.insertText("x", replacementRange: editor.view.selectedRange())
         editor.place(start + 4)
@@ -224,12 +218,11 @@ struct RenderedBlockTests {
         editor.expectTextKitUnchanged()
     }
 
-    @Test(arguments: TextKitVariant.allCases)
-    func sourceModeShowsEveryBlocksSource(_ variant: TextKitVariant) async {
+    @Test func sourceModeShowsEveryBlocksSource() async {
         let text = "Above\n\(Self.diagram)\n\(Self.formula)\nBelow"
         let diagram = 6
         let formula = diagram + Self.diagram.utf16.count + 1
-        let editor = BlockEditor(variant, text, caret: 0)
+        let editor = BlockEditor(text, caret: 0)
         await editor.wait { editor.picture(at: diagram) != nil && editor.picture(at: formula) != nil }
         editor.view.toggleSource(nil)
         #expect(editor.picture(at: diagram) == nil && editor.picture(at: formula) == nil)
@@ -240,10 +233,9 @@ struct RenderedBlockTests {
         editor.expectTextKitUnchanged()
     }
 
-    @Test(arguments: TextKitVariant.allCases)
-    func copyingTakesTheSource(_ variant: TextKitVariant) async {
+    @Test func copyingTakesTheSource() async {
         let text = "Above\n\(Self.diagram)\nBelow"
-        let editor = BlockEditor(variant, text, caret: 0)
+        let editor = BlockEditor(text, caret: 0)
         await editor.wait { editor.picture(at: 6) != nil }
         let pasteboard = NSPasteboard(name: NSPasteboard.Name("dev.arkwerx.dewline.tests.\(UUID().uuidString)"))
         defer { pasteboard.releaseGlobally() }
@@ -255,11 +247,10 @@ struct RenderedBlockTests {
         editor.expectTextKitUnchanged()
     }
 
-    @Test(arguments: TextKitVariant.allCases)
-    func accessibilityReadsTheSourceAndLabelsThePictures(_ variant: TextKitVariant) async {
+    @Test func accessibilityReadsTheSourceAndLabelsThePictures() async {
         let text = "Above\n\(Self.diagram)\n\n\(Self.formula)\nBelow"
         let starts = [Self.diagram, Self.formula].map { (text as NSString).range(of: $0).location }
-        let editor = BlockEditor(variant, text, caret: 0)
+        let editor = BlockEditor(text, caret: 0)
         await editor.wait { starts.allSatisfy { editor.picture(at: $0) != nil } }
         #expect(editor.view.accessibilityValue() == text)
         let images = (editor.view.accessibilityChildren() ?? []).compactMap { $0 as? NSAccessibilityElement }
@@ -270,14 +261,13 @@ struct RenderedBlockTests {
         editor.expectTextKitUnchanged()
     }
 
-    @Test(arguments: TextKitVariant.allCases)
-    func brokenBlocksShowTheSourceAndTheErrorWithoutBlockingTyping(_ variant: TextKitVariant) async {
+    @Test func brokenBlocksShowTheSourceAndTheErrorWithoutBlockingTyping() async {
         let broken = "```mermaid\nnot a diagram\n```"
         let text = "Above\n\(broken)\nBetween\n$$\\frac{a$$\nBelow"
         let fence = 6
         let closing = fence + broken.utf16.count - 3
         let tex = (text as NSString).range(of: "$$").location
-        let editor = BlockEditor(variant, text, caret: text.utf16.count)
+        let editor = BlockEditor(text, caret: text.utf16.count)
         // Typing goes on while the pictures render.
         let clock = ContinuousClock()
         for character in ["!", "?"] {

@@ -18,6 +18,7 @@ A pure-Rust UI was ruled out: no Rust GUI framework offers VoiceOver for text, W
 - Conflicts never enter the file. The other version shows as a card until you choose.
 - Snapshots live in `~/Library/Application Support/dev.arkwerx.dewline/`, never beside your files.
 - Nothing restyles or applies outside changes while an input method is composing text.
+- Nothing touches the text view's `layoutManager`, which would switch it to TextKit 1.
 - After five seconds without input, nothing runs: no timers, no animation, no blinking caret.
 
 ## Components
@@ -25,7 +26,7 @@ A pure-Rust UI was ruled out: no Rust GUI framework offers VoiceOver for text, W
 | Layer | Choice |
 |---|---|
 | App | Swift 6, AppKit, NSDocument, native tabs, macOS 26+, universal binary |
-| Editor | NSTextView; TextKit 2 or TextKit 1, chosen by measurement |
+| Editor | NSTextView on TextKit 2 ([0004](decisions/0004-textkit.md)) |
 | Parsing | pulldown-cmark, reparsing only the edited lines |
 | Diff and merge | imara-diff, three-way merge against the last known contents |
 | Snapshots | content-addressed BLAKE3 and zstd store |
