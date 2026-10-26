@@ -46,6 +46,9 @@ struct Index {
 /// before any index names it and is deleted only after no index does.
 pub struct Store {
     root: PathBuf,
+    /// False skips every sync, for tests of the rules rather than of durability.
+    #[cfg(test)]
+    sync: bool,
 }
 
 impl Store {
@@ -61,6 +64,8 @@ impl Store {
         }
         Ok(Store {
             root: root.to_owned(),
+            #[cfg(test)]
+            sync: true,
         })
     }
 
@@ -175,7 +180,7 @@ impl Store {
         }
         step("moved");
         fs::remove_file(self.root.join("files").join(key(from)))?;
-        File::open(self.root.join("files"))?.sync_all()
+        self.sync(&File::open(self.root.join("files"))?)
     }
 
     /// Drops each history entry that is older than 30 days, unpinned and not
@@ -214,7 +219,7 @@ impl Store {
             }
             if index.history.is_empty() && index.draft.is_none() {
                 fs::remove_file(&file)?;
-                File::open(self.root.join("files"))?.sync_all()?;
+                self.sync(&File::open(self.root.join("files"))?)?;
             } else if (index.history.len(), index.draft.is_some()) != before {
                 self.write(&index)?;
             }
@@ -333,7 +338,7 @@ impl Store {
         let target = self.root.join(folder).join(name);
         let written = file
             .write_all(bytes)
-            .and_then(|()| file.sync_all())
+            .and_then(|()| self.sync(&file))
             .and_then(|()| {
                 step(folder);
                 fs::rename(&temp, &target)
@@ -343,7 +348,15 @@ impl Store {
             let _ = fs::remove_file(&temp);
         }
         written?;
-        File::open(self.root.join(folder))?.sync_all()
+        self.sync(&File::open(self.root.join(folder))?)
+    }
+
+    fn sync(&self, file: &File) -> io::Result<()> {
+        #[cfg(test)]
+        if !self.sync {
+            return Ok(());
+        }
+        file.sync_all()
     }
 }
 
@@ -1263,16 +1276,20 @@ mod tests {
 
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(
-            std::env::var("PROPTEST_CASES").map_or(16, |cases| cases.parse().unwrap())
+            std::env::var("PROPTEST_CASES").map_or(192, |cases| cases.parse().unwrap())
         ))]
 
         #[test]
         fn random_puts_drafts_pins_moves_and_prunes_keep_the_rules(
             ops in prop::collection::vec(op(), 1..40),
         ) {
-            let (_dir, store) = store();
+            // The rules, not durability, which the kill and three-process tests check.
+            let (_dir, mut store) = store();
+            store.sync = false;
             let paths = [Path::new(NOTES), Path::new(OTHER)];
             let mut model = Model::default();
+            // Blobs never change once written, so each one's bytes are read once.
+            let mut read = HashSet::new();
             for op in ops {
                 let pruned = matches!(op, Op::Prune { .. });
                 match op {
@@ -1319,16 +1336,22 @@ mod tests {
                     let expected: Vec<_> = model.history[file].iter().rev().cloned().collect();
                     prop_assert_eq!(store.list(path).unwrap(), expected);
                     prop_assert_eq!(store.draft(path).unwrap(), model.draft[file].clone());
-                    for snapshot in model.history[file].iter().chain(&model.draft[file]) {
-                        prop_assert_eq!(&store.get(&snapshot.hash).unwrap(), &model.bytes[&snapshot.hash]);
-                        named.insert(snapshot.hash);
+                    named.extend(model.history[file].iter().chain(&model.draft[file]).map(|s| s.hash));
+                }
+                for hash in &named {
+                    if read.insert(*hash) {
+                        prop_assert_eq!(&store.get(hash).unwrap(), &model.bytes[hash]);
                     }
                 }
+                // Only prune deletes blobs.
                 if pruned {
-                    prop_assert_eq!(blobs(&store), named);
+                    prop_assert_eq!(blobs(&store), named.clone());
                     prop_assert_eq!(names(&store.root.join("tmp")).len(), 0);
+                    read.retain(|hash| named.contains(hash));
                 }
             }
+            let named = model.history.iter().flatten().chain(model.draft.iter().flatten());
+            prop_assert!(named.map(|s| s.hash).collect::<HashSet<_>>().is_subset(&blobs(&store)));
         }
     }
 }
