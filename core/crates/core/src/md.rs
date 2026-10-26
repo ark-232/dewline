@@ -63,9 +63,9 @@ pub fn spans(text: &str) -> Vec<Span> {
             let content_end = content.end.min(end);
             *offsets = [
                 range.start,
-                end,
                 content.start.min(content_end),
                 content_end,
+                end,
             ];
             continue;
         }
@@ -88,9 +88,9 @@ pub fn spans(text: &str) -> Vec<Span> {
                     .count();
                 let offsets = [
                     range.start,
-                    range.end,
                     range.start + ticks,
                     range.end - ticks,
+                    range.end,
                 ];
                 found.push((SpanKind::InlineCode, offsets));
                 continue;
@@ -118,7 +118,7 @@ pub fn spans(text: &str) -> Vec<Span> {
     let utf16 = |at: usize| units[bytes.binary_search(&at).unwrap()];
     found
         .into_iter()
-        .map(|(kind, [start, end, content_start, content_end])| Span {
+        .map(|(kind, [start, content_start, content_end, end])| Span {
             kind,
             start: utf16(start),
             end: utf16(end),
