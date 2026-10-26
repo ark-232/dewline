@@ -95,7 +95,7 @@ fn open_wait_returns_once_the_file_closes() {
 }
 
 #[test]
-fn open_wait_fails_when_the_app_quits() {
+fn open_wait_fails_when_the_app_crashes() {
     let fixture = Fixture::new();
     let listener = UnixListener::bind(&fixture.socket).unwrap();
     let child = fixture

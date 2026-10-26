@@ -4,8 +4,8 @@ import Synchronization
 /// The socket the `dewline` command (core/crates/cli) talks to, in a folder only this user can enter. A connection
 /// carries one request, a JSON line such as `{"v":1,"op":"open","path":"/Users/me/plan.md","line":12,"col":4,
 /// "wait":true}`. The answers are JSON lines too: `{"reply":"opened","v":1}`, then `{"reply":"closed","v":1}` once
-/// the document closes if the request waits, or `{"error":"not_a_file","reply":"error","v":1}`. Only absolute paths
-/// of existing regular files get through, and nothing that arrives here writes to a file.
+/// the document closes or the app quits if the request waits, or `{"error":"not_a_file","reply":"error","v":1}`.
+/// Only absolute paths of existing regular files get through, and nothing that arrives here writes to a file.
 final class ControlSocket: @unchecked Sendable {
     struct Open: Sendable, Equatable {
         let path: String
@@ -104,13 +104,15 @@ final class ControlSocket: @unchecked Sendable {
         source.resume()
     }
 
-    /// Stops listening, removes the socket file and drops every connection, so a `dewline open --wait` still
-    /// waiting exits with an error.
+    /// Stops listening, removes the socket file and drops every connection, first telling each request still
+    /// waiting that its file closed. The app stops the socket as it quits normally, so `dewline open --wait` exits 0
+    /// then, as it does when the file closes; a crash leaves it to exit 1.
     func stop() {
         queue.sync {
             listener?.cancel()
             listener = nil
             for connection in Array(connections.values) {
+                if connection.request?.wait == true { send(.closed, to: connection) }
                 drop(connection)
             }
             var info = stat()

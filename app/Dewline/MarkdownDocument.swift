@@ -32,15 +32,10 @@ final class MarkdownDocument: NSDocument {
 
     override func close() {
         super.close()
-        let waiters = waiters
-        self.waiters = []
-        // Quitting closes edited documents through their save sheets, then exits in the same pass. Answering on the
-        // next pass leaves a quit unanswered, so the command reports it.
-        DispatchQueue.main.async {
-            for waiter in waiters {
-                waiter.reply(.closed)
-            }
+        for waiter in waiters {
+            waiter.reply(.closed)
         }
+        waiters = []
         NotificationCenter.default.post(name: Self.didCloseNotification, object: self)
     }
 
