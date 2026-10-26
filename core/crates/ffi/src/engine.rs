@@ -174,6 +174,8 @@ pub struct Opened {
     /// The realpath the engine keys the file by.
     pub path: String,
     pub agent_file: bool,
+    /// The repository's gitdir, to watch and pass to `git_changed`.
+    pub gitdir: Option<String>,
 }
 
 /// One landed edit, a pending change.
@@ -350,6 +352,9 @@ impl Engine {
             },
             path: opened.path.to_string_lossy().into_owned(),
             agent_file: opened.agent_file,
+            gitdir: opened
+                .gitdir
+                .map(|gitdir| gitdir.to_string_lossy().into_owned()),
         })
     }
 
@@ -475,9 +480,11 @@ impl Engine {
             .collect()
     }
 
-    /// The document's file is now at `to`. Snapshot ids change.
-    pub fn moved(&self, doc: u64, to: String) -> Result<(), EngineError> {
-        Ok(self.0.moved(DocId(doc), Path::new(&to))?)
+    /// The document's file is now at `to`; returns its repository's
+    /// gitdir. Snapshot ids change.
+    pub fn moved(&self, doc: u64, to: String) -> Result<Option<String>, EngineError> {
+        let gitdir = self.0.moved(DocId(doc), Path::new(&to))?;
+        Ok(gitdir.map(|gitdir| gitdir.to_string_lossy().into_owned()))
     }
 
     pub fn close(&self, doc: u64) {

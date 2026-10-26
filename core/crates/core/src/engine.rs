@@ -110,6 +110,9 @@ pub struct Opened {
     /// Whether an agent loads the file (agents.json), by the path as opened
     /// or the realpath.
     pub agent_file: bool,
+    /// The gitdir of the repository the file is in, to watch for
+    /// `git_changed`.
+    pub gitdir: Option<PathBuf>,
 }
 
 /// A file's new version merged into the buffer at `version`. Offsets are
@@ -373,7 +376,7 @@ impl Engine {
             private: private(path) || private(&real),
             path: real.clone(),
             agent_file,
-            gitdir,
+            gitdir: gitdir.clone(),
             head,
             read_only,
             bom,
@@ -402,6 +405,7 @@ impl Engine {
             contents,
             path: real,
             agent_file,
+            gitdir,
         })
     }
 
@@ -1045,9 +1049,10 @@ impl Engine {
         docs
     }
 
-    /// Follows the document's file to `to`, where it now is. Its snapshots
-    /// move with it and take new ids.
-    pub fn moved(&self, doc: DocId, to: &Path) -> io::Result<()> {
+    /// Follows the document's file to `to`, where it now is, and returns
+    /// the gitdir of the repository it is in now. Its snapshots move with it
+    /// and take new ids.
+    pub fn moved(&self, doc: DocId, to: &Path) -> io::Result<Option<PathBuf>> {
         let serial = self.serial(doc).ok_or_else(closed)?;
         let _serial = lock(&serial);
         let real = fs::canonicalize(to)?;
@@ -1064,10 +1069,10 @@ impl Engine {
         if gitdir != d.gitdir {
             d.head = head;
         }
-        d.gitdir = gitdir;
+        d.gitdir = gitdir.clone();
         drop(state);
         self.forget_repos();
-        Ok(())
+        Ok(gitdir)
     }
 
     pub fn close(&self, doc: DocId) {
@@ -1844,7 +1849,10 @@ mod tests {
         git(&repo, &["commit", "-q", "-am", "theirs"]);
         git(&repo, &["checkout", "-q", "main"]);
         let (doc, text) = opened(&fx.engine, &path);
-        assert!(opened_agent_file(&fx.engine, &path));
+        let again = fx.engine.open(&path).unwrap();
+        fx.engine.close(again.doc);
+        assert!(again.agent_file);
+        assert_eq!(again.gitdir, Some(repo.join(".git")));
 
         git(&repo, &["checkout", "-q", "theirs"]);
         assert_eq!(fx.engine.git_changed(&repo.join(".git")), [doc]);
@@ -1890,12 +1898,6 @@ mod tests {
         assert!(landing.edits.is_empty() && landing.marked);
         assert_eq!(landing.conflicts.len(), 1, "{landing:?}");
         assert!(landing.conflicts[0].1.theirs.contains("<<<<<<<"));
-    }
-
-    fn opened_agent_file(engine: &Engine, path: &Path) -> bool {
-        let opened = engine.open(path).unwrap();
-        engine.close(opened.doc);
-        opened.agent_file
     }
 
     #[test]
