@@ -19,6 +19,8 @@ final class Updates: NSObject, NSMenuItemValidation, SPUUpdaterDelegate, SPUStan
     static let stagedVersionKey = "DewlineUpdateStagedVersion"
     static let stagedDateKey = "DewlineUpdateStagedDate"
     static let lastBuildKey = "DewlineLastBuild"
+    /// The error domain of a scheduled check refused before the first-run line, which sends no request.
+    static let refusalDomain = "dev.arkwerx.dewline.updates"
     /// How long a staged update waits for a quit before every window says it is ready.
     static let patience: TimeInterval = 7 * 24 * 60 * 60
 
@@ -344,7 +346,7 @@ final class Updates: NSObject, NSMenuItemValidation, SPUUpdaterDelegate, SPUStan
     func updater(_ updater: SPUUpdater, mayPerform updateCheck: SPUUpdateCheck) throws {
         // Sparkle schedules the next check a full interval after a refused one.
         guard updateCheck != .updatesInBackground || defaults.bool(forKey: Self.lineShownKey) else {
-            throw NSError(domain: "dev.arkwerx.dewline.updates", code: 1, userInfo: [
+            throw NSError(domain: Self.refusalDomain, code: 1, userInfo: [
                 NSLocalizedDescriptionKey: "Scheduled update checks wait until the first-run line has appeared.",
             ])
         }
@@ -367,8 +369,10 @@ final class Updates: NSObject, NSMenuItemValidation, SPUUpdaterDelegate, SPUStan
         return true
     }
 
-    /// Keeps the check's time and its error for Settings > Updates; a failed scheduled check shows nothing else.
+    /// Keeps the check's time and its error for Settings > Updates; a failed scheduled check shows nothing else. A
+    /// check Dewline refused made no request, so it changes neither.
     func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: (any Error)?) {
+        guard (error as NSError?)?.domain != Self.refusalDomain else { return }
         lastCheck = updater.lastUpdateCheckDate
         let quiet: [SUError] = [.noUpdateError, .installationCanceledError, .installationAuthorizeLaterError]
         if let error = error as NSError?, error.domain != SUSparkleErrorDomain || !quiet.map({ Int($0.rawValue) }).contains(error.code) {

@@ -249,6 +249,23 @@ struct UpdatesTests {
         #expect(windows.allSatisfy { lines($0).isEmpty })
     }
 
+    @Test func settingsShowsTheErrorsOfChecksThatRanAndNotOfOnesDewlineRefused() throws {
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let fixture = try Fixture(publicKey: "")
+        defer { fixture.remove() }
+        let updater = fixture.updater()
+        let updates = Updates(defaults: defaults)
+        let refusal = #expect(throws: (any Error).self) { try updates.updater(updater, mayPerform: .updatesInBackground) }
+        updates.updater(updater, didFinishUpdateCycleFor: .updatesInBackground, error: refusal)
+        #expect(updates.lastError == nil, "a refused check sent no request")
+
+        updates.updater(updater, didFinishUpdateCycleFor: .updatesInBackground, error: NSError(domain: NSURLErrorDomain, code: NSURLErrorNotConnectedToInternet))
+        #expect(updates.lastError != nil)
+        updates.updater(updater, didFinishUpdateCycleFor: .updates, error: NSError(domain: SUSparkleErrorDomain, code: Int(SUError.noUpdateError.rawValue)))
+        #expect(updates.lastError == nil, "no update is not an error")
+    }
+
     @Test func getBetaBuildsAddsTheBetaChannel() throws {
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
