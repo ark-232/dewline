@@ -22,6 +22,7 @@ Needs macOS 26, Xcode 27, Rust 1.99 and [XcodeGen](https://github.com/yonaskolb/
 
 ```sh
 (cd core && cargo test --workspace)
+scripts/build-xcframework.sh   # the Rust engine as Packages/MdCore/DewlineFFI.xcframework
 xcodegen generate --spec app/project.yml
 xcodebuild test -project app/Dewline.xcodeproj -scheme Dewline -destination 'platform=macOS'
 ```
