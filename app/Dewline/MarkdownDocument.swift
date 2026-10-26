@@ -13,6 +13,14 @@ final class MarkdownDocument: NSDocument {
     /// `dewline open --wait` connections, answered when this document closes.
     private var waiters: [ControlSocket.Connection] = []
 
+    /// Posted when a document closes.
+    static let didCloseNotification = Notification.Name("MarkdownDocumentDidClose")
+
+    /// True while a `dewline open --wait` client waits for this document to close.
+    var isAwaited: Bool {
+        waiters.contains(where: \.isOpen)
+    }
+
     override class var autosavesInPlace: Bool {
         false
     }
@@ -33,6 +41,7 @@ final class MarkdownDocument: NSDocument {
                 waiter.reply(.closed)
             }
         }
+        NotificationCenter.default.post(name: Self.didCloseNotification, object: self)
     }
 
     /// Reads through a descriptor that must be a regular file, so a path that became a FIFO or a device after it

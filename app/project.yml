@@ -45,6 +45,8 @@ targets:
         buildPhase: resources
       - path: ../THIRD_PARTY_NOTICES.md
         buildPhase: resources
+      - path: ../CHANGELOG.md
+        buildPhase: resources
     dependencies:
       - package: MdCore
       - package: Sparkle
