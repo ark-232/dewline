@@ -134,7 +134,8 @@ final class EditorTextView: NSTextView {
         // has no index for a point outside its laid-out viewport, so the margin counts characters, not points.
         let margin = max(last - first, 0)
         let lower = max(first - margin, 0)
-        styler.toggleSource(restyling: NSRange(location: lower, length: min(last + margin, storage.length) - lower))
+        let upper = min(max(first, last) + margin, storage.length)
+        styler.toggleSource(restyling: NSRange(location: lower, length: upper - lower))
         if let offset { hold(anchor, at: offset) }
         if let picture {
             let cover = Snapshot(frame: visibleRect)
