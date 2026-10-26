@@ -493,6 +493,7 @@ dependencies = [
  "libc",
  "proptest",
  "pulldown-cmark",
+ "serde_json",
  "tempfile",
  "zstd",
 ]
