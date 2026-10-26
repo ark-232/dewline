@@ -266,7 +266,7 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
             }.value
             previews.merge(found.0) { $1 }
             branches.merge(found.1) { $1 }
-            list.reloadData()
+            list.reloadData(forRowIndexes: IndexSet(integersIn: 0..<list.numberOfRows), columnIndexes: [0])
         }
     }
 
@@ -294,8 +294,9 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
             Library.forget(url)
             return true
         default:
-            guard let characters = event.characters, characters.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) }),
-                event.modifierFlags.isDisjoint(with: [.command, .control]), !characters.isEmpty
+            guard event.specialKey == nil, event.modifierFlags.isDisjoint(with: [.command, .control]),
+                let characters = event.characters, !characters.isEmpty,
+                characters.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) })
             else { return false }
             window?.makeFirstResponder(filter)
             filter.currentEditor()?.insertText(characters)
