@@ -18,5 +18,12 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "md"
+path = "fuzz_targets/md.rs"
+test = false
+doc = false
+bench = false
+
 # Built by cargo-fuzz on nightly, apart from the core workspace.
 [workspace]

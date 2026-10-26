@@ -1,0 +1,34 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc e0ae2393232c60aa11c02c1f6a2a1e854f7ded5c7712843e6191c63b37e4850e # shrinks to text = "[a]: /u\n-\n-\r\n-"
+cc 0410214c7c94b1ef064d362097c009face3037b9e13fff2f9d624e88537c860f # shrinks to text = ">```\t"
+cc 44549f799a17a498ac0d2fad3409cef6dce5c3bc2b97420646f392cd9dd23b30 # shrinks to text = "----\n```| a | b |\n\t"
+cc d00c9f68235575d6eed668363b1e57518ce5b572dfeb6087327623c070a95bde # shrinks to text = "\n- [^1]: n\n\t- -"
+cc 40e1d7c904bae9a96e248828ad24171f800eb71529bbd893c8252f9f98a6a7e2 # shrinks to text = ">\t- [ ] "
+cc 6a43915ebb8e689233fc810d768161abbec0723574cc667f6231c83a1be49b20 # shrinks to text = "[[`|`]]-"
+cc a7c6774975a2318861cd7dd0536e548a3f1b40e94fb6f499028369ec478d30bf # shrinks to text = "[a]: /u\n- [a]: /u\n---\n\n"
+cc 7053fe9e4cf183f6c3f85eaf7e86db16e70180438fd99cc52534932efc38fee9 # shrinks to text = "[[$$|$$]]"
+cc 7229edf506455f6b67c0809a1b7a869625f3ac6eadb59479559f3a1b39a3ad5d # shrinks to text = "-\n- ```\n\t"
+cc ece7574852fa39f51e1a1060148ef811865c7b293733400b861078785338d127 # shrinks to text = "-![[](u)-]]"
+cc 88fe1f721789c374ee5571bfcd4b318f52666546c53a44556e64aa43ec475b1f # shrinks to text = "---\n-"
+cc 2f6ba3c21f55f440be0187f389063c9037504c7a4c4e9f83a1bb72c70b1119ae # shrinks to text = "--[[$-|é$$]]"
+cc b8d3d661cb6c8786aced77a05d932db084bc796f5af84e4ce8106f5bdd4c0385 # shrinks to text = "-![[--[|](u)]]-"
+cc 8102868d3b413416daedb548655e19b7c47cd853ba3f03ff68f6c7c1d5eca6de # shrinks to text = "-\n[^1]: n\n\t[^1]: n\n<div>\n"
+cc 823cec9c41f377ca77e017a21ff1ef441ede4b52c06e787bf88fb47530b61ed4 # shrinks to text = "[^1]:[^1]: n\n_"
+cc 86b9a3467b1ff987065b74af4f62fb27e673cccd9f3e7a6fb592a929afaaa791 # shrinks to text = "-\n- [ ] -\n\t="
+cc e79f63ed87a3cc63fc67a4010510410619cf6dd25ed4eb67a4f4c3bbb4f07bf2 # shrinks to text = "![[-[<div>\n|](u)]]"
+cc 2953d2f251058d62c5ce0206fda5025000b6947d35ccd3c62eb088997563051e # shrinks to text = "\n> -<!a\n> -"
+cc 727ef3faa1f3a2bf2b744fbe8274db4edda11d60466020f8f003658692bdf4c6 # shrinks to text = "-\r\n_", pick = 182379815451089256, offset = 5357695341501705966, delete = 1, insert = "| a |\n|---|"
+cc 144edd2763bbda872bb862e6c2843176abd41a5d5f8a34f4ba6fcbe3abbf1396 # shrinks to text = "-\n\n  ", pick = 0, offset = 4515210537152533740, delete = 0, insert = "```"
+cc 61a2c470e20f9e2eaf3378137caf88558067f3058214e6817215b57b645a951a # shrinks to text = "---\n-\n\n\n--", pick = 1893785608243920596, offset = 362285636688005595, delete = 2, insert = "---"
+cc 93ba024f53a75c7f49f78dc5ca633477bec91a8b32b908edac5fd737568cd40f # shrinks to text = "[\\[^1]: n\n-**```--[^1]", pick = 0, offset = 6311596237410907146, delete = 0, insert = "-->"
+cc f188127798da07396535c520d5a371292694461bb684c0b6d229853e57f0f37b # shrinks to text = "[-------------\n---((-----(----```-]:>-🙂", pick = 0, offset = 9160224531750746234, delete = 0, insert = "a"
+cc b63d5ea62308132b359295002d941e0343f76b67b4275d639fdcb5e44d9cbdfe # shrinks to text = "- -[^1]: n\n\n1.  --🙂-------é-----", pick = 240216975426636215, offset = 3118812366659068575, delete = 2, insert = "\r\n"
+cc 8183893f5085ca0084610446ec2cbe66d5342514a19fb691a2d9e5561502096d # shrinks to text = "[a]: /u\n\t-|-\n|---|---|\n$"
+cc 3e72d8a2df2e87e11406e28af75ae0306a84943eb0ec01b584ae4e05bf91a2eb # shrinks to text = "-\n- ```\n\n---------", pick = 3459380549304037796, offset = 4011738817603970210, delete = 0, insert = "\r\n"
+cc b52d3b0426698563536a96efffe9aacd748f7415ec24fddca6ccbcdd20af2af2 # shrinks to text = "[^(-\n(```]:-<\n------*\n\n-", pick = 7320256739516652194, offset = 9973492643941528602, delete = 0, insert = "~~~"
+cc 191cd3e539724d2893f5ae65a25db0c116413d26444815f41e0f0607e1685cb2 # shrinks to text = ">_\n| a | b |\n>|---|---|\n\t", pick = 11816470729901543282, offset = 0, delete = 0, insert = "\n"
