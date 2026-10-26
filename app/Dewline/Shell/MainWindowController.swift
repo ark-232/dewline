@@ -58,7 +58,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
             let hint = NSTextField(labelWithString: "Choose a Markdown file in the sidebar.")
             hint.textColor = .tertiaryLabelColor
             hint.translatesAutoresizingMaskIntoConstraints = false
-            let empty = FillView(.textBackgroundColor)
+            let empty = PaperView()
             empty.addSubview(hint)
             NSLayoutConstraint.activate([
                 hint.centerXAnchor.constraint(equalTo: empty.centerXAnchor),
@@ -213,22 +213,24 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     }
 }
 
-/// A view filled with one color that follows the appearance.
-final class FillView: NSView {
-    private let color: NSColor
-
-    init(_ color: NSColor) {
-        self.color = color
-        super.init(frame: .zero)
+/// A view filled with the theme's paper, following the theme and the appearance.
+final class PaperView: NSView {
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        NotificationCenter.default.addObserver(self, selector: #selector(themeDidChange(_:)), name: ThemeStore.didChange, object: nil)
     }
 
     required init?(coder: NSCoder) {
-        fatalError("FillView is built in code")
+        fatalError("PaperView is built in code")
     }
 
     override var wantsUpdateLayer: Bool { true }
 
     override func updateLayer() {
-        layer?.backgroundColor = color.cgColor
+        layer?.backgroundColor = ThemeStore.shared.color(.paper).cgColor
+    }
+
+    @objc private func themeDidChange(_ notification: Notification) {
+        needsDisplay = true
     }
 }

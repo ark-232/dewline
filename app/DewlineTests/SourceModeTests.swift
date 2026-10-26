@@ -15,7 +15,11 @@ private struct Editor {
     init(_ variant: TextKitVariant, _ text: String, caret: Int) {
         self.variant = variant
         let scrollView = EditorTextView.scrollView(variant: variant)
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 640), styleMask: [.titled], backing: .buffered, defer: false)
+        // DEWLINE_TEST_SCALE=1 (TEST_RUNNER_DEWLINE_TEST_SCALE=1 through xcodebuild) puts the window on a 1x screen, as on
+        // CI, when the Mac has one.
+        let scale = ProcessInfo.processInfo.environment["DEWLINE_TEST_SCALE"].flatMap(Double.init)
+        let screen = NSScreen.screens.first { $0.backingScaleFactor == scale }
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 640), styleMask: [.titled], backing: .buffered, defer: false, screen: screen)
         window.isReleasedWhenClosed = false
         window.contentView = scrollView
         view = scrollView.documentView as! EditorTextView

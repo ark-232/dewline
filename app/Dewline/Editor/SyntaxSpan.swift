@@ -2,7 +2,7 @@ import Foundation
 
 struct SyntaxSpan: Hashable {
     enum Kind: Hashable {
-        case heading(level: Int), emphasis, strong, strikethrough, inlineCode, link
+        case heading(level: Int), quote, emphasis, strong, strikethrough, inlineCode, link
     }
 
     let kind: Kind
@@ -28,6 +28,7 @@ struct SyntaxSpan: Hashable {
 /// The spike's tokenizer.
 enum SpikeTokenizer {
     private static let heading = try! NSRegularExpression(pattern: "^(#{1,6})[ \\t]+(.*?)(?:[ \\t]+#+)?[ \\t]*$")
+    private static let quote = try! NSRegularExpression(pattern: "^(>[ \\t]?)(.*)$")
     private static let inline: [(SyntaxSpan.Kind, NSRegularExpression)] = [
         (.inlineCode, "(?<!`)(`+)(?!`)(.+?)(?<!`)\\1(?!`)"),
         (.link, "(?<!!)\\[()([^\\]]+)\\]\\([^)\\s]*\\)"),
@@ -52,6 +53,8 @@ enum SpikeTokenizer {
         var spans: [SyntaxSpan] = []
         if let match = heading.firstMatch(in: source, range: whole) {
             spans.append(span(.heading(level: match.range(at: 1).length), match))
+        } else if let match = quote.firstMatch(in: source, range: whole) {
+            spans.append(span(.quote, match))
         }
         for (kind, expression) in inline {
             for match in expression.matches(in: source, range: whole) {

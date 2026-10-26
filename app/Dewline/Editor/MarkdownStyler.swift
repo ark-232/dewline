@@ -23,30 +23,34 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
         !unstyled.isEmpty
     }
 
-    static let bodyFont = serif(size: 17, traits: [])
+    static var bodyFont: NSFont {
+        ThemeStore.shared.bodyFont
+    }
+
     static let hiddenFont = NSFont.systemFont(ofSize: 0.01)
     /// The attributes styling owns; restyling leaves every other attribute in the storage as it is.
-    private static let keys = [NSAttributedString.Key.font, .foregroundColor, .paragraphStyle, .underlineStyle, .strikethroughStyle, .dewlineHidden, .dewlineMarkerFont, .dewlineBlock]
-        .map { $0.rawValue as NSString }
+    private static let keys = [
+        NSAttributedString.Key.font, .foregroundColor, .backgroundColor, .paragraphStyle, .underlineStyle, .strikethroughStyle, .kern,
+        .dewlineHidden, .dewlineMarkerFont, .dewlineBlock, .dewlineQuote,
+    ].map { $0.rawValue as NSString }
     /// Fonts with added traits by font and traits, since matching a font descriptor costs more than styling a run.
     private static var traited: [NSFont: [UInt32: NSFont]] = [:]
     /// The most text one pass styles while more waits: several screens, a few milliseconds of work.
     private static let chunk = 1 << 14
-    private static let base: [NSAttributedString.Key: Any] = [
-        .font: bodyFont,
-        .foregroundColor: NSColor.labelColor,
-        .paragraphStyle: lines(24.5),
-        .underlineStyle: 0,
-        .strikethroughStyle: 0,
-    ]
+    private static var base: [NSAttributedString.Key: Any] {
+        [
+            .font: bodyFont,
+            .foregroundColor: ThemeStore.shared.color(.ink),
+            .paragraphStyle: lines(ThemeStore.shared.bodyLineHeight),
+            .underlineStyle: 0,
+            .strikethroughStyle: 0,
+        ]
+    }
 
-    /// The Code font slot (the face `DewlineCodeFont` names, else the bundled JetBrains Mono) at `font`'s x-height.
+    /// The Code font slot at `font`'s x-height.
     static func code(matching font: NSFont) -> NSFont {
-        func face(_ size: CGFloat) -> NSFont {
-            NSFont(name: UserDefaults.standard.string(forKey: "DewlineCodeFont") ?? "JetBrainsMono-Regular", size: size)
-                ?? .monospacedSystemFont(ofSize: size, weight: .regular)
-        }
-        return face(font.pointSize * font.xHeight / face(font.pointSize).xHeight)
+        let store = ThemeStore.shared
+        return store.codeFont(size: font.pointSize * font.xHeight / store.codeFont(size: font.pointSize).xHeight)
     }
 
     var baseAttributes: [NSAttributedString.Key: Any] {
@@ -118,6 +122,12 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
 
     func restyleDocument() {
         restyle(NSRange(location: 0, length: textView!.textStorage!.length))
+    }
+
+    /// Restyles the document in the theme's new colors and faces.
+    func themeDidChange() {
+        Self.traited = [:]
+        restyleDocument()
     }
 
     /// Restyles `range`, or after the composition while an input method composes.
@@ -212,6 +222,7 @@ extension MarkdownStyler {
         let text = styled.mutableString
         let whole = NSRange(location: 0, length: styled.length)
         let source = showsSource
+        let store = ThemeStore.shared
         styled.addAttributes(baseAttributes, range: whole)
         revealed = revealed.filter { !NSLocationInRange($0.range.location, paragraphs) }
         let selection = selection.map { NSRange(location: $0.location - paragraphs.location, length: $0.length) }
@@ -222,9 +233,21 @@ extension MarkdownStyler {
                 switch span.kind {
                 case .heading where source:
                     Self.add(.bold, in: paragraph, of: styled)
+                    styled.addAttribute(.foregroundColor, value: store.color(.heading), range: paragraph)
                 case .heading(let level):
-                    let font = Self.serif(size: [28, 23, 20, 19, 18, 17.5][level - 1], traits: .bold)
-                    styled.addAttributes([.font: font, .paragraphStyle: Self.lines(font.pointSize / 17 * 24.5)], range: paragraph)
+                    let heading = store.heading(level)
+                    styled.addAttributes([
+                        .font: heading.font, .paragraphStyle: Self.lines(heading.lineHeight), .foregroundColor: store.color(level < 5 ? .heading : .ink2),
+                    ], range: paragraph)
+                    if heading.kern != 0 { styled.addAttribute(.kern, value: heading.kern, range: paragraph) }
+                case .quote where source:
+                    break
+                case .quote:
+                    let style = Self.lines(store.bodyLineHeight).mutableCopy() as! NSMutableParagraphStyle
+                    style.firstLineHeadIndent = (18 * store.bodySize / 17).rounded()
+                    style.headIndent = style.firstLineHeadIndent
+                    styled.addAttributes([.paragraphStyle: style, .foregroundColor: store.color(.heading), .dewlineQuote: true], range: paragraph)
+                    Self.add(.italic, in: span.content, of: styled)
                 case .strong:
                     Self.add(.bold, in: span.content, of: styled)
                 case .emphasis:
@@ -232,13 +255,14 @@ extension MarkdownStyler {
                 case .strikethrough:
                     styled.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: span.content)
                 case .link:
-                    styled.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: span.content)
+                    styled.addAttributes([.underlineStyle: NSUnderlineStyle.single.rawValue, .foregroundColor: store.color(.link)], range: span.content)
                 case .inlineCode where source:
                     break
                 case .inlineCode:
                     styled.enumerateAttribute(.font, in: span.content) { value, run, _ in
                         styled.addAttribute(.font, value: Self.code(matching: value as! NSFont), range: run)
                     }
+                    styled.addAttribute(.backgroundColor, value: store.color(.codeBackground), range: span.range)
                 }
             }
             for span in spans {
@@ -284,7 +308,7 @@ extension MarkdownStyler {
         for marker in span.markers {
             if revealed {
                 let font = storage.attribute(.dewlineMarkerFont, at: marker.location, effectiveRange: nil)!
-                storage.addAttributes([.font: font, .foregroundColor: showsSource ? NSColor.secondaryLabelColor : .tertiaryLabelColor], range: marker)
+                storage.addAttributes([.font: font, .foregroundColor: ThemeStore.shared.color(showsSource ? .ink2 : .syntax)], range: marker)
                 storage.removeAttribute(.dewlineHidden, range: marker)
             } else if textView!.textLayoutManager == nil {
                 storage.addAttributes([.dewlineHidden: true, .foregroundColor: NSColor.clear], range: marker)
@@ -336,11 +360,6 @@ extension MarkdownStyler {
             traited[font, default: [:]][traits.rawValue] = derived
             storage.addAttribute(.font, value: derived, range: run)
         }
-    }
-
-    private static func serif(size: CGFloat, traits: NSFontDescriptor.SymbolicTraits) -> NSFont {
-        let descriptor = NSFont.systemFont(ofSize: size).fontDescriptor.withDesign(.serif)!.withSymbolicTraits(traits)
-        return NSFont(descriptor: descriptor, size: size)!
     }
 
     private static func lines(_ height: CGFloat) -> NSParagraphStyle {

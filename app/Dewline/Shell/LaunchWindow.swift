@@ -80,7 +80,7 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
         left.material = .sidebar
         left.blendingMode = .behindWindow
         left.state = .active
-        let right = FillView(.textBackgroundColor)
+        let right = PaperView()
 
         let icon = NSImageView(image: Self.icon)
         let wordmark = NSTextField(labelWithAttributedString: NSAttributedString(string: "dewline", attributes: Self.wordmark))

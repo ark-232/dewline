@@ -79,9 +79,12 @@ struct CaretSpikeTests {
         let stock = Stock(variant)
         defer { stock.close() }
         stock.view.insertionPointColor = CaretTextView.accent
-        for (appearance, expected) in [(NSAppearance.Name.aqua, [0.1764, 0.33, 0.8269]), (.darkAqua, [0.5182, 0.6583, 0.9922])] {
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
             stock.window.appearance = NSAppearance(named: appearance)
             stock.settle()
+            var accent: CGColor?
+            NSAppearance(named: appearance)!.performAsCurrentDrawingAppearance { accent = CaretTextView.accent.cgColor }
+            let expected = try srgb(accent)
             let rgb = try srgb(try #require(stock.bar).backgroundColor)
             #expect(zip(rgb, expected).allSatisfy { abs($0 - $1) < 0.002 }, "\(appearance.rawValue): \(rgb)")
         }
