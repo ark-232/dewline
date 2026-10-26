@@ -1,4 +1,3 @@
-use std::ffi::OsString;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Seek, SeekFrom, Write};
 use std::os::fd::AsRawFd;
@@ -32,8 +31,9 @@ impl From<io::Error> for SaveError {
 /// links survive. Any other file is replaced by a sibling that carries its
 /// mode, flags, ACL and extended attributes.
 pub fn save(path: &Path, base: &Hash, bytes: &[u8]) -> Result<Hash, SaveError> {
-    let mut file = unchanged(path, base)?;
+    // Hashed first, so the check stays next to the write.
     let new = hash(bytes);
+    let mut file = unchanged(path, base)?;
     if new == *base {
         return Ok(new);
     }
@@ -75,10 +75,8 @@ fn replace(path: &Path, original: &File, base: &Hash, bytes: &[u8]) -> Result<()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_nanos();
-    let mut name = OsString::from(".");
-    name.push(path.file_name().expect("an opened file has a name"));
-    name.push(format!(".{}.{stamp:x}.tmp", std::process::id()));
-    let temp = path.with_file_name(name);
+    // Not derived from the file's name, which may already be at the 255-byte limit.
+    let temp = path.with_file_name(format!(".dewline.{}.{stamp:x}.tmp", std::process::id()));
     let result = (|| {
         let mut file = OpenOptions::new()
             .write(true)
@@ -115,7 +113,7 @@ fn replace(path: &Path, original: &File, base: &Hash, bytes: &[u8]) -> Result<()
 mod tests {
     use super::*;
     use proptest::prelude::*;
-    use std::ffi::CString;
+    use std::ffi::{CString, OsString};
     use std::os::unix::ffi::OsStrExt;
     use std::os::unix::fs::{PermissionsExt, symlink};
     use std::path::PathBuf;
@@ -269,6 +267,15 @@ mod tests {
         assert!(after.modified().unwrap() > UNIX_EPOCH + OLD);
         assert_eq!(fs::read(&path).unwrap(), b"# My notes\n");
         assert_eq!(names(dir.path()), ["launch-plan.md"]);
+    }
+
+    #[test]
+    fn a_name_at_the_length_limit_saves() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(format!("{}.md", "n".repeat(252)));
+        fs::write(&path, b"# Notes\n").unwrap();
+        save(&path, &hash(b"# Notes\n"), b"# My notes\n").unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"# My notes\n");
     }
 
     #[test]
