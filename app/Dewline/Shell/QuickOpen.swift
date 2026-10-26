@@ -112,7 +112,7 @@ struct FuzzyText: Sendable {
     }
 }
 
-/// A Markdown file Quick Open can offer: matched by its path under the open folder, or from the home folder outside it.
+/// A Markdown file Quick Open can offer, matched by its path under the open folder, or by its full path outside it.
 struct QuickOpenFile: Sendable {
     let url: URL
     let text: FuzzyText
@@ -125,7 +125,8 @@ struct QuickOpenFile: Sendable {
         self.boost = boost
     }
 
-    /// The file's path the way Quick Open shows it: under `folder` when it lies there, else from the home folder.
+    /// The file's path the way Quick Open shows it: under `folder` when it lies there, else in full with the home
+    /// folder as "~".
     init(_ url: URL, in folder: Folder?, boost: Int? = nil) {
         self.init(url, path: folder?.relativePath(of: url) ?? abbreviatedPath(url), boost: boost)
     }
@@ -156,19 +157,21 @@ enum QuickOpen {
         return merged + extra.filter { rank[$0.text.string] != nil }
     }
 
-    /// The files matching `query`: recents and pins whose names hold its letters first, then by match quality, then
-    /// shorter paths. With no query, only recents and pins, in that order. Nil when cancelled.
+    /// The files matching `query`: recents and pins first when their names hold its letters or it names a folder
+    /// with "/", then by match quality, then shorter paths. With no query, only recents and pins, in that order. Nil
+    /// when cancelled.
     static func rank(_ query: String, in files: [QuickOpenFile], limit: Int = 200) -> [QuickOpenResult]? {
         let letters = FuzzyText.query(query)
         guard !letters.isEmpty else {
             let boosted = files.compactMap { file in file.boost.map { ($0, file) } }.sorted { $0.0 < $1.0 }
             return boosted.prefix(limit).map { QuickOpenResult(file: $0.1, positions: []) }
         }
+        let slash = query.contains("/")
         var matches: [(index: Int, score: Int, boost: Int?)] = []
         for (index, file) in files.enumerated() {
             if index % 2048 == 0, Task.isCancelled { return nil }
             if let match = file.text.match(letters) {
-                matches.append((index, match.score, file.boost.flatMap { file.text.nameHolds(letters) ? $0 : nil }))
+                matches.append((index, match.score, file.boost.flatMap { slash || file.text.nameHolds(letters) ? $0 : nil }))
             }
         }
         matches.sort { a, b in

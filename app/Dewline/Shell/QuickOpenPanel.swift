@@ -24,13 +24,17 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
     private let icon = NSImageView()
     private let table = QuickOpenTable()
     private let empty = NSTextField(labelWithString: "")
+    private let background = PanelBackground()
+    private let rules = [PanelRule(), PanelRule()]
     private let footer = NSTextField(labelWithString: "")
     private var listHeight: NSLayoutConstraint?
 
-    /// The window files open in and commands run for.
+    /// The window in front, which files open in.
     private weak var target: NSWindow?
+    /// The key window when the panel opened, which commands run for and the keyboard returns to.
+    private weak var returnTo: NSWindow?
     private var folder: Folder?
-    private var index: FolderIndex?
+    private weak var index: FolderIndex?
     private var recents: [String: Date] = [:]
     /// Recent files, then pinned ones.
     private var boosted: [URL] = []
@@ -39,6 +43,9 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
     private var rows: [Row] = []
     private var search: Task<Void, Never>?
     private var merging: Task<Void, Never>?
+    /// Set when Return comes before the search for the last key finishes: open the first result then, in a new tab
+    /// when true.
+    private var pendingChoice: Bool?
     /// Counts fades, so one that ends after the panel shows again leaves it up.
     private var fade = 0
     private var fading = false
@@ -61,7 +68,7 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
     override var canBecomeKey: Bool { true }
 
     private func content() -> NSView {
-        let root = PanelBackground()
+        let root = background
         icon.symbolConfiguration = .init(pointSize: 17, weight: .regular)
         icon.setAccessibilityElement(false)
         field.isBordered = false
@@ -71,8 +78,7 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
         field.lineBreakMode = .byTruncatingHead
         field.cell?.isScrollable = true
         field.delegate = self
-        let rule = PanelRule()
-        let footerRule = PanelRule()
+        let (rule, footerRule) = (rules[0], rules[1])
         let column = NSTableColumn(identifier: .init("row"))
         column.resizingMask = .autoresizingMask
         table.addTableColumn(column)
@@ -139,8 +145,9 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
     /// focused.
     private func present(commands showsCommands: Bool) {
         // The menus validate against the window, not the panel.
-        if isKeyWindow { target?.makeKey() }
-        target = NSApp.orderedWindows.first { $0.windowController is MainWindowController } ?? NSApp.keyWindow
+        if isKeyWindow { returnTo?.makeKey() }
+        returnTo = NSApp.keyWindow
+        target = NSApp.orderedWindows.first { $0.windowController is MainWindowController } ?? returnTo
         let controller = target?.windowController as? MainWindowController
         folder = controller?.folder
         index = controller?.index
@@ -158,11 +165,18 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
             animator().alphaValue = 1
         }
         let theme = ThemeStore.shared
+        for view in [background] + rules {
+            view.needsDisplay = true
+        }
         field.textColor = theme.color(.ink)
+        field.placeholderAttributedString = NSAttributedString(string: "Open a file by name", attributes: [
+            .font: NSFont.systemFont(ofSize: 20), .foregroundColor: theme.color(.ink2),
+        ])
         footer.textColor = theme.color(.ink2)
         empty.textColor = theme.color(.ink2)
         icon.contentTintColor = theme.color(.ink2)
         field.stringValue = showsCommands ? ">" : ""
+        pendingChoice = nil
         merging?.cancel()
         files = QuickOpen.merge([], boosted: boosted, in: folder)
         if let indexed = index?.files { merge(indexed) }
@@ -178,6 +192,7 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
 
     /// Recents and pins merged into the folder's files off the main thread; searches wait for it.
     private func merge(_ indexed: [QuickOpenFile]) {
+        merging?.cancel()
         let folder = folder
         let boosted = boosted
         merging = Task { [weak self] in
@@ -204,10 +219,10 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
     /// Lists what the query finds: commands at once, files off the main thread, each key cancelling the last search.
     private func refresh() {
         search?.cancel()
+        search = nil
         let query = field.stringValue
         let showsCommands = query.hasPrefix(">")
         title = showsCommands ? "Command Palette" : "Quick Open"
-        field.placeholderString = showsCommands ? nil : "Open a file by name"
         field.setAccessibilityLabel(title)
         icon.image = NSImage(systemSymbolName: showsCommands ? "command" : "magnifyingglass", accessibilityDescription: nil)
         footer.stringValue = showsCommands
@@ -221,6 +236,7 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
             search = Task { [weak self, merging] in
                 await merging?.value
                 guard let files = self?.files, let results = await Self.ranked(query, in: files), !Task.isCancelled else { return }
+                self?.search = nil
                 self?.show(results.map(Row.file))
             }
         }
@@ -228,6 +244,7 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
 
     private func show(_ rows: [Row]) {
         self.rows = rows
+        table.deselectAll(nil)
         table.reloadData()
         let query = field.stringValue.hasPrefix(">") ? String(field.stringValue.dropFirst()) : field.stringValue
         let quoted = "\u{201C}\(query.trimmingCharacters(in: .whitespaces))\u{201D}"
@@ -241,12 +258,17 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
             empty.stringValue = "Type a name to find a file you opened or pinned."
         }
         empty.isHidden = !rows.isEmpty
-        if !rows.isEmpty {
+        if rows.isEmpty {
+            announce(empty.stringValue)
+        } else {
             table.selectRowIndexes([0], byExtendingSelection: false)
             table.scrollRowToVisible(0)
         }
         place()
-        announce()
+        if let newTab = pendingChoice {
+            pendingChoice = nil
+            choose(table.selectedRow, newTab: newTab)
+        }
     }
 
     /// Sizes the panel to its rows, up to nine, and puts its top 18% down the target window, centered across it.
@@ -271,7 +293,8 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
         fade += 1
         let generation = fade
         search?.cancel()
-        if isKeyWindow { target?.makeKeyAndOrderFront(nil) }
+        search = nil
+        if isKeyWindow { returnTo?.makeKeyAndOrderFront(nil) }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.12
             animator().alphaValue = 0
@@ -281,6 +304,9 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
                 self.fading = false
                 self.orderOut(nil)
                 self.alphaValue = 1
+                self.files = []
+                self.commands = []
+                self.show([])
             }
         }
     }
@@ -299,6 +325,7 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
         switch rows[row] {
         case .file(let result):
             if let controller {
+                controller.window?.makeKeyAndOrderFront(nil)
                 controller.open(result.file.url, newTab: newTab)
             } else {
                 NSDocumentController.shared.openDocument(withContentsOf: result.file.url, display: true) { _, _, error in
@@ -321,9 +348,18 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
         table.scrollRowToVisible(row)
     }
 
+    /// Opens or runs the selected row, or the first result of a search still running.
+    private func chooseSelected(newTab: Bool) {
+        if search != nil {
+            pendingChoice = newTab
+        } else {
+            choose(table.selectedRow, newTab: newTab)
+        }
+    }
+
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if [36, 76].contains(event.keyCode), event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command {
-            choose(table.selectedRow, newTab: true)
+        if [36, 76].contains(event.keyCode), event.modifierFlags.intersection([.command, .option, .control, .shift]) == .command {
+            chooseSelected(newTab: true)
             return true
         }
         return super.performKeyEquivalent(with: event)
@@ -339,7 +375,7 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
         case #selector(moveDown(_:)): move(1)
         case #selector(scrollPageUp(_:)), #selector(pageUp(_:)): move(-(Self.visibleRows - 1))
         case #selector(scrollPageDown(_:)), #selector(pageDown(_:)): move(Self.visibleRows - 1)
-        case #selector(insertNewline(_:)): choose(table.selectedRow, newTab: false)
+        case #selector(insertNewline(_:)): chooseSelected(newTab: false)
         case #selector(cancelOperation(_:)): dismiss()
         default: return false
         }
@@ -387,14 +423,14 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {
-        announce()
+        guard table.selectedRow >= 0, let label = table.view(atColumn: 0, row: table.selectedRow, makeIfNecessary: true)?.accessibilityLabel()
+        else { return }
+        announce(label)
     }
 
-    /// Tells VoiceOver which row Return would choose, since the keyboard stays in the field.
-    private func announce() {
-        guard isVisible, table.selectedRow >= 0,
-            let label = table.view(atColumn: 0, row: table.selectedRow, makeIfNecessary: true)?.accessibilityLabel()
-        else { return }
+    /// Tells VoiceOver which row Return would choose, or that nothing matches, since the keyboard stays in the field.
+    private func announce(_ label: String) {
+        guard isVisible else { return }
         NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
             .announcement: label,
             .priority: NSAccessibilityPriorityLevel.high.rawValue,
