@@ -7,7 +7,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
 
     let folder: Folder?
     private let sidebar: SidebarViewController
-    private let page = NSBackgroundExtensionView()
+    private let page = BackdropView()
     private(set) var textView: EditorTextView?
     private var outlineUpdate: Task<Void, Never>?
     private var sectionUpdate: Task<Void, Never>?
@@ -48,7 +48,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         window.toolbar = toolbar
         window.toolbarStyle = .unified
         window.delegate = self
-        page.automaticallyPlacesContentView = false
         sidebar.open = { [weak self] url, newTab in self?.open(url, newTab: newTab) }
         sidebar.jump = { [weak self] heading in self?.jump(to: heading) }
         Self.all.insert(self)
@@ -119,7 +118,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         NSLayoutConstraint.activate([
             content.leadingAnchor.constraint(equalTo: page.safeAreaLayoutGuide.leadingAnchor),
             content.trailingAnchor.constraint(equalTo: page.trailingAnchor),
-            content.topAnchor.constraint(equalTo: page.topAnchor),
+            content.topAnchor.constraint(equalTo: page.safeAreaLayoutGuide.topAnchor),
             content.bottomAnchor.constraint(equalTo: page.bottomAnchor),
         ])
     }

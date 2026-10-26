@@ -102,6 +102,16 @@ final class ThemeStore {
         return color
     }
 
+    /// The backdrop of the slot's theme for a light or dark appearance, under the system's accessibility settings.
+    func backdrop(dark: Bool) -> (tint: OKLCH, sky: [OKLCH]) {
+        let workspace = NSWorkspace.shared
+        return (dark ? darkTheme : lightTheme).backdrop(
+            dark: dark,
+            increasedContrast: workspace.accessibilityDisplayShouldIncreaseContrast,
+            reducedTransparency: workspace.accessibilityDisplayShouldReduceTransparency
+        )
+    }
+
     var bodyFont: NSFont {
         Faces.font(bodyFace, size: bodySize)
     }

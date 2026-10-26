@@ -260,6 +260,8 @@ func gitBranch(at folder: URL) -> String? {
 }
 
 /// `url`'s path with the home folder as "~".
-func abbreviatedPath(_ url: URL) -> String {
-    (url.path as NSString).abbreviatingWithTildeInPath
+func abbreviatedPath(_ url: URL, home: String = NSHomeDirectory()) -> String {
+    let path = url.standardizedFileURL.path
+    guard path == home || path.hasPrefix(home + "/") else { return path }
+    return "~" + path.dropFirst(home.count)
 }

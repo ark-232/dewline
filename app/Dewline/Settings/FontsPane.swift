@@ -9,12 +9,11 @@ struct FontsPane: View {
     var body: some View {
         Form {
             Section {
-                FontPreview(store: store, colors: scheme == .dark ? store.darkTheme.darkColors : store.lightTheme.lightColors)
-            }
-            Section {
                 FacePicker(title: "Body", selection: $store.bodyFace, system: Faces.system, installed: Self.families)
                 FacePicker(title: "Headings", selection: $store.headingFace, system: Faces.system, installed: Self.families)
                 FacePicker(title: "Code", selection: $store.codeFace, system: ["SF Mono"], installed: Self.monospaced)
+            } header: {
+                FontPreview(store: store, colors: scheme == .dark ? store.darkTheme.darkColors : store.lightTheme.lightColors)
             } footer: {
                 Text("Code is sized to the body font's x-height. Source mode (⌥⌘U) sets the whole page in the code font.")
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -44,7 +43,8 @@ private struct FacePicker: View {
     }
 }
 
-/// A heading, a paragraph and a code line set as the editor sets them, on the current theme's paper.
+/// A heading, a paragraph and a code line set as the editor sets them, on the current theme's paper. It heads the
+/// face pickers' section rather than sitting in a section of its own, so it is one card, not a card in a card.
 private struct FontPreview: View {
     let store: ThemeStore
     let colors: [Token: NSColor]
@@ -85,8 +85,10 @@ private struct FontPreview: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(color(.paper), in: .rect(cornerRadius: 6))
-        .padding(.vertical, 2)
+        .background(color(.paper), in: .rect(cornerRadius: 10))
+        // The header insets its content to the rows' text; the card keeps to the section's edges.
+        .padding(.horizontal, -10)
+        .padding(.bottom, 8)
         .accessibilityElement(children: .combine)
     }
 }

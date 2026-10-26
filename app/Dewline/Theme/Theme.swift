@@ -55,6 +55,19 @@ struct OKLCH: Hashable, Sendable {
     func lightened(by delta: Double) -> OKLCH {
         OKLCH(l: l + delta, c: c, h: h)
     }
+
+    /// The color `t` of the way to `other`, mixed in OKLab, so two distant hues meet through a grayer middle instead
+    /// of turning through the hues between them.
+    func mixed(with other: OKLCH, by t: Double) -> OKLCH {
+        func lab(_ color: OKLCH) -> (Double, Double) {
+            (color.c * cos(color.h * .pi / 180), color.c * sin(color.h * .pi / 180))
+        }
+        let (a0, b0) = lab(self)
+        let (a1, b1) = lab(other)
+        let (a, b) = (a0 + (a1 - a0) * t, b0 + (b1 - b0) * t)
+        let hue = atan2(b, a) * 180 / .pi
+        return OKLCH(l: l + (other.l - l) * t, c: (a * a + b * b).squareRoot(), h: hue < 0 ? hue + 360 : hue)
+    }
 }
 
 /// A theme's named colors (synthesis 2.1).
@@ -121,6 +134,18 @@ struct Theme: Identifiable, Hashable, Sendable {
         tokens[.sky1] = nil
         tokens[.sky2] = nil
         return tokens
+    }
+
+    /// What shows through the sidebar and toolbar glass (synthesis 2.4): the sidebar tint, and the sky from zenith to
+    /// horizon in eight steps mixed in OKLab. Themes without a sky, Increase Contrast and Reduce Transparency leave the
+    /// tint flat.
+    func backdrop(dark: Bool, increasedContrast: Bool = false, reducedTransparency: Bool = false) -> (tint: OKLCH, sky: [OKLCH]) {
+        let tokens = dark ? self.dark : light
+        let tint = tokens[.sidebarTint]!
+        guard let zenith = tokens[.sky1], let horizon = tokens[.sky2], !increasedContrast, !reducedTransparency else {
+            return (tint, [])
+        }
+        return (tint, (0...7).map { zenith.mixed(with: horizon, by: Double($0) / 7) })
     }
 
     static func == (lhs: Theme, rhs: Theme) -> Bool {
