@@ -9,6 +9,11 @@ pub const MAX_ID: usize = 128;
 /// A pair of claims explains only a change seen from this long before its
 /// PreToolUse arrived to this long after its PostToolUse did.
 pub const LINK_GRACE: Duration = Duration::from_secs(5);
+/// Landings on a file wait at most this long for an open call's
+/// PostToolUse.
+pub const OPEN_CALL_WAIT: Duration = Duration::from_secs(10);
+/// A session's holds lapse this long after its last hook event.
+pub const HOLD_LAPSE: Duration = Duration::from_secs(30 * 60);
 /// PATH_MAX: no realpath is longer.
 const MAX_PATH: usize = 1024;
 /// The ledger forgets its oldest tool uses, and its oldest holds, past this
@@ -30,33 +35,72 @@ impl Id {
     }
 }
 
-/// The Claude Code tools a claim may name. Bash and every other tool are
-/// refused: a hook around a command can't say which bytes it wrote.
+/// The agent whose hooks sent a claim.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum Vendor {
+    Claude,
+    Codex,
+}
+
+/// A vendor's session.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+struct Writer {
+    vendor: Vendor,
+    session: Id,
+}
+
+/// The tools a claim may name: Claude Code's file tools, and Codex's
+/// `apply_patch` with one claim per file the patch names. Bash and every
+/// other tool are refused: a hook around a command can't say which bytes it
+/// wrote.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Tool {
     Read,
     Edit,
     MultiEdit,
     Write,
+    ApplyPatch,
 }
 
 impl Tool {
-    fn parse(name: &str) -> Option<Tool> {
-        match name {
-            "Read" => Some(Tool::Read),
-            "Edit" => Some(Tool::Edit),
-            "MultiEdit" => Some(Tool::MultiEdit),
-            "Write" => Some(Tool::Write),
+    fn parse(vendor: Vendor, name: &str) -> Option<Tool> {
+        match (vendor, name) {
+            (Vendor::Claude, "Read") => Some(Tool::Read),
+            (Vendor::Claude, "Edit") => Some(Tool::Edit),
+            (Vendor::Claude, "MultiEdit") => Some(Tool::MultiEdit),
+            (Vendor::Claude, "Write") => Some(Tool::Write),
+            (Vendor::Codex, "apply_patch") => Some(Tool::ApplyPatch),
             _ => None,
         }
     }
 }
 
-/// One hook's report, from one `notify` line. It carries hashes, never
-/// content, and only labels: nothing in this module writes a file.
+/// The fields of one `notify` line as `dewline notify` sent them, all
+/// untrusted.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Fields<'a> {
+    pub event: &'a str,
+    /// `claude` or `codex`.
+    pub vendor: &'a str,
+    pub session: &'a str,
+    pub tool_use_id: Option<&'a str>,
+    pub tool: Option<&'a str>,
+    /// The file's realpath.
+    pub path: Option<&'a str>,
+    /// BLAKE3 hex of the file's bytes, before the tool at PreToolUse and
+    /// after it at PostToolUse; absent when there was no file.
+    pub hash: Option<&'a str>,
+    /// PreToolUse only: BLAKE3 hex of the bytes the tool's declared change
+    /// makes of the bytes read then (Write's content, Edit's strings, Codex's
+    /// patch).
+    pub declared: Option<&'a str>,
+}
+
+/// One hook's report. It carries hashes, never content, and only labels:
+/// nothing in this module writes a file.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Claim {
-    session: Id,
+    writer: Writer,
     event: Event,
 }
 
@@ -86,12 +130,13 @@ struct Half {
     tool: Tool,
     path: PathBuf,
     hash: Option<Hash>,
+    declared: Option<Hash>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Refused {
-    /// The named field is missing, too long, unprintable, or names an event
-    /// or tool the ledger doesn't take.
+    /// The named field is missing, too long, unprintable, or names a vendor,
+    /// event or tool the ledger doesn't take.
     Invalid(&'static str),
     /// The `tool_use_id` already has this half or both, or was spent or
     /// closed. A replay that differs from the first closes the id.
@@ -102,40 +147,40 @@ pub enum Refused {
 }
 
 impl Claim {
-    /// Reads the fields of one `notify` line, all untrusted. `path` is the
-    /// file's realpath; `hash` is the BLAKE3 hex of its bytes (for Write's
-    /// PostToolUse, of the content it wrote), absent when there was no file.
-    pub fn parse(
-        event: &str,
-        session: &str,
-        tool_use_id: Option<&str>,
-        tool: Option<&str>,
-        path: Option<&str>,
-        hash: Option<&str>,
-    ) -> Result<Claim, Refused> {
-        let session = Id::new(session).ok_or(Refused::Invalid("session id"))?;
-        let path = || match path {
+    pub fn parse(fields: Fields) -> Result<Claim, Refused> {
+        let vendor = match fields.vendor {
+            "claude" => Vendor::Claude,
+            "codex" => Vendor::Codex,
+            _ => return Err(Refused::Invalid("vendor")),
+        };
+        let session = Id::new(fields.session).ok_or(Refused::Invalid("session id"))?;
+        let hash = |hex: Option<&str>, field| {
+            hex.map(|hex| Hash::from_hex(hex).map_err(|_| Refused::Invalid(field)))
+                .transpose()
+        };
+        let path = || match fields.path {
             Some(path) if path.starts_with('/') && path.len() <= MAX_PATH => {
                 Ok(PathBuf::from(path))
             }
             _ => Err(Refused::Invalid("path")),
         };
         let tool_use = || {
+            let tool = fields.tool.and_then(|name| Tool::parse(vendor, name));
             Ok(ToolUse {
-                id: tool_use_id
+                id: fields
+                    .tool_use_id
                     .and_then(Id::new)
                     .ok_or(Refused::Invalid("tool_use_id"))?,
                 half: Half {
                     session: session.clone(),
-                    tool: tool.and_then(Tool::parse).ok_or(Refused::Invalid("tool"))?,
+                    tool: tool.ok_or(Refused::Invalid("tool"))?,
                     path: path()?,
-                    hash: hash
-                        .map(|hex| Hash::from_hex(hex).map_err(|_| Refused::Invalid("hash")))
-                        .transpose()?,
+                    hash: hash(fields.hash, "hash")?,
+                    declared: hash(fields.declared, "declared")?,
                 },
             })
         };
-        let event = match event {
+        let event = match fields.event {
             "PreToolUse" => Event::PreToolUse(tool_use()?),
             "PostToolUse" => Event::PostToolUse(tool_use()?),
             "InstructionsLoaded" => Event::InstructionsLoaded(path()?),
@@ -143,7 +188,10 @@ impl Claim {
             "SessionEnd" => Event::SessionEnd,
             _ => return Err(Refused::Invalid("event")),
         };
-        Ok(Claim { session, event })
+        Ok(Claim {
+            writer: Writer { vendor, session },
+            event,
+        })
     }
 }
 
@@ -151,6 +199,7 @@ impl Claim {
 /// its disk bytes: every pair on any run between the two.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Chain {
+    pub vendor: Vendor,
     pub session: Id,
     uses: Vec<Id>,
 }
@@ -177,6 +226,7 @@ struct Link {
     path: PathBuf,
     from: Option<Hash>,
     to: Option<Hash>,
+    declared: Option<Hash>,
     pre_at: Instant,
     post_at: Instant,
 }
@@ -189,54 +239,78 @@ enum Until {
 
 struct Hold {
     path: PathBuf,
-    session: Id,
+    writer: Writer,
     until: Until,
 }
 
-/// What the hooks have claimed: tool uses by `tool_use_id`, paired in any
-/// arrival order, and the autosave holds they put on files. The engine
-/// consults it; it changes no bytes.
+/// What the hooks have claimed: tool uses by vendor and `tool_use_id`,
+/// paired in any arrival order, and the autosave holds they put on files.
+/// The engine consults it; it changes no bytes.
 #[derive(Default)]
 pub struct Claims {
-    uses: HashMap<Id, Use>,
+    uses: HashMap<(Vendor, Id), Use>,
     holds: Vec<Hold>,
+    /// When each session that holds a file last sent a hook event.
+    heard: HashMap<Writer, Instant>,
 }
 
 impl Claims {
-    /// Records `claim`, which arrived at `now`. PreToolUse holds the file's
-    /// autosave until the session's turn ends, InstructionsLoaded until the
-    /// session ends.
+    /// Records `claim`, which arrived at `now`. Claude's PreToolUse holds the
+    /// file's autosave until the session's turn ends, InstructionsLoaded
+    /// until the session ends, and either lapses `HOLD_LAPSE` after the
+    /// session's last hook event.
     pub fn record(&mut self, claim: Claim, now: Instant) -> Result<(), Refused> {
-        let session = claim.session;
-        match claim.event {
+        let Claim { writer, event } = claim;
+        let result = match event {
             Event::PreToolUse(tool_use) => {
-                self.hold(&tool_use.half.path, &session, Until::TurnEnd);
-                self.half(tool_use, true, now)
+                if tool_use.half.tool != Tool::ApplyPatch {
+                    self.hold(&tool_use.half.path, &writer, Until::TurnEnd);
+                }
+                self.half(writer.vendor, tool_use, true, now)
             }
-            Event::PostToolUse(tool_use) => self.half(tool_use, false, now),
+            Event::PostToolUse(tool_use) => self.half(writer.vendor, tool_use, false, now),
             Event::InstructionsLoaded(path) => {
-                self.hold(&path, &session, Until::SessionEnd);
+                self.hold(&path, &writer, Until::SessionEnd);
                 Ok(())
             }
             Event::TurnEnd => {
                 self.holds
-                    .retain(|hold| hold.session != session || hold.until != Until::TurnEnd);
+                    .retain(|hold| hold.writer != writer || hold.until != Until::TurnEnd);
                 Ok(())
             }
             Event::SessionEnd => {
-                self.holds.retain(|hold| hold.session != session);
+                self.holds.retain(|hold| hold.writer != writer);
                 Ok(())
             }
+        };
+        if self.holds.iter().any(|hold| hold.writer == writer) {
+            self.heard.insert(writer, now);
         }
+        let heard = &self.heard;
+        self.holds.retain(|hold| {
+            heard
+                .get(&hold.writer)
+                .is_some_and(|at| now.saturating_duration_since(*at) <= HOLD_LAPSE)
+        });
+        let holding: HashSet<&Writer> = self.holds.iter().map(|hold| &hold.writer).collect();
+        self.heard.retain(|writer, _| holding.contains(writer));
+        result
     }
 
-    fn half(&mut self, tool_use: ToolUse, pre: bool, now: Instant) -> Result<(), Refused> {
+    fn half(
+        &mut self,
+        vendor: Vendor,
+        tool_use: ToolUse,
+        pre: bool,
+        now: Instant,
+    ) -> Result<(), Refused> {
         let ToolUse { id, half } = tool_use;
         // A Read only holds: it never links, so it needs no pair.
         if half.tool == Tool::Read {
             return Ok(());
         }
-        let (entry, result) = match self.uses.remove(&id) {
+        let key = (vendor, id);
+        let (entry, result) = match self.uses.remove(&key) {
             None => (Use::Half { pre, half, at: now }, Ok(())),
             Some(Use::Half {
                 pre: first_pre,
@@ -272,6 +346,7 @@ impl Claims {
                         path: before.path,
                         from: before.hash,
                         to: after.hash,
+                        declared: before.declared,
                         pre_at,
                         post_at,
                     };
@@ -282,28 +357,28 @@ impl Claims {
             }
             Some(entry) => (entry, Err(Refused::Replayed)),
         };
-        self.uses.insert(id, entry);
+        self.uses.insert(key, entry);
         if self.uses.len() > CAPACITY
             && let Some(oldest) = self
                 .uses
                 .iter()
                 .min_by_key(|(_, entry)| entry.at())
-                .map(|(id, _)| id.clone())
+                .map(|(key, _)| key.clone())
         {
             self.uses.remove(&oldest);
         }
         result
     }
 
-    fn hold(&mut self, path: &Path, session: &Id, until: Until) {
+    fn hold(&mut self, path: &Path, writer: &Writer, until: Until) {
         let held = self
             .holds
             .iter()
-            .any(|hold| hold.path == path && hold.session == *session && hold.until == until);
+            .any(|hold| hold.path == path && hold.writer == *writer && hold.until == until);
         if !held {
             self.holds.push(Hold {
                 path: path.to_path_buf(),
-                session: session.clone(),
+                writer: writer.clone(),
                 until,
             });
             if self.holds.len() > CAPACITY {
@@ -312,37 +387,62 @@ impl Claims {
         }
     }
 
-    /// Whether a hook's claim holds the autosave of the file at `path`.
-    pub fn held(&self, path: &Path) -> bool {
-        self.holds.iter().any(|hold| hold.path == path)
+    /// Whether a hook's claim holds the autosave of the file at `path` at
+    /// `now`.
+    pub fn held(&self, path: &Path, now: Instant) -> bool {
+        self.holds.iter().any(|hold| {
+            hold.path == path
+                && self
+                    .heard
+                    .get(&hold.writer)
+                    .is_some_and(|at| now.saturating_duration_since(*at) <= HOLD_LAPSE)
+        })
     }
 
-    /// The chain of one session's Edit, MultiEdit and Write pairs on `path`
-    /// that takes it from `from` to `to`, for a change seen at `seen`. Only
-    /// pairs no change has spent count, and only within `LINK_GRACE` of the
-    /// change. None when no session's pairs link the two, or more than one's
-    /// do.
+    /// Whether a hooked call on `path` is open at `now`: its PreToolUse
+    /// arrived at most `OPEN_CALL_WAIT` before and its PostToolUse hasn't.
+    /// Landings on the file wait while it is, since Codex truncates the file
+    /// and then writes it.
+    pub fn open_call(&self, path: &Path, now: Instant) -> bool {
+        self.uses.values().any(|entry| {
+            matches!(entry, Use::Half { pre: true, half, at }
+                if half.path == path && now.saturating_duration_since(*at) <= OPEN_CALL_WAIT)
+        })
+    }
+
+    /// The chain of one session's pairs on `path` that takes it from `from`
+    /// to `to`, for a change seen at `seen`. A pair counts only when its
+    /// PreToolUse declared the bytes its PostToolUse found, so a second
+    /// writer inside the call breaks it; only when no change has spent it;
+    /// and only within `LINK_GRACE` of the change. None when no session's
+    /// pairs link the two, or more than one's do.
     pub fn chain(&self, path: &Path, from: &Hash, to: &Hash, seen: Instant) -> Option<Chain> {
         if from == to {
             return None;
         }
-        let mut sessions: BTreeMap<&Id, Vec<(&Id, &Link)>> = BTreeMap::new();
-        for (id, entry) in &self.uses {
+        let mut writers: BTreeMap<(Vendor, &Id), Vec<(&Id, &Link)>> = BTreeMap::new();
+        for ((vendor, id), entry) in &self.uses {
             if let Use::Pair { link, .. } = entry
+                && link.declared.is_some()
+                && link.declared == link.to
                 && link.path == path
                 && link.pre_at <= seen + LINK_GRACE
                 && seen <= link.post_at + LINK_GRACE
             {
-                sessions.entry(&link.session).or_default().push((id, link));
+                writers
+                    .entry((*vendor, &link.session))
+                    .or_default()
+                    .push((id, link));
             }
         }
         let mut found = None;
-        for (session, links) in sessions {
+        for ((vendor, session), links) in writers {
             if let Some(uses) = between(&links, Some(*from), Some(*to)) {
                 if found.is_some() {
                     return None;
                 }
                 found = Some(Chain {
+                    vendor,
                     session: session.clone(),
                     uses,
                 });
@@ -355,7 +455,7 @@ impl Claims {
     /// explain, so no later change can use them.
     pub fn spend(&mut self, chain: &Chain, now: Instant) {
         for id in &chain.uses {
-            if let Some(entry) = self.uses.get_mut(id) {
+            if let Some(entry) = self.uses.get_mut(&(chain.vendor, id.clone())) {
                 *entry = Use::Closed { at: now };
             }
         }
@@ -413,36 +513,86 @@ mod tests {
         blake3::hash(state.as_bytes())
     }
 
-    fn tool(
-        event: &str,
+    fn hex(state: &str) -> String {
+        h(state).to_hex().to_string()
+    }
+
+    /// A PreToolUse from `vendor`'s `session` on `path`, read at `before`,
+    /// declaring a change that makes `declared`.
+    fn pre_by(
+        vendor: &str,
         session: &str,
         id: &str,
         tool: &str,
         path: &str,
-        hash: Option<Hash>,
+        before: &str,
+        declared: &str,
     ) -> Claim {
-        let hex = hash.map(|hash| hash.to_hex().to_string());
-        Claim::parse(
-            event,
+        let (before, declared) = (hex(before), hex(declared));
+        Claim::parse(Fields {
+            event: "PreToolUse",
+            vendor,
             session,
-            Some(id),
-            Some(tool),
-            Some(path),
-            hex.as_deref(),
-        )
+            tool_use_id: Some(id),
+            tool: Some(tool),
+            path: Some(path),
+            hash: Some(&before),
+            declared: Some(&declared),
+        })
         .unwrap()
     }
 
-    fn pre(session: &str, id: &str, name: &str, path: &str, state: &str) -> Claim {
-        tool("PreToolUse", session, id, name, path, Some(h(state)))
+    fn post_by(
+        vendor: &str,
+        session: &str,
+        id: &str,
+        tool: &str,
+        path: &str,
+        after: &str,
+    ) -> Claim {
+        let after = hex(after);
+        Claim::parse(Fields {
+            event: "PostToolUse",
+            vendor,
+            session,
+            tool_use_id: Some(id),
+            tool: Some(tool),
+            path: Some(path),
+            hash: Some(&after),
+            declared: None,
+        })
+        .unwrap()
     }
 
-    fn post(session: &str, id: &str, name: &str, path: &str, state: &str) -> Claim {
-        tool("PostToolUse", session, id, name, path, Some(h(state)))
+    fn pre(session: &str, id: &str, tool: &str, path: &str, before: &str, declared: &str) -> Claim {
+        pre_by("claude", session, id, tool, path, before, declared)
+    }
+
+    fn post(session: &str, id: &str, tool: &str, path: &str, after: &str) -> Claim {
+        post_by("claude", session, id, tool, path, after)
     }
 
     fn bare(event: &str, session: &str) -> Claim {
-        Claim::parse(event, session, None, None, None, None).unwrap()
+        let vendor = "claude";
+        Claim::parse(Fields {
+            event,
+            vendor,
+            session,
+            ..Fields::default()
+        })
+        .unwrap()
+    }
+
+    fn loaded(session: &str, path: &str) -> Claim {
+        let (event, vendor, path) = ("InstructionsLoaded", "claude", Some(path));
+        Claim::parse(Fields {
+            event,
+            vendor,
+            session,
+            path,
+            ..Fields::default()
+        })
+        .unwrap()
     }
 
     fn ids(ids: &[&str]) -> Vec<Id> {
@@ -462,124 +612,186 @@ mod tests {
         ];
         for &(id, valid) in table {
             assert_eq!(Id::new(id).is_some(), valid, "{id:?}");
-            let session = Claim::parse("Stop", id, None, None, None, None);
-            assert_eq!(session.is_ok(), valid, "session {id:?}");
-            let tool_use = Claim::parse("PreToolUse", "s", Some(id), Some("Edit"), Some(P), None);
-            assert_eq!(tool_use.is_ok(), valid, "tool_use_id {id:?}");
+            let stop = Fields {
+                event: "Stop",
+                vendor: "claude",
+                session: id,
+                ..Fields::default()
+            };
+            assert_eq!(Claim::parse(stop).is_ok(), valid, "session {id:?}");
+            let edit = Fields {
+                event: "PreToolUse",
+                vendor: "claude",
+                session: "s",
+                tool_use_id: Some(id),
+                tool: Some("Edit"),
+                path: Some(P),
+                ..Fields::default()
+            };
+            assert_eq!(Claim::parse(edit).is_ok(), valid, "tool_use_id {id:?}");
         }
     }
 
     #[test]
     fn parse_refuses_what_the_ledger_does_not_take() {
-        let hex = h("a").to_hex().to_string();
+        let a = hex("a");
         let long_path = format!("/{}", "p".repeat(MAX_PATH));
+        let edit = Fields {
+            event: "PreToolUse",
+            vendor: "claude",
+            session: "s",
+            tool_use_id: Some("t"),
+            tool: Some("Edit"),
+            path: Some(P),
+            hash: Some(&a),
+            declared: Some(&a),
+        };
         let invalid = Refused::Invalid;
         #[rustfmt::skip]
-        let table: &[Fields] = &[
-            ("Notification", None, None, None, None, invalid("event")),
-            ("pretooluse", Some("t"), Some("Edit"), Some(P), Some(&hex), invalid("event")),
-            ("PreToolUse", Some("t"), Some("Bash"), Some(P), Some(&hex), invalid("tool")),
-            ("PostToolUse", Some("t"), Some("NotebookEdit"), Some(P), Some(&hex), invalid("tool")),
-            ("PreToolUse", Some("t"), None, Some(P), Some(&hex), invalid("tool")),
-            ("PreToolUse", None, Some("Edit"), Some(P), Some(&hex), invalid("tool_use_id")),
-            ("PreToolUse", Some("t"), Some("Edit"), None, Some(&hex), invalid("path")),
-            ("PreToolUse", Some("t"), Some("Edit"), Some("CLAUDE.md"), Some(&hex), invalid("path")),
-            ("PreToolUse", Some("t"), Some("Edit"), Some(&long_path), Some(&hex), invalid("path")),
-            ("PreToolUse", Some("t"), Some("Edit"), Some(P), Some(&hex[1..]), invalid("hash")),
-            ("PreToolUse", Some("t"), Some("Edit"), Some(P), Some("not hex"), invalid("hash")),
-            ("InstructionsLoaded", None, None, None, None, invalid("path")),
+        let table: Vec<(Fields, Refused)> = vec![
+            (Fields { event: "Notification", ..edit }, invalid("event")),
+            (Fields { event: "pretooluse", ..edit }, invalid("event")),
+            (Fields { vendor: "cursor", ..edit }, invalid("vendor")),
+            (Fields { vendor: "Claude", ..edit }, invalid("vendor")),
+            (Fields { vendor: "", ..edit }, invalid("vendor")),
+            (Fields { tool: Some("Bash"), ..edit }, invalid("tool")),
+            (Fields { vendor: "codex", tool: Some("Bash"), ..edit }, invalid("tool")),
+            (Fields { vendor: "codex", tool: Some("Edit"), ..edit }, invalid("tool")),
+            (Fields { tool: Some("apply_patch"), ..edit }, invalid("tool")),
+            (Fields { event: "PostToolUse", tool: Some("NotebookEdit"), ..edit }, invalid("tool")),
+            (Fields { tool: None, ..edit }, invalid("tool")),
+            (Fields { tool_use_id: None, ..edit }, invalid("tool_use_id")),
+            (Fields { path: None, ..edit }, invalid("path")),
+            (Fields { path: Some("CLAUDE.md"), ..edit }, invalid("path")),
+            (Fields { path: Some(&long_path), ..edit }, invalid("path")),
+            (Fields { hash: Some(&a[1..]), ..edit }, invalid("hash")),
+            (Fields { hash: Some("not hex"), ..edit }, invalid("hash")),
+            (Fields { declared: Some("not hex"), ..edit }, invalid("declared")),
+            (Fields { event: "InstructionsLoaded", path: None, ..edit }, invalid("path")),
         ];
-        for (event, id, tool, path, hash, refused) in table {
-            let claim = Claim::parse(event, "s", *id, *tool, *path, *hash);
-            assert_eq!(
-                claim.as_ref().err(),
-                Some(refused),
-                "{event} {tool:?} {path:?}"
-            );
+        for (fields, refused) in table {
+            assert_eq!(Claim::parse(fields).err(), Some(refused), "{fields:?}");
         }
+        let patch = Fields {
+            vendor: "codex",
+            tool: Some("apply_patch"),
+            ..edit
+        };
+        assert!(Claim::parse(patch).is_ok());
         for event in ["Stop", "StopFailure", "UserPromptSubmit", "SessionEnd"] {
-            assert!(
-                Claim::parse(event, "s", None, None, None, None).is_ok(),
-                "{event}"
-            );
+            let fields = Fields {
+                event,
+                vendor: "codex",
+                session: "s",
+                ..Fields::default()
+            };
+            assert!(Claim::parse(fields).is_ok(), "{event}");
         }
     }
 
-    /// An event, `tool_use_id`, tool, path and hash, and why they're refused.
-    type Fields<'a> = (
-        &'a str,
-        Option<&'a str>,
-        Option<&'a str>,
-        Option<&'a str>,
-        Option<&'a str>,
-        Refused,
-    );
     /// Claims with what recording each returns; a file, ancestor and disk
-    /// state; the session and tool uses that should link them.
+    /// state; the vendor, session and tool uses that should link them.
     type Case = (
         &'static str,
         Vec<(Claim, Result<(), Refused>)>,
         (&'static str, &'static str, &'static str),
-        Option<(&'static str, &'static [&'static str])>,
+        Option<(Vendor, &'static str, &'static [&'static str])>,
     );
 
     #[test]
     fn the_chain_table() {
         let t0 = Instant::now();
+        let undeclared = |id, before: &str| {
+            let before = hex(before);
+            Claim::parse(Fields {
+                event: "PreToolUse",
+                vendor: "claude",
+                session: "s1",
+                tool_use_id: Some(id),
+                tool: Some("Edit"),
+                path: Some(P),
+                hash: Some(&before),
+                declared: None,
+            })
+            .unwrap()
+        };
         #[rustfmt::skip]
         let table: Vec<Case> = vec![
-            ("one Edit links its ancestor to its disk bytes",
-                vec![(pre("s1", "t1", "Edit", P, "A"), Ok(())), (post("s1", "t1", "Edit", P, "B"), Ok(()))],
-                (P, "A", "B"), Some(("s1", &["t1"]))),
+            ("the agent's own exact write links its ancestor to its disk bytes",
+                vec![(pre("s1", "t1", "Edit", P, "A", "B"), Ok(())), (post("s1", "t1", "Edit", P, "B"), Ok(()))],
+                (P, "A", "B"), Some((Vendor::Claude, "s1", &["t1"]))),
             ("the Post may arrive first",
-                vec![(post("s1", "t1", "Write", P, "B"), Ok(())), (pre("s1", "t1", "Write", P, "A"), Ok(()))],
-                (P, "A", "B"), Some(("s1", &["t1"]))),
-            ("edits chain",
-                vec![(pre("s1", "t1", "Edit", P, "A"), Ok(())), (post("s1", "t1", "Edit", P, "B"), Ok(())),
-                     (pre("s1", "t2", "MultiEdit", P, "B"), Ok(())), (post("s1", "t2", "MultiEdit", P, "C"), Ok(()))],
-                (P, "A", "C"), Some(("s1", &["t1", "t2"]))),
-            ("a broken chain is Unknown",
-                vec![(pre("s1", "t1", "Edit", P, "A"), Ok(())), (post("s1", "t1", "Edit", P, "B"), Ok(())),
-                     (pre("s1", "t2", "Edit", P, "C"), Ok(())), (post("s1", "t2", "Edit", P, "D"), Ok(()))],
-                (P, "A", "D"), None),
-            ("a forged disk hash is Unknown",
-                vec![(pre("s1", "t1", "Edit", P, "A"), Ok(())), (post("s1", "t1", "Edit", P, "X"), Ok(()))],
+                vec![(post("s1", "t1", "Write", P, "B"), Ok(())), (pre("s1", "t1", "Write", P, "A", "B"), Ok(()))],
+                (P, "A", "B"), Some((Vendor::Claude, "s1", &["t1"]))),
+            ("a second writer inside the call is Unknown",
+                vec![(pre("s1", "t1", "Edit", P, "A", "B"), Ok(())), (post("s1", "t1", "Edit", P, "C"), Ok(()))],
+                (P, "A", "C"), None),
+            ("and the declared bytes alone name nothing",
+                vec![(pre("s1", "t1", "Edit", P, "A", "B"), Ok(())), (post("s1", "t1", "Edit", P, "C"), Ok(()))],
                 (P, "A", "B"), None),
+            ("a call that declares no change is Unknown",
+                vec![(undeclared("t1", "A"), Ok(())), (post("s1", "t1", "Edit", P, "B"), Ok(()))],
+                (P, "A", "B"), None),
+            ("edits chain",
+                vec![(pre("s1", "t1", "Edit", P, "A", "B"), Ok(())), (post("s1", "t1", "Edit", P, "B"), Ok(())),
+                     (pre("s1", "t2", "MultiEdit", P, "B", "C"), Ok(())), (post("s1", "t2", "MultiEdit", P, "C"), Ok(()))],
+                (P, "A", "C"), Some((Vendor::Claude, "s1", &["t1", "t2"]))),
+            ("a second writer inside one call breaks the chain",
+                vec![(pre("s1", "t1", "Edit", P, "A", "B"), Ok(())), (post("s1", "t1", "Edit", P, "B"), Ok(())),
+                     (pre("s1", "t2", "Edit", P, "B", "C"), Ok(())), (post("s1", "t2", "Edit", P, "D"), Ok(())),
+                     (pre("s1", "t3", "Edit", P, "D", "E"), Ok(())), (post("s1", "t3", "Edit", P, "E"), Ok(()))],
+                (P, "A", "E"), None),
+            ("Codex's patch links, named Codex",
+                vec![(pre_by("codex", "c1", "call_1", "apply_patch", P, "A", "B"), Ok(())),
+                     (post_by("codex", "c1", "call_1", "apply_patch", P, "B"), Ok(()))],
+                (P, "A", "B"), Some((Vendor::Codex, "c1", &["call_1"]))),
+            ("a Codex half can't finish a Claude call",
+                vec![(pre("s1", "t1", "Edit", P, "A", "B"), Ok(())), (post_by("codex", "s1", "t1", "apply_patch", P, "B"), Ok(()))],
+                (P, "A", "B"), None),
+            ("one session id from two vendors is two sessions",
+                vec![(pre("s1", "t1", "Edit", P, "A", "B"), Ok(())), (post("s1", "t1", "Edit", P, "B"), Ok(())),
+                     (pre_by("codex", "s1", "t2", "apply_patch", P, "B", "C"), Ok(())),
+                     (post_by("codex", "s1", "t2", "apply_patch", P, "C"), Ok(()))],
+                (P, "A", "C"), None),
+            ("a broken chain is Unknown",
+                vec![(pre("s1", "t1", "Edit", P, "A", "B"), Ok(())), (post("s1", "t1", "Edit", P, "B"), Ok(())),
+                     (pre("s1", "t2", "Edit", P, "C", "D"), Ok(())), (post("s1", "t2", "Edit", P, "D"), Ok(()))],
+                (P, "A", "D"), None),
             ("a forged ancestor is Unknown",
-                vec![(pre("s1", "t1", "Edit", P, "X"), Ok(())), (post("s1", "t1", "Edit", P, "B"), Ok(()))],
+                vec![(pre("s1", "t1", "Edit", P, "X", "B"), Ok(())), (post("s1", "t1", "Edit", P, "B"), Ok(()))],
                 (P, "A", "B"), None),
             ("a claim for another file is Unknown",
-                vec![(pre("s1", "t1", "Edit", Q, "A"), Ok(())), (post("s1", "t1", "Edit", Q, "B"), Ok(()))],
+                vec![(pre("s1", "t1", "Edit", Q, "A", "B"), Ok(())), (post("s1", "t1", "Edit", Q, "B"), Ok(()))],
                 (P, "A", "B"), None),
             ("halves on two files link neither",
-                vec![(pre("s1", "t1", "Edit", P, "A"), Ok(())), (post("s1", "t1", "Edit", Q, "B"), Err(Refused::Mismatched))],
+                vec![(pre("s1", "t1", "Edit", P, "A", "B"), Ok(())), (post("s1", "t1", "Edit", Q, "B"), Err(Refused::Mismatched))],
                 (P, "A", "B"), None),
             ("halves from two sessions link nothing",
-                vec![(pre("s1", "t1", "Edit", P, "A"), Ok(())), (post("s2", "t1", "Edit", P, "B"), Err(Refused::Mismatched))],
+                vec![(pre("s1", "t1", "Edit", P, "A", "B"), Ok(())), (post("s2", "t1", "Edit", P, "B"), Err(Refused::Mismatched))],
                 (P, "A", "B"), None),
             ("halves naming two tools link nothing",
-                vec![(pre("s1", "t1", "Edit", P, "A"), Ok(())), (post("s1", "t1", "Write", P, "B"), Err(Refused::Mismatched))],
+                vec![(pre("s1", "t1", "Edit", P, "A", "B"), Ok(())), (post("s1", "t1", "Write", P, "B"), Err(Refused::Mismatched))],
                 (P, "A", "B"), None),
             ("a Read's id can't finish a write",
-                vec![(pre("s1", "t1", "Read", P, "A"), Ok(())), (post("s1", "t1", "Write", P, "B"), Ok(()))],
+                vec![(pre("s1", "t1", "Read", P, "A", "B"), Ok(())), (post("s1", "t1", "Write", P, "B"), Ok(()))],
                 (P, "A", "B"), None),
             ("a Read never links, even when the file changed under it",
-                vec![(pre("s1", "t1", "Read", P, "A"), Ok(())), (post("s1", "t1", "Read", P, "B"), Ok(()))],
+                vec![(pre("s1", "t1", "Read", P, "A", "B"), Ok(())), (post("s1", "t1", "Read", P, "B"), Ok(()))],
                 (P, "A", "B"), None),
             ("a session can't finish another's chain",
-                vec![(pre("s1", "t1", "Edit", P, "A"), Ok(())), (post("s1", "t1", "Edit", P, "B"), Ok(())),
-                     (pre("s2", "t2", "Edit", P, "B"), Ok(())), (post("s2", "t2", "Edit", P, "C"), Ok(()))],
+                vec![(pre("s1", "t1", "Edit", P, "A", "B"), Ok(())), (post("s1", "t1", "Edit", P, "B"), Ok(())),
+                     (pre("s2", "t2", "Edit", P, "B", "C"), Ok(())), (post("s2", "t2", "Edit", P, "C"), Ok(()))],
                 (P, "A", "C"), None),
             ("two sessions claiming one change name neither",
-                vec![(pre("s1", "t1", "Edit", P, "A"), Ok(())), (post("s1", "t1", "Edit", P, "B"), Ok(())),
-                     (pre("s2", "t2", "Edit", P, "A"), Ok(())), (post("s2", "t2", "Edit", P, "B"), Ok(()))],
+                vec![(pre("s1", "t1", "Edit", P, "A", "B"), Ok(())), (post("s1", "t1", "Edit", P, "B"), Ok(())),
+                     (pre("s2", "t2", "Edit", P, "A", "B"), Ok(())), (post("s2", "t2", "Edit", P, "B"), Ok(()))],
                 (P, "A", "B"), None),
             ("no change is no claim",
-                vec![(pre("s1", "t1", "Edit", P, "A"), Ok(())), (post("s1", "t1", "Edit", P, "B"), Ok(())),
-                     (pre("s1", "t2", "Edit", P, "B"), Ok(())), (post("s1", "t2", "Edit", P, "A"), Ok(()))],
+                vec![(pre("s1", "t1", "Edit", P, "A", "B"), Ok(())), (post("s1", "t1", "Edit", P, "B"), Ok(())),
+                     (pre("s1", "t2", "Edit", P, "B", "A"), Ok(())), (post("s1", "t2", "Edit", P, "A"), Ok(()))],
                 (P, "A", "A"), None),
             ("a half alone links nothing",
-                vec![(pre("s1", "t1", "Edit", P, "A"), Ok(()))],
+                vec![(pre("s1", "t1", "Edit", P, "A", "B"), Ok(()))],
                 (P, "A", "B"), None),
         ];
         for (name, claims, (path, from, to), expected) in table {
@@ -588,7 +800,8 @@ mod tests {
                 assert_eq!(ledger.record(claim, t0), result, "{name}");
             }
             let chain = ledger.chain(Path::new(path), &h(from), &h(to), t0);
-            let expected = expected.map(|(session, uses)| Chain {
+            let expected = expected.map(|(vendor, session, uses)| Chain {
+                vendor,
                 session: Id::new(session).unwrap(),
                 uses: ids(uses),
             });
@@ -600,22 +813,20 @@ mod tests {
     fn replays_are_refused_and_link_nothing_new() {
         let t0 = Instant::now();
         let mut ledger = Claims::default();
-        ledger.record(pre("s1", "t1", "Edit", P, "A"), t0).unwrap();
-        assert_eq!(
-            ledger.record(pre("s1", "t1", "Edit", P, "A"), t0),
-            Err(Refused::Replayed)
-        );
+        ledger
+            .record(pre("s1", "t1", "Edit", P, "A", "B"), t0)
+            .unwrap();
+        let again = ledger.record(pre("s1", "t1", "Edit", P, "A", "B"), t0);
+        assert_eq!(again, Err(Refused::Replayed));
         ledger.record(post("s1", "t1", "Edit", P, "B"), t0).unwrap();
         for replay in [
-            pre("s1", "t1", "Edit", P, "A"),
+            pre("s1", "t1", "Edit", P, "A", "B"),
             post("s1", "t1", "Edit", P, "B"),
         ] {
             assert_eq!(ledger.record(replay, t0), Err(Refused::Replayed));
         }
-        assert_eq!(
-            ledger.record(post("s1", "t1", "Edit", P, "X"), t0),
-            Err(Refused::Replayed)
-        );
+        let other = ledger.record(post("s1", "t1", "Edit", P, "X"), t0);
+        assert_eq!(other, Err(Refused::Replayed));
         let chain = ledger.chain(Path::new(P), &h("A"), &h("B"), t0).unwrap();
         assert!(ledger.chain(Path::new(P), &h("A"), &h("X"), t0).is_none());
 
@@ -624,7 +835,7 @@ mod tests {
         ledger.spend(&chain, t0);
         assert!(ledger.chain(Path::new(P), &h("A"), &h("B"), t0).is_none());
         for replay in [
-            pre("s1", "t1", "Edit", P, "A"),
+            pre("s1", "t1", "Edit", P, "A", "B"),
             post("s1", "t1", "Edit", P, "B"),
         ] {
             assert_eq!(ledger.record(replay, t0), Err(Refused::Replayed));
@@ -633,15 +844,13 @@ mod tests {
 
         // A half replayed with other contents before its pair closes the id:
         // neither version is trusted.
-        ledger.record(pre("s1", "t2", "Edit", P, "B"), t0).unwrap();
-        assert_eq!(
-            ledger.record(pre("s1", "t2", "Edit", P, "Y"), t0),
-            Err(Refused::Replayed)
-        );
-        assert_eq!(
-            ledger.record(post("s1", "t2", "Edit", P, "C"), t0),
-            Err(Refused::Replayed)
-        );
+        ledger
+            .record(pre("s1", "t2", "Edit", P, "B", "C"), t0)
+            .unwrap();
+        let other = ledger.record(pre("s1", "t2", "Edit", P, "Y", "C"), t0);
+        assert_eq!(other, Err(Refused::Replayed));
+        let post = ledger.record(post("s1", "t2", "Edit", P, "C"), t0);
+        assert_eq!(post, Err(Refused::Replayed));
         assert!(ledger.chain(Path::new(P), &h("B"), &h("C"), t0).is_none());
         assert!(ledger.chain(Path::new(P), &h("Y"), &h("C"), t0).is_none());
     }
@@ -653,7 +862,7 @@ mod tests {
         let pre_at = t0 + Duration::from_secs(10);
         let post_at = t0 + Duration::from_secs(300);
         ledger
-            .record(pre("s1", "t1", "Edit", P, "A"), pre_at)
+            .record(pre("s1", "t1", "Edit", P, "A", "B"), pre_at)
             .unwrap();
         ledger
             .record(post("s1", "t1", "Edit", P, "B"), post_at)
@@ -674,28 +883,25 @@ mod tests {
         // session's.
         let t0 = Instant::now();
         let mut ledger = Claims::default();
-        let edits = [
-            ("t1", "A", "B"),
-            ("t2", "B", "A"),
-            ("t3", "A", "B"),
-            ("t4", "B", "X"),
-            ("t5", "X", "B"),
-        ];
+        #[rustfmt::skip]
+        let edits = [("t1", "A", "B"), ("t2", "B", "A"), ("t3", "A", "B"), ("t4", "B", "X"), ("t5", "X", "B")];
         for (id, before, after) in edits {
-            ledger.record(pre("s1", id, "Edit", P, before), t0).unwrap();
+            ledger
+                .record(pre("s1", id, "Edit", P, before, after), t0)
+                .unwrap();
             ledger.record(post("s1", id, "Edit", P, after), t0).unwrap();
         }
         let chain = ledger.chain(Path::new(P), &h("A"), &h("B"), t0).unwrap();
         assert_eq!(chain.uses, ids(&["t1", "t2", "t3", "t4", "t5"]));
         ledger.spend(&chain, t0);
         for (from, to) in [("A", "B"), ("B", "A"), ("B", "X"), ("X", "B")] {
-            assert!(
-                ledger.chain(Path::new(P), &h(from), &h(to), t0).is_none(),
-                "{from} {to}"
-            );
+            let chain = ledger.chain(Path::new(P), &h(from), &h(to), t0);
+            assert!(chain.is_none(), "{from} {to}");
         }
         // A later edit past B is not part of the change, and stays.
-        ledger.record(pre("s1", "t6", "Edit", P, "B"), t0).unwrap();
+        ledger
+            .record(pre("s1", "t6", "Edit", P, "B", "C"), t0)
+            .unwrap();
         ledger.record(post("s1", "t6", "Edit", P, "C"), t0).unwrap();
         let chain = ledger.chain(Path::new(P), &h("A"), &h("C"), t0);
         assert!(chain.is_none(), "t1 to t5 are spent");
@@ -704,37 +910,108 @@ mod tests {
     }
 
     #[test]
+    fn the_open_call_table() {
+        let t0 = Instant::now();
+        let secs = |n: u64| t0 + Duration::from_secs(n);
+        let ms = Duration::from_millis(1);
+        #[rustfmt::skip]
+        let table: Vec<(&str, Vec<Claim>, &str, Instant, bool)> = vec![
+            ("a Pre opens a call", vec![pre("s1", "t1", "Edit", P, "A", "B")], P, t0, true),
+            ("for 10 s", vec![pre("s1", "t1", "Write", P, "A", "B")], P, secs(10), true),
+            ("and no more", vec![pre("s1", "t1", "Edit", P, "A", "B")], P, secs(10) + ms, false),
+            ("a Codex patch opens one", vec![pre_by("codex", "c1", "call_1", "apply_patch", P, "A", "B")], P, t0, true),
+            ("on its file only", vec![pre("s1", "t1", "Edit", P, "A", "B")], Q, t0, false),
+            ("its Post closes it",
+                vec![pre("s1", "t1", "Edit", P, "A", "B"), post("s1", "t1", "Edit", P, "B")], P, t0, false),
+            ("a Post alone opens nothing", vec![post("s1", "t1", "Edit", P, "B")], P, t0, false),
+            ("a Read writes nothing", vec![pre("s1", "t1", "Read", P, "A", "A")], P, t0, false),
+            ("a closed id is no open call",
+                vec![pre("s1", "t1", "Edit", P, "A", "B"), pre("s1", "t1", "Edit", P, "X", "B")], P, t0, false),
+        ];
+        for (name, claims, path, now, open) in table {
+            let mut ledger = Claims::default();
+            for claim in claims {
+                let _ = ledger.record(claim, t0);
+            }
+            assert_eq!(ledger.open_call(Path::new(path), now), open, "{name}");
+        }
+    }
+
+    #[test]
     fn the_hold_table() {
         let t0 = Instant::now();
         #[rustfmt::skip]
         let table: Vec<(&str, Vec<Claim>, &str, bool)> = vec![
-            ("a Read holds its file", vec![pre("s1", "t1", "Read", P, "A")], P, true),
-            ("and only its file", vec![pre("s1", "t1", "Read", P, "A")], Q, false),
+            ("a Read holds its file", vec![pre("s1", "t1", "Read", P, "A", "A")], P, true),
+            ("and only its file", vec![pre("s1", "t1", "Read", P, "A", "A")], Q, false),
             ("a Post alone holds nothing", vec![post("s1", "t1", "Edit", P, "B")], P, false),
-            ("Stop releases it", vec![pre("s1", "t1", "Edit", P, "A"), bare("Stop", "s1")], P, false),
-            ("StopFailure releases it", vec![pre("s1", "t1", "Write", P, "A"), bare("StopFailure", "s1")], P, false),
+            ("a Codex patch holds nothing",
+                vec![pre_by("codex", "c1", "call_1", "apply_patch", P, "A", "B")], P, false),
+            ("Stop releases it", vec![pre("s1", "t1", "Edit", P, "A", "B"), bare("Stop", "s1")], P, false),
+            ("StopFailure releases it",
+                vec![pre("s1", "t1", "Write", P, "A", "B"), bare("StopFailure", "s1")], P, false),
             ("UserPromptSubmit, after an interrupt, releases it",
-                vec![pre("s1", "t1", "MultiEdit", P, "A"), bare("UserPromptSubmit", "s1")], P, false),
-            ("SessionEnd releases it", vec![pre("s1", "t1", "Edit", P, "A"), bare("SessionEnd", "s1")], P, false),
-            ("another session's Stop doesn't", vec![pre("s1", "t1", "Edit", P, "A"), bare("Stop", "s2")], P, true),
-            ("a hold from each session needs each Stop",
-                vec![pre("s1", "t1", "Edit", P, "A"), pre("s2", "t2", "Edit", P, "A"), bare("Stop", "s1")], P, true),
-            ("a refused Post doesn't release it",
-                vec![pre("s1", "t1", "Edit", P, "A"), post("s1", "t1", "Edit", Q, "B")], P, true),
-            ("InstructionsLoaded holds past Stop",
-                vec![Claim::parse("InstructionsLoaded", "s1", None, None, Some(P), None).unwrap(), bare("Stop", "s1")],
+                vec![pre("s1", "t1", "MultiEdit", P, "A", "B"), bare("UserPromptSubmit", "s1")], P, false),
+            ("SessionEnd releases it", vec![pre("s1", "t1", "Edit", P, "A", "B"), bare("SessionEnd", "s1")], P, false),
+            ("another session's Stop doesn't", vec![pre("s1", "t1", "Edit", P, "A", "B"), bare("Stop", "s2")], P, true),
+            ("nor another vendor's with the same session id",
+                vec![pre("s1", "t1", "Edit", P, "A", "B"),
+                     Claim::parse(Fields { event: "Stop", vendor: "codex", session: "s1", ..Fields::default() }).unwrap()],
                 P, true),
-            ("until SessionEnd",
-                vec![Claim::parse("InstructionsLoaded", "s1", None, None, Some(P), None).unwrap(), bare("SessionEnd", "s1")],
-                P, false),
+            ("a hold from each session needs each Stop",
+                vec![pre("s1", "t1", "Edit", P, "A", "B"), pre("s2", "t2", "Edit", P, "A", "B"), bare("Stop", "s1")],
+                P, true),
+            ("a refused Post doesn't release it",
+                vec![pre("s1", "t1", "Edit", P, "A", "B"), post("s1", "t1", "Edit", Q, "B")], P, true),
+            ("InstructionsLoaded holds past Stop", vec![loaded("s1", P), bare("Stop", "s1")], P, true),
+            ("until SessionEnd", vec![loaded("s1", P), bare("SessionEnd", "s1")], P, false),
         ];
         for (name, claims, path, held) in table {
             let mut ledger = Claims::default();
             for claim in claims {
                 let _ = ledger.record(claim, t0);
             }
-            assert_eq!(ledger.held(Path::new(path)), held, "{name}");
+            assert_eq!(ledger.held(Path::new(path), t0), held, "{name}");
         }
+    }
+
+    #[test]
+    fn holds_lapse_30_minutes_after_the_sessions_last_hook_event() {
+        let t0 = Instant::now();
+        let at = |minutes: u64| t0 + Duration::from_secs(minutes * 60);
+        let ms = Duration::from_millis(1);
+        let mut ledger = Claims::default();
+        ledger
+            .record(pre("s1", "t1", "Read", P, "A", "A"), t0)
+            .unwrap();
+        ledger.record(loaded("s1", Q), t0).unwrap();
+        assert!(ledger.held(Path::new(P), at(30)));
+        assert!(!ledger.held(Path::new(P), at(30) + ms));
+        assert!(
+            !ledger.held(Path::new(Q), at(30) + ms),
+            "InstructionsLoaded lapses too"
+        );
+
+        // Any hook event from the session keeps every hold of its alive;
+        // another session's events don't.
+        ledger.record(bare("Stop", "s2"), at(20)).unwrap();
+        assert!(!ledger.held(Path::new(P), at(30) + ms));
+        ledger
+            .record(post("s1", "t9", "Edit", Q, "B"), at(20))
+            .unwrap();
+        assert!(ledger.held(Path::new(P), at(50)));
+        assert!(ledger.held(Path::new(Q), at(50)));
+        assert!(!ledger.held(Path::new(P), at(50) + ms));
+
+        // A lapsed hold is gone for good: a later event revives nothing.
+        ledger
+            .record(bare("UserPromptSubmit", "s3"), at(51))
+            .unwrap();
+        ledger
+            .record(post("s1", "t10", "Edit", Q, "C"), at(52))
+            .unwrap();
+        assert!(!ledger.held(Path::new(P), at(52)));
+        assert!(ledger.holds.is_empty() && ledger.heard.is_empty());
     }
 
     #[test]
@@ -743,17 +1020,20 @@ mod tests {
         let mut ledger = Claims::default();
         for i in 0..CAPACITY + 50 {
             let at = t0 + Duration::from_millis(i as u64);
+            let (session, id) = (format!("s{i}"), format!("t{i}"));
             ledger
-                .record(pre(&format!("s{i}"), &format!("t{i}"), "Edit", P, "A"), at)
+                .record(pre(&session, &id, "Edit", P, "A", "B"), at)
                 .unwrap();
         }
         assert_eq!(ledger.uses.len(), CAPACITY);
         assert_eq!(ledger.holds.len(), CAPACITY);
-        assert!(!ledger.uses.contains_key(&Id::new("t0").unwrap()));
+        assert_eq!(ledger.heard.len(), CAPACITY);
+        let key = |id: &str| (Vendor::Claude, Id::new(id).unwrap());
+        assert!(!ledger.uses.contains_key(&key("t0")));
         assert!(
             ledger
                 .uses
-                .contains_key(&Id::new(&format!("t{}", CAPACITY + 49)).unwrap())
+                .contains_key(&key(&format!("t{}", CAPACITY + 49)))
         );
     }
 
@@ -761,12 +1041,12 @@ mod tests {
         #![proptest_config(ProptestConfig::with_cases(256))]
 
         /// One session's edits, shuffled among other sessions', another
-        /// file's, Reads, forged halves and replays, chain the same in any
-        /// arrival order.
+        /// file's, Reads, a second writer's calls, forged halves and
+        /// replays, chain the same in any arrival order.
         #[test]
         fn claims_chain_in_any_order(
             edits in 1..6usize,
-            order in Just((0..64usize).collect::<Vec<_>>()).prop_shuffle(),
+            order in Just((0..80usize).collect::<Vec<_>>()).prop_shuffle(),
             forged in "[a-f]{1,4}",
         ) {
             let state = |i: usize| format!("state {i}");
@@ -774,30 +1054,35 @@ mod tests {
             for i in 0..edits {
                 let id = format!("toolu_{i}");
                 let name = ["Edit", "Write", "MultiEdit"][i % 3];
-                claims.push(pre("s1", &id, name, P, &state(i)));
+                let (other, read, inside) = (format!("other_{i}"), format!("read_{i}"), format!("inside_{i}"));
+                claims.push(pre("s1", &id, name, P, &state(i), &state(i + 1)));
                 claims.push(post("s1", &id, name, P, &state(i + 1)));
-                claims.push(pre("s2", &format!("other_{i}"), "Edit", Q, &state(i)));
-                claims.push(post("s2", &format!("other_{i}"), "Edit", Q, &state(i + 1)));
-                claims.push(pre("s1", &format!("read_{i}"), "Read", P, &state(i)));
-                claims.push(post("s1", &format!("read_{i}"), "Read", P, &forged));
+                claims.push(pre("s2", &other, "Edit", Q, &state(i), &state(i + 1)));
+                claims.push(post("s2", &other, "Edit", Q, &state(i + 1)));
+                claims.push(pre("s1", &read, "Read", P, &state(i), &state(i)));
+                claims.push(post("s1", &read, "Read", P, &forged));
+                // A call whose declared change isn't what landed.
+                claims.push(pre_by("codex", "c1", &inside, "apply_patch", P, &state(i), &forged));
+                claims.push(post_by("codex", "c1", &inside, "apply_patch", P, &state(i + 1)));
                 claims.push(post("s3", &format!("forged_{i}"), "Edit", P, &forged));
-                claims.push(pre("s1", &id, name, P, &state(i)));
+                claims.push(pre("s1", &id, name, P, &state(i), &state(i + 1)));
             }
             let t0 = Instant::now();
             let mut ledger = Claims::default();
             for (step, &at) in order.iter().filter(|&&at| at < claims.len()).enumerate() {
                 let _ = ledger.record(claims[at].clone(), t0 + Duration::from_millis(step as u64));
             }
-            let now = t0 + Duration::from_secs(1);
+            let seen = t0 + Duration::from_secs(1);
             for i in 0..edits {
                 for j in i + 1..=edits {
-                    let chain = ledger.chain(Path::new(P), &h(&state(i)), &h(&state(j)), now);
+                    let chain = ledger.chain(Path::new(P), &h(&state(i)), &h(&state(j)), seen);
                     let uses: Vec<String> = (i..j).map(|k| format!("toolu_{k}")).collect();
                     let uses: Vec<&str> = uses.iter().map(String::as_str).collect();
-                    prop_assert_eq!(chain, Some(Chain { session: Id::new("s1").unwrap(), uses: ids(&uses) }));
-                    prop_assert_eq!(ledger.chain(Path::new(P), &h(&state(j)), &h(&state(i)), now), None);
+                    let expected = Chain { vendor: Vendor::Claude, session: Id::new("s1").unwrap(), uses: ids(&uses) };
+                    prop_assert_eq!(chain, Some(expected));
+                    prop_assert_eq!(ledger.chain(Path::new(P), &h(&state(j)), &h(&state(i)), seen), None);
                 }
-                prop_assert_eq!(ledger.chain(Path::new(P), &h(&state(i)), &h(&forged), now), None);
+                prop_assert_eq!(ledger.chain(Path::new(P), &h(&state(i)), &h(&forged), seen), None);
             }
         }
     }
