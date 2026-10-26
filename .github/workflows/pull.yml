@@ -1,0 +1,434 @@
+name: pull
+
+# An owner-only signed tag, pull/v1.4.0, reverses a release on every channel. Its annotated message is the reason.
+# feed-sign removes the item from the committed feed and re-signs it; after the owner approves, feed commits the feed
+# and pulled.txt to dewline-updates and deploys them, latest moves GitHub's Latest flag to the previous stable release
+# and marks the pulled release's notes, site redeploys dewline.dev, tap reverts the cask if it was bumped, and check
+# confirms each channel. Each job that needs a secret fails with an error naming it. Spec: docs/release.md.
+on:
+  push:
+    tags:
+      - "pull/v*"
+
+permissions: {}
+
+concurrency:
+  group: pull-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+      channel: ${{ steps.tag.outputs.channel }}
+      reason: ${{ steps.tag.outputs.reason }}
+      date: ${{ steps.tag.outputs.date }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check the tag
+        id: tag
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          fail() { echo "::error::$*"; exit 1; }
+          git fetch --force origin "+refs/tags/$TAG:refs/tags/$TAG"
+          [[ $(git cat-file -t "refs/tags/$TAG") == tag ]] || fail "$TAG is not an annotated tag"
+          [[ -s .github/release-allowed-signers ]] || fail ".github/release-allowed-signers is missing (docs/release.md)"
+          git -c gpg.ssh.allowedSignersFile=.github/release-allowed-signers verify-tag "$TAG" \
+            || fail "$TAG is not signed by a key in .github/release-allowed-signers"
+          git merge-base --is-ancestor "refs/tags/$TAG^{commit}" origin/main || fail "$TAG is not on main"
+          reason=$(git tag -l --format='%(contents:subject)' "$TAG")
+          [[ -n $reason ]] || fail "$TAG has no message; its first line is the reason pulled.txt records"
+
+          version=${TAG#pull/v}
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/v$version" > /dev/null || fail "there is no v$version release to pull"
+          base=https://raw.githubusercontent.com/ark-232/dewline-updates/main
+          curl -fsSL "$base/appcast.xml" -o "$RUNNER_TEMP/appcast.xml" || fail "cannot read appcast.xml from ark-232/dewline-updates"
+          grep -qF "/v$version/Dewline-$version.dmg\"" "$RUNNER_TEMP/appcast.xml" || fail "the feed has no v$version item"
+          channel=stable
+          if [[ $version == *-* ]]; then channel=beta; fi
+          { echo "version=$version"; echo "channel=$channel"; echo "reason=$reason"; echo "date=$(date -u +%F)"; } >> "$GITHUB_OUTPUT"
+
+  feed-sign:
+    needs: verify
+    runs-on: xcode-27
+    environment: feed-signing
+    timeout-minutes: 15
+    permissions: {}
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+    outputs:
+      feed-sha256: ${{ steps.feed.outputs.sha256 }}
+      updates-commit: ${{ steps.updates.outputs.commit }}
+      previous: ${{ steps.feed.outputs.previous }}
+      previous-build: ${{ steps.feed.outputs.previous-build }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ark-232/dewline-updates
+          path: updates
+          persist-credentials: false
+      - name: Verify the committed feed
+        id: updates
+        run: |
+          key=$(jq -r .SUPublicEDKey app/updater.golden.json)
+          [[ -n $key ]] || { echo "::error::app/updater.golden.json has no SUPublicEDKey (docs/release.md)"; exit 1; }
+          echo "PUBLIC_KEY=$key" >> "$GITHUB_ENV"
+          scripts/verify-feed.sh updates/appcast.xml "$key"
+          echo "commit=$(git -C updates rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Fetch Sparkle's tools
+        run: scripts/sparkle-tools.sh "$RUNNER_TEMP/sparkle"
+      - name: Remove the item and sign the feed
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          [[ -n $SPARKLE_ED_PRIVATE_KEY ]] || { echo "::error::The feed-signing environment has no SPARKLE_ED_PRIVATE_KEY secret (docs/release.md)"; exit 1; }
+          feed=$RUNNER_TEMP/appcast.xml
+          # Cuts the one item whose enclosure is this version's DMG, byte for byte, and leaves the rest of the file as
+          # it was; sign_update then replaces the signature block.
+          python3 -I - updates/appcast.xml "$feed" "/v$VERSION/Dewline-$VERSION.dmg" <<'EOF'
+          import sys, xml.parsers.expat
+          source, target, suffix = sys.argv[1:]
+          data = open(source, "rb").read()
+          parser, path, spans = xml.parsers.expat.ParserCreate(), [], []
+          def start(tag, attributes):
+              path.append(tag)
+              if path[-2:] == ["channel", "item"]:
+                  spans.append([parser.CurrentByteIndex, None, None])
+              if path[-2:] == ["item", "enclosure"]:
+                  spans[-1][2] = attributes.get("url", "")
+          def end(tag):
+              if path[-2:] == ["channel", "item"]:
+                  spans[-1][1] = data.index(b">", parser.CurrentByteIndex) + 1
+              path.pop()
+          parser.StartElementHandler, parser.EndElementHandler = start, end
+          parser.Parse(data, True)
+          matches = [(a, b) for a, b, url in spans if url and url.endswith(suffix)]
+          if len(matches) != 1:
+              sys.exit(f"{len(matches)} items have an enclosure ending {suffix}")
+          a, b = matches[0]
+          a = data.rindex(b"\n", 0, a)
+          open(target, "wb").write(data[:a] + data[b:])
+          EOF
+          printf '%s' "$SPARKLE_ED_PRIVATE_KEY" | "$RUNNER_TEMP/sparkle/bin/sign_update" --ed-key-file - "$feed"
+      - name: Check the new feed
+        id: feed
+        run: |
+          feed=$RUNNER_TEMP/appcast.xml
+          scripts/verify-feed.sh "$feed" "$PUBLIC_KEY"
+          python3 -I - updates/appcast.xml "$feed" "$VERSION" "$GITHUB_OUTPUT" <<'EOF'
+          import re, sys, xml.etree.ElementTree as ET
+          old, new, version, output = sys.argv[1:]
+          S = "{http://www.andymatuschak.org/xml-namespaces/sparkle}"
+          def items(path):
+              return [(i.findtext(S + "version"), re.search(r"/v([^/]+)/Dewline-", i.find("enclosure").get("url")).group(1))
+                      for i in ET.parse(path).iter("item")]
+          before, after = items(old), items(new)
+          if after != [item for item in before if item[1] != version] or len(after) != len(before) - 1:
+              sys.exit(f"the new feed is not the committed feed without v{version}: {before} became {after}")
+          stable = [item for item in after if "-" not in item[1]]
+          with open(output, "a") as out:
+              out.write(f"previous={stable[0][1] if stable else ''}\nprevious-build={stable[0][0] if stable else ''}\n")
+          EOF
+          echo "sha256=$(shasum -a 256 "$feed" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Pull Dewline $VERSION"
+            echo
+            echo '```diff'
+            diff updates/appcast.xml "$feed" || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: feed
+          path: ${{ runner.temp }}/appcast.xml
+          if-no-files-found: error
+          retention-days: 14
+
+  approve:
+    needs: feed-sign
+    runs-on: ubuntu-24.04
+    environment: release-approval
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - run: echo "Approved in release-approval after reading the feed-sign summary."
+
+  feed:
+    needs: [verify, feed-sign, approve]
+    runs-on: ubuntu-24.04
+    environment: updates
+    timeout-minutes: 15
+    concurrency:
+      group: feed
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+    env:
+      FEED_SHA256: ${{ needs.feed-sign.outputs.feed-sha256 }}
+      UPDATES_COMMIT: ${{ needs.feed-sign.outputs.updates-commit }}
+      VERSION: ${{ needs.verify.outputs.version }}
+      REASON: ${{ needs.verify.outputs.reason }}
+      DATE: ${{ needs.verify.outputs.date }}
+    steps:
+      - name: Require the updates environment
+        env:
+          FEED_APP_ID: ${{ secrets.FEED_APP_ID }}
+          FEED_APP_PRIVATE_KEY: ${{ secrets.FEED_APP_PRIVATE_KEY }}
+          FEED_WIF_PROVIDER: ${{ vars.FEED_WIF_PROVIDER }}
+          FEED_DEPLOY_SA: ${{ vars.FEED_DEPLOY_SA }}
+        run: |
+          missing=0
+          for name in FEED_APP_ID FEED_APP_PRIVATE_KEY FEED_WIF_PROVIDER FEED_DEPLOY_SA; do
+            if [[ -z ${!name} ]]; then echo "::error::The updates environment has no $name (docs/release.md)"; missing=1; fi
+          done
+          exit "$missing"
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: token
+        with:
+          app-id: ${{ secrets.FEED_APP_ID }}
+          private-key: ${{ secrets.FEED_APP_PRIVATE_KEY }}
+          owner: ark-232
+          repositories: dewline-updates
+          permission-contents: write
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ark-232/dewline-updates
+          ref: ${{ needs.feed-sign.outputs.updates-commit }}
+          path: verified
+          token: ${{ steps.token.outputs.token }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: feed
+          path: ${{ runner.temp }}/feed
+      - name: Commit the feed and pulled.txt to dewline-updates
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          feed=$RUNNER_TEMP/feed/appcast.xml
+          echo "$FEED_SHA256  $feed" | sha256sum -c -
+          repo=repos/ark-232/dewline-updates
+          head=$(gh api "$repo/git/ref/heads/main" --jq .object.sha)
+          if [[ $head != "$UPDATES_COMMIT" ]] \
+            && gh api "$repo/contents/appcast.xml?ref=$head" --jq .content | base64 -d | sha256sum | grep -q "^$FEED_SHA256 "; then
+            echo "::notice::dewline-updates already holds this feed at $head, from an earlier attempt"
+            echo "UPDATES_HEAD=$head" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          pulled=$RUNNER_TEMP/pulled.txt
+          if [[ -f verified/pulled.txt ]]; then cp verified/pulled.txt "$pulled"; fi
+          printf '%s %s %s\n' "$VERSION" "$DATE" "$REASON" >> "$pulled"
+          base=$(gh api "$repo/git/commits/$UPDATES_COMMIT" --jq .tree.sha)
+          tree=$(jq -n --arg base "$base" \
+            --rawfile feed "$feed" --rawfile pulled "$pulled" '{base_tree: $base, tree: [
+              {path: "appcast.xml", mode: "100644", type: "blob", content: $feed},
+              {path: "pulled.txt", mode: "100644", type: "blob", content: $pulled}]}' \
+            | gh api "$repo/git/trees" --input - --jq .sha)
+          commit=$(jq -n --arg tree "$tree" --arg parent "$UPDATES_COMMIT" --arg message "Pull Dewline $VERSION: $REASON" \
+            '{message: $message, tree: $tree, parents: [$parent]}' | gh api "$repo/git/commits" --input - --jq .sha)
+          # Not forced: GitHub refuses the update if dewline-updates moved after feed-sign verified it.
+          gh api -X PATCH "$repo/git/refs/heads/main" -f sha="$commit" -F force=false > /dev/null
+          echo "UPDATES_HEAD=$commit" >> "$GITHUB_ENV"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ark-232/dewline-updates
+          path: updates
+          token: ${{ steps.token.outputs.token }}
+          persist-credentials: false
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.FEED_WIF_PROVIDER }}
+          service_account: ${{ vars.FEED_DEPLOY_SA }}
+          create_credentials_file: true
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - name: Deploy the feed and check it live
+        run: |
+          [[ $(git -C updates rev-parse HEAD) == "$UPDATES_HEAD" ]] || { echo "::error::dewline-updates moved during the run"; exit 1; }
+          echo "$FEED_SHA256  updates/appcast.xml" | sha256sum -c -
+          (cd updates && npx --yes firebase-tools@15.5.1 deploy --only hosting --project dewline-updates)
+          key=$(jq -r .SUPublicEDKey app/updater.golden.json)
+          for _ in $(seq 30); do
+            if scripts/verify-feed.sh https://updates.dewline.dev/appcast.xml "$key" "$FEED_SHA256"; then exit 0; fi
+            sleep 10
+          done
+          echo "::error::the live feed still differs from the signed feed without $VERSION after 5 minutes"
+          exit 1
+
+  latest:
+    needs: [verify, feed-sign, feed]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+      CHANNEL: ${{ needs.verify.outputs.channel }}
+      REASON: ${{ needs.verify.outputs.reason }}
+      DATE: ${{ needs.verify.outputs.date }}
+      PREVIOUS: ${{ needs.feed-sign.outputs.previous }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Move Latest and mark the pulled release
+        run: |
+          if [[ $CHANNEL == stable && -n $PREVIOUS ]]; then
+            gh release edit "v$PREVIOUS" --latest
+          elif [[ $CHANNEL == stable ]]; then
+            echo "::warning::no stable release is left in the feed, so v$VERSION stays Latest on GitHub"
+          fi
+          body=$(gh release view "v$VERSION" --json body --jq .body)
+          mark="Pulled on $DATE: $REASON"
+          if [[ $body != Pulled\ on* ]]; then
+            gh release edit "v$VERSION" --notes "$mark"$'\n\n'"$body"
+          fi
+
+  site:
+    needs: [verify, feed]
+    if: ${{ needs.verify.outputs.channel == 'stable' }}
+    runs-on: ubuntu-24.04
+    environment: site
+    timeout-minutes: 15
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require the site
+        env:
+          SITE_WIF_PROVIDER: ${{ vars.SITE_WIF_PROVIDER }}
+          SITE_DEPLOY_SA: ${{ vars.SITE_DEPLOY_SA }}
+          SITE_PROJECT: ${{ vars.SITE_PROJECT }}
+        run: |
+          [[ -f site/package.json ]] || { echo "::error::site/ does not exist yet"; exit 1; }
+          [[ -n $SITE_WIF_PROVIDER && -n $SITE_DEPLOY_SA && -n $SITE_PROJECT ]] \
+            || { echo "::error::The site environment needs SITE_WIF_PROVIDER, SITE_DEPLOY_SA and SITE_PROJECT"; exit 1; }
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.SITE_WIF_PROVIDER }}
+          service_account: ${{ vars.SITE_DEPLOY_SA }}
+          create_credentials_file: true
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - name: Build and deploy dewline.dev
+        env:
+          SITE_PROJECT: ${{ vars.SITE_PROJECT }}
+        run: |
+          cd site
+          npm ci
+          npm run build
+          npx --yes firebase-tools@15.5.1 deploy --only hosting --project "$SITE_PROJECT"
+
+  tap:
+    needs: [verify, feed-sign, feed]
+    if: ${{ needs.verify.outputs.channel == 'stable' }}
+    runs-on: ubuntu-24.04
+    environment: tap-revert
+    timeout-minutes: 15
+    permissions: {}
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+      PREVIOUS: ${{ needs.feed-sign.outputs.previous }}
+      PREVIOUS_BUILD: ${{ needs.feed-sign.outputs.previous-build }}
+    steps:
+      - name: Require the tap-revert environment
+        env:
+          TAP_APP_ID: ${{ secrets.TAP_APP_ID }}
+          TAP_APP_PRIVATE_KEY: ${{ secrets.TAP_APP_PRIVATE_KEY }}
+        run: |
+          [[ -n $TAP_APP_ID && -n $TAP_APP_PRIVATE_KEY ]] \
+            || { echo "::error::The tap-revert environment needs TAP_APP_ID and TAP_APP_PRIVATE_KEY (docs/release.md)"; exit 1; }
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: token
+        with:
+          app-id: ${{ secrets.TAP_APP_ID }}
+          private-key: ${{ secrets.TAP_APP_PRIVATE_KEY }}
+          owner: ark-232
+          repositories: homebrew-tap
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Revert the cask if it names the pulled version
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh repo clone ark-232/homebrew-tap "$RUNNER_TEMP/tap" -- --depth 1
+          cd "$RUNNER_TEMP/tap"
+          cask=Casks/dewline.rb
+          [[ $(grep -c '^  version "' "$cask") == 1 && $(grep -c '^  sha256 "' "$cask") == 1 ]] \
+            || { echo "::error::$cask must have exactly one version and one sha256 line"; exit 1; }
+          if ! grep -qF "  version \"$VERSION," "$cask"; then echo "::notice::the cask does not name $VERSION"; exit 0; fi
+          [[ -n $PREVIOUS ]] || { echo "::error::the cask names $VERSION and no stable release is left to revert it to"; exit 1; }
+          digest=$(gh api "repos/$REPO/releases/tags/v$PREVIOUS" \
+            --jq ".assets[] | select(.name == \"Dewline-$PREVIOUS.dmg\") | .digest")
+          [[ $digest == sha256:* ]] || { echo "::error::v$PREVIOUS has no Dewline-$PREVIOUS.dmg digest"; exit 1; }
+          sed -i -e "s/^  version \".*\"/  version \"$PREVIOUS,$PREVIOUS_BUILD\"/" -e "s/^  sha256 \".*\"/  sha256 \"${digest#sha256:}\"/" "$cask"
+          git switch -c "dewline-pull-$VERSION"
+          git -c user.name="dewline-release[bot]" -c user.email="dewline-release[bot]@users.noreply.github.com" \
+            commit -am "dewline $PREVIOUS (pull $VERSION)"
+          gh auth setup-git
+          git push origin "dewline-pull-$VERSION"
+          gh pr create --repo ark-232/homebrew-tap --title "dewline $PREVIOUS (pull $VERSION)" \
+            --body "Dewline $VERSION was pulled; this reverts the cask to the notarized DMG of $PREVIOUS."
+          gh pr merge --repo ark-232/homebrew-tap --auto --squash "dewline-pull-$VERSION"
+
+  check:
+    needs: [verify, feed-sign, feed, latest, site, tap]
+    if: ${{ !cancelled() && needs.feed.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+      CHANNEL: ${{ needs.verify.outputs.channel }}
+      PREVIOUS: ${{ needs.feed-sign.outputs.previous }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check every channel
+        run: |
+          status=0
+          bad() { echo "::error::$*"; status=1; }
+          dmg() { echo "/v$1/Dewline-$1.dmg"; }
+          if live=$(curl -fsSL https://updates.dewline.dev/appcast.xml); then
+            [[ $live != *"$(dmg "$VERSION")\""* ]] || bad "the live feed still offers $VERSION"
+          else
+            bad "cannot read https://updates.dewline.dev/appcast.xml"
+          fi
+          if [[ $CHANNEL == stable && -n $PREVIOUS ]]; then
+            latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name) || latest="no release"
+            [[ $latest == "v$PREVIOUS" ]] || bad "GitHub's Latest release is $latest, not v$PREVIOUS"
+            page=$(curl -fsSL https://dewline.dev/) || page=
+            [[ $page == *"$(dmg "$PREVIOUS")"* && $page != *"$(dmg "$VERSION")"* ]] \
+              || bad "https://dewline.dev/ does not link the $PREVIOUS DMG in place of $VERSION"
+            cask=$(curl -fsSL https://raw.githubusercontent.com/ark-232/homebrew-tap/main/Casks/dewline.rb) || cask=
+            open=$(gh pr list --repo ark-232/homebrew-tap --head "dewline-pull-$VERSION" --state open --json number --jq length) || open=0
+            [[ -n $cask && ($cask != *"version \"$VERSION,"* || $open == 1) ]] \
+              || bad "the tap's cask is unreadable, or names $VERSION with no revert PR open"
+          fi
+          exit "$status"

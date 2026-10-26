@@ -23,7 +23,7 @@ settings:
 packages:
   MdCore:
     path: ../Packages/MdCore
-  # Moves only by hand, with the tarball SHA-256 in .github/workflows/release.yml (docs/release.md).
+  # Moves only by hand, with the version and tarball SHA-256 in scripts/sparkle-tools.sh (docs/release.md).
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
     exactVersion: 2.10.0
