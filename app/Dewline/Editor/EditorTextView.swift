@@ -1,7 +1,7 @@
 import AppKit
 
 /// The markdown editor: hides syntax through `MarkdownStyler` and defers styling while an input method composes.
-final class EditorTextView: NSTextView {
+final class EditorTextView: CaretTextView {
     let styler = MarkdownStyler()
     private let hiddenGlyphs = HiddenGlyphs()
     private let blockFragments = BlockFragments()
