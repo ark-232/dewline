@@ -30,41 +30,49 @@ struct BlockScannerTests {
         #expect(Self.sources("![absolute](/tmp/dot.png)").isEmpty)
     }
 
-    @Test func editsAwayFromBlocksShiftThemAndEditsThatMakeOrBreakOneRescan() {
+    @Test @MainActor func editsAwayFromBlocksShiftThemAndEditsThatMakeOrBreakOneReparse() {
         let text = NSMutableString(string: "Intro\n\n```mermaid\nA\n```\n\nEnd\n")
-        var index = BlockIndex()
-        #expect(index.update(text, edited: NSRange(location: 0, length: text.length), delta: text.length) == [NSRange(location: 7, length: 16)])
+        let map = BlockMap()
+        let rendered = { map.renderedBlocks(in: NSRange(location: 0, length: text.length)) }
+        _ = map.textDidChange(text, edited: NSRange(location: 0, length: text.length), delta: text.length)
+        #expect(rendered().map(\.range) == [NSRange(location: 7, length: 16)])
         text.insert("x", at: 0)
-        #expect(index.update(text, edited: NSRange(location: 0, length: 1), delta: 1).isEmpty)
-        #expect(index.blocks.map(\.range) == [NSRange(location: 8, length: 16)])
+        _ = map.textDidChange(text, edited: NSRange(location: 0, length: 1), delta: 1)
+        #expect(rendered().map(\.range) == [NSRange(location: 8, length: 16)])
         text.insert("B", at: 20)
-        #expect(index.update(text, edited: NSRange(location: 20, length: 1), delta: 1) == [NSRange(location: 8, length: 17)])
-        #expect(index.blocks.map(\.source) == ["AB"])
+        #expect(map.textDidChange(text, edited: NSRange(location: 20, length: 1), delta: 1) == NSRange(location: 8, length: 18))
+        #expect(rendered().map(\.range) == [NSRange(location: 8, length: 17)])
+        #expect(rendered().map(\.source) == ["AB"])
+        // A fence opened above runs on past its window, which leaves the block for the whole parse.
         text.insert("```\n", at: 0)
-        #expect(index.update(text, edited: NSRange(location: 0, length: 4), delta: 4) == [NSRange(location: 12, length: 17)])
-        #expect(index.blocks.isEmpty)
+        _ = map.textDidChange(text, edited: NSRange(location: 0, length: 4), delta: 4)
+        #expect(map.isProvisional)
+        map.reparseNow()
+        #expect(rendered().isEmpty)
     }
 
-    @Test func frontMatterAndIndentedCodeAreCode() {
+    @Test @MainActor func frontMatterAndIndentedCodeAreCode() {
         let text = NSMutableString(string: "---\ntitle: x\n\nPara\n\n    code\n- item\n\n    more\n")
-        var index = BlockIndex()
-        _ = index.update(text, edited: NSRange(location: 0, length: text.length), delta: text.length)
+        let map = BlockMap()
+        _ = map.textDidChange(text, edited: NSRange(location: 0, length: text.length), delta: text.length)
         func code(_ word: String) -> Bool {
-            index.isCode(text.range(of: word), in: text)
+            map.isCode(text.range(of: word))
         }
         #expect(!code("title") && code("code") && !code("more"))
         text.insert("---\n", at: 13)
-        _ = index.update(text, edited: NSRange(location: 13, length: 4), delta: 4)
+        _ = map.textDidChange(text, edited: NSRange(location: 13, length: 4), delta: 4)
+        #expect(map.isProvisional)
+        map.reparseNow()
         #expect(code("title") && !code("Para"))
     }
 
-    @Test func textBesideAnImageEndsItsBlock() {
+    @Test @MainActor func textBesideAnImageEndsItsBlock() {
         let text = NSMutableString(string: "Text\n\n![a](b.png)\n\nMore")
-        var index = BlockIndex()
-        _ = index.update(text, edited: NSRange(location: 0, length: text.length), delta: text.length)
-        #expect(index.blocks.map(\.source) == ["b.png"])
+        let map = BlockMap()
+        _ = map.textDidChange(text, edited: NSRange(location: 0, length: text.length), delta: text.length)
+        #expect(map.renderedBlocks(in: NSRange(location: 0, length: text.length)).map(\.source) == ["b.png"])
         text.insert("x", at: 18)
-        #expect(index.update(text, edited: NSRange(location: 18, length: 1), delta: 1) == [NSRange(location: 6, length: 11)])
-        #expect(index.blocks.isEmpty)
+        #expect(map.textDidChange(text, edited: NSRange(location: 18, length: 1), delta: 1) == NSRange(location: 6, length: 14))
+        #expect(map.renderedBlocks(in: NSRange(location: 0, length: text.length)).isEmpty)
     }
 }

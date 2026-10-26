@@ -268,13 +268,11 @@ private final class Editor {
     /// Inside the first strong span, from `location` on, of a prose paragraph of 200 characters or more.
     func caret(from location: Int) throws -> Int {
         let text = try #require(view.textStorage).mutableString
-        var span: SyntaxSpan?
-        text.enumerateSubstrings(in: NSRange(location: location, length: text.length - location), options: [.byParagraphs, .substringNotRequired]) { _, line, _, stop in
-            guard line.length >= 200, text.character(at: line.location) != 0x23 else { return }
-            span = SpikeTokenizer.spans(in: text, line: line).first { $0.kind == .strong && $0.content.length > 2 }
-            stop.pointee = ObjCBool(span != nil)
-        }
-        return try #require(span).content.location + 1
+        let strong = { (span: SyntaxSpan) in span.kind == .strong && span.content.length > 2 }
+        let block = try #require(view.styler.map.blocks(in: NSRange(location: location, length: text.length - location)).first {
+            $0.kind == .paragraph && $0.range.length >= 200 && $0.spans.contains(where: strong)
+        })
+        return block.range.location + (try #require(block.spans.first(where: strong))).content.location + 1
     }
 
     /// Puts the caret inside the first strong span of a prose paragraph past the middle of the text, coming from a key
