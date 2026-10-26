@@ -3,18 +3,25 @@ import AppKit
 /// The streak and the landing mark, above the text. Each is a committed Core Animation animation with no delegate,
 /// so the app does no work while it runs or after it ends.
 final class CaretEffectsView: NSView {
-    let streak = CAShapeLayer()
-    let mark = CAShapeLayer()
+    // Hidden from the start: layout reads `marking` before the view has a backing layer.
+    let streak: CAShapeLayer = {
+        let streak = CAShapeLayer()
+        streak.opacity = 0
+        return streak
+    }()
+    let mark: CAShapeLayer = {
+        let mark = CAShapeLayer()
+        mark.opacity = 0
+        mark.fillColor = nil
+        mark.lineWidth = 1
+        return mark
+    }()
 
     override var isFlipped: Bool { true }
     override var wantsUpdateLayer: Bool { true }
 
     override func makeBackingLayer() -> CALayer {
         let layer = CALayer()
-        streak.opacity = 0
-        mark.opacity = 0
-        mark.fillColor = nil
-        mark.lineWidth = 1
         layer.addSublayer(mark)
         layer.addSublayer(streak)
         return layer

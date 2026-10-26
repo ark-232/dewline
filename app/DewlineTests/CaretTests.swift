@@ -312,6 +312,11 @@ extension CaretTests {
         }
     }
 
+    /// The text view's first layout passes read `marking` before the effects view has a backing layer.
+    @Test func aNewEffectsViewShowsNoMark() {
+        #expect(!CaretEffectsView().marking)
+    }
+
     /// Acceptance test 8 through Off, the level Reduce Motion runs: the streak layer never gets an animation, every
     /// jump gets the static landing mark until the next input, and a new level applies at the next jump.
     @Test(.enabled(if: systemAllowsMotion), arguments: TextKitVariant.allCases)
