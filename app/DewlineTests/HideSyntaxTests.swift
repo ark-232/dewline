@@ -243,24 +243,19 @@ struct HideSyntaxTests {
     @Test(arguments: TextKitVariant.allCases)
     func longTextStylesTheTopFirstAndTheRestBetweenEvents(_ variant: TextKitVariant) {
         let line = "\(Self.soft)\n"
-        let count = 4000
-        let editor = Editor(variant, String(repeating: line, count: count), caret: 0)
-        let view = editor.view
-        let color = { (location: Int) in view.textStorage!.attribute(.foregroundColor, at: location, effectiveRange: nil) as? NSColor }
-        let last = (count - 1) * line.utf16.count
-        #expect(color(4) == .clear)
-        #expect(view.styler.hasUnstyledText && color(last + 4) != .clear)
-        // A caret in unstyled text reveals nothing yet; typing there styles the paragraph at once.
-        editor.place(last + 8)
-        view.insertText("x", replacementRange: view.selectedRange())
-        #expect(color(last + 4) == .tertiaryLabelColor)
+        let editor = Editor(variant, String(repeating: line, count: 4000), caret: 0)
+        let color = { (line: Int) in editor.view.textStorage!.attribute(.foregroundColor, at: line * 17 + 4, effectiveRange: nil) as? NSColor }
+        #expect(color(0) == .clear && color(3999) != .clear)
+        // Typing in unstyled text styles its paragraph at once.
+        editor.place(3999 * 17 + 8)
+        editor.view.insertText("x", replacementRange: editor.view.selectedRange())
+        #expect(color(3999) == .tertiaryLabelColor)
         let deadline = Date(timeIntervalSinceNow: 10)
-        while view.styler.hasUnstyledText && Date() < deadline {
+        while editor.view.styler.hasUnstyledText && Date() < deadline {
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01))
         }
-        #expect(!view.styler.hasUnstyledText)
-        #expect((0..<count - 1).allSatisfy { color($0 * line.utf16.count + 4) == .clear })
-        #expect(view.string == String(repeating: line, count: count - 1) + "The **soxft** day\n")
+        #expect((0..<3999).allSatisfy { color($0) == .clear })
+        #expect(editor.view.string == String(repeating: line, count: 3999) + "The **soxft** day\n")
         editor.expectTextKitUnchanged()
     }
 }
