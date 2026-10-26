@@ -20,7 +20,13 @@ struct Excerpt {
         var fencedCode: String?
         var inlineCode: String?
         var fenced = false
+        var lines = 0
         string.enumerateSubstrings(in: NSRange(location: 0, length: string.length), options: [.byParagraphs, .substringNotRequired]) { _, line, _, stop in
+            lines += 1
+            guard lines <= 200 else {
+                stop.pointee = true
+                return
+            }
             let source = string.substring(with: line)
             if source.hasPrefix("```") || source.hasPrefix("~~~") {
                 fenced.toggle()
