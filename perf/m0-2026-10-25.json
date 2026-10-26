@@ -1,0 +1,169 @@
+{
+  "date": "2026-10-25",
+  "commit": "7a7ae8d",
+  "mac": "Apple M4 Pro, 24 GB, macOS 27.2",
+  "xcode": "Xcode 27.1",
+  "build": "Release, arm64, unsigned",
+  "load": [
+    8.91,
+    7.43,
+    7.31
+  ],
+  "corpusBytes": {
+    "1MB": 1048633,
+    "10MB": 10485949
+  },
+  "appBytes": 236164,
+  "dmgBytes": 112146,
+  "firstLaunchMs": 1003.8,
+  "variants": {
+    "textKit1": {
+      "keystroke10MB": {
+        "max": 58.87,
+        "p50": 29.41,
+        "p95": 35.75,
+        "p99": 50.23
+      },
+      "keystroke1MB": {
+        "max": 28.17,
+        "p50": 13.19,
+        "p95": 17.36,
+        "p99": 25.03
+      },
+      "open10MB": {
+        "displayMs": 18.29,
+        "ms": 11768.76,
+        "setTextMs": 11750.48
+      },
+      "open1MB": {
+        "displayMs": 33.9,
+        "ms": 594.48,
+        "setTextMs": 560.58
+      },
+      "reveal": {
+        "deselect1MB": 2568.74,
+        "max": 30.94,
+        "p50": 11.5,
+        "p95": 17.03,
+        "p99": 26.03,
+        "selectAll1MB": 5165.61
+      },
+      "scroll": {
+        "max": 413.22,
+        "over8_3ms": 18,
+        "p50": 4.38,
+        "p95": 17.4,
+        "p99": 25.33
+      },
+      "scrollSettled": {
+        "max": 414.12,
+        "over8_3ms": 18,
+        "p50": 4.4,
+        "p95": 17.42,
+        "p99": 25.34
+      },
+      "launch1MB": {
+        "coldMs": [
+          911.9,
+          883.5,
+          862.0
+        ],
+        "warmMs": [
+          904.7,
+          837.9,
+          875.8,
+          893.4,
+          817.8
+        ]
+      },
+      "idle1MB": {
+        "footprintMB": 66.3,
+        "cpuPercent": 1.0,
+        "idleWakeups": 0,
+        "contextSwitches": 545,
+        "frontmost": false
+      },
+      "idle10MB": {
+        "footprintMB": 294.0,
+        "cpuPercent": 0.0,
+        "idleWakeups": 0,
+        "contextSwitches": 107,
+        "frontmost": false
+      }
+    },
+    "textKit2": {
+      "keystroke10MB": {
+        "max": 31.98,
+        "p50": 12.06,
+        "p95": 19.49,
+        "p99": 27.79
+      },
+      "keystroke1MB": {
+        "max": 27.03,
+        "p50": 12.05,
+        "p95": 19.85,
+        "p99": 26.44
+      },
+      "open10MB": {
+        "displayMs": 8.03,
+        "ms": 4550.98,
+        "setTextMs": 4542.94
+      },
+      "open1MB": {
+        "displayMs": 25.19,
+        "ms": 473.27,
+        "setTextMs": 448.09
+      },
+      "reveal": {
+        "deselect1MB": 51.05,
+        "max": 31.92,
+        "p50": 8.53,
+        "p95": 14.28,
+        "p99": 24.23,
+        "selectAll1MB": 111.84
+      },
+      "scroll": {
+        "max": 47.01,
+        "over8_3ms": 197,
+        "p50": 14.58,
+        "p95": 21.56,
+        "p99": 31.95
+      },
+      "scrollSettled": {
+        "max": 47.32,
+        "over8_3ms": 197,
+        "p50": 14.93,
+        "p95": 21.9,
+        "p99": 32.22
+      },
+      "launch1MB": {
+        "coldMs": [
+          948.3,
+          913.7,
+          912.0
+        ],
+        "warmMs": [
+          778.2,
+          846.4,
+          810.6,
+          801.7,
+          770.6
+        ]
+      },
+      "idle1MB": {
+        "footprintMB": 41.8,
+        "cpuPercent": 0.0,
+        "idleWakeups": 1,
+        "contextSwitches": 57,
+        "frontmost": false
+      },
+      "idle10MB": {
+        "footprintMB": 91.1,
+        "cpuPercent": 0.0,
+        "idleWakeups": 0,
+        "contextSwitches": 139,
+        "frontmost": false
+      }
+    }
+  }
+}
