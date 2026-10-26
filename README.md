@@ -27,6 +27,8 @@ xcodegen generate --spec app/project.yml
 xcodebuild test -project app/Dewline.xcodeproj -scheme Dewline -destination 'platform=macOS'
 ```
 
+For a local Release build, pass `ARCHS=arm64` (or `ONLY_ACTIVE_ARCH=YES` with `-destination 'platform=macOS,arch=arm64'`) unless you built the XCFramework with `--universal`, which needs Rust's `x86_64-apple-darwin` target.
+
 ## License
 
 [FSL-1.1-ALv2](LICENSE.md): use, read and change it for anything except a competing product. Each release becomes Apache-2.0 two years after it ships.

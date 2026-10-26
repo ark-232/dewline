@@ -69,6 +69,8 @@ jobs:
       - run: xcodebuild -version
       - run: xcodegen generate --spec app/project.yml
       - run: xcodebuild test -project app/Dewline.xcodeproj -scheme Dewline -destination 'platform=macOS,arch=arm64' CODE_SIGNING_ALLOWED=NO
+      - run: xcodebuild build -project app/Dewline.xcodeproj -scheme Dewline -configuration Release -destination 'generic/platform=macOS' CODE_SIGNING_ALLOWED=NO
+      - run: lipo -info Packages/MdCore/DewlineFFI.xcframework/macos-arm64_x86_64/libdewline_ffi.a
 
   zizmor:
     runs-on: ubuntu-latest
