@@ -53,12 +53,7 @@ impl Socket {
     pub fn open(&self, target: &Target, wait: bool) -> Result<Connection, String> {
         let stream = self.connect()?;
         let failed = |error: io::Error| format!("{}: talking to Dewline: {error}", target.path);
-        stream
-            .set_read_timeout(Some(OPEN_TIMEOUT))
-            .map_err(failed)?;
-        stream
-            .set_write_timeout(Some(OPEN_TIMEOUT))
-            .map_err(failed)?;
+        set_timeout(&stream, Some(OPEN_TIMEOUT)).map_err(failed)?;
         let mut reader = BufReader::new(stream);
         reader
             .get_mut()
@@ -121,10 +116,9 @@ pub struct Connection {
 impl Connection {
     /// Returns once the app says the file's document closed.
     pub fn wait(mut self) -> Result<(), String> {
-        // macOS refuses socket options (EINVAL) once the app has closed its
-        // end; the read below then reports that end.
-        let _ = self.reader.get_ref().set_read_timeout(None);
-        match next_reply(&mut self.reader).map_err(|error| format!("{}: {error}", self.path))? {
+        let failed = |error| format!("{}: {error}", self.path);
+        set_timeout(self.reader.get_ref(), None).map_err(|error| failed(error.to_string()))?;
+        match next_reply(&mut self.reader).map_err(failed)? {
             Some(Reply::Closed) => Ok(()),
             None => Err(format!(
                 "{}: Dewline quit before the file closed",
@@ -135,9 +129,11 @@ impl Connection {
     }
 }
 
+/// Starts the app behind the current window, so the launch window it shows
+/// with nothing open stays out of sight until `activate` brings the file.
 fn launch() -> Result<(), String> {
     let status = Command::new("/usr/bin/open")
-        .args(["-b", BUNDLE_ID])
+        .args(["-g", "-b", BUNDLE_ID])
         .status()
         .map_err(|error| format!("couldn't run /usr/bin/open: {error}"))?;
     if !status.success() {
@@ -164,6 +160,21 @@ fn connect(path: &Path, uid: u32) -> io::Result<UnixStream> {
         ));
     }
     Ok(stream)
+}
+
+/// macOS refuses socket options (EINVAL) once the app has closed its end,
+/// which the next read reports, so that refusal is not an error here.
+fn set_timeout(stream: &UnixStream, timeout: Option<Duration>) -> io::Result<()> {
+    for result in [
+        stream.set_read_timeout(timeout),
+        stream.set_write_timeout(timeout),
+    ] {
+        match result {
+            Err(error) if error.raw_os_error() == Some(libc::EINVAL) => {}
+            other => other?,
+        }
+    }
+    Ok(())
 }
 
 fn nobody_listens(error: &io::Error) -> bool {

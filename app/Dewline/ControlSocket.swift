@@ -23,7 +23,6 @@ final class ControlSocket: @unchecked Sendable {
         case notAbsolute = "not_absolute"
         case notFound = "not_found"
         case notAFile = "not_a_file"
-        case busy
         case cannotOpen = "cannot_open"
     }
 
@@ -176,14 +175,10 @@ final class ControlSocket: @unchecked Sendable {
                 continue
             }
             var on: Int32 = 1
-            guard setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size)) == 0,
+            guard connections.count < Self.maxConnections,
+                setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size)) == 0,
                 fcntl(fd, F_SETFL, O_NONBLOCK) == 0, fcntl(fd, F_SETFD, FD_CLOEXEC) == 0
             else {
-                close(fd)
-                continue
-            }
-            guard connections.count < Self.maxConnections else {
-                _ = Reply.refused(.busy).line.withUnsafeBytes { write(fd, $0.baseAddress, $0.count) }
                 close(fd)
                 continue
             }

@@ -194,6 +194,27 @@ fn a_refusal_from_the_app_is_reported() {
 }
 
 #[test]
+fn an_app_that_hangs_up_is_an_error() {
+    let fixture = Fixture::new();
+    let listener = UnixListener::bind(&fixture.socket).unwrap();
+    for _ in 0..20 {
+        let child = fixture
+            .dewline(Path::new(DEWLINE), &["open", "my plan.md"])
+            .spawn()
+            .unwrap();
+        drop(listener.accept().unwrap());
+        let output = child.wait_with_output().unwrap();
+        assert_eq!(output.status.code(), Some(1));
+        // Not the EINVAL macOS gives socket options on a closed connection.
+        assert!(
+            stderr(&output).starts_with("dewline: ") && !stderr(&output).contains("os error 22"),
+            "{}",
+            stderr(&output)
+        );
+    }
+}
+
+#[test]
 fn bad_names_open_nothing() {
     let fixture = Fixture::new();
     fs::create_dir(fixture.dir.path().join("drafts")).unwrap();

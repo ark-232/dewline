@@ -11,7 +11,13 @@ use control::Socket;
 
 /// Dewline from the terminal.
 #[derive(Parser)]
-#[command(name = "dewline", version, about, arg_required_else_help = true)]
+#[command(
+    name = "dewline",
+    version,
+    about,
+    arg_required_else_help = true,
+    disable_help_subcommand = true
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -68,4 +74,53 @@ fn open(files: &[OsString], wait: bool) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    fn parse(args: &[&str]) -> Result<(Vec<OsString>, bool), clap::Error> {
+        let Command::Open { files, wait } = Cli::try_parse_from(args)?.command;
+        Ok((files, wait))
+    }
+
+    #[test]
+    fn open_takes_files_and_wait_in_any_order() {
+        Cli::command().debug_assert();
+        let files = |names: &[&str]| names.iter().map(OsString::from).collect::<Vec<_>>();
+        assert_eq!(
+            parse(&["dewline", "open", "plan.md", "notes.md:3:1", "--wait"]).unwrap(),
+            (files(&["plan.md", "notes.md:3:1"]), true)
+        );
+        assert_eq!(
+            parse(&["dewline", "open", "--wait", "plan.md"]).unwrap(),
+            (files(&["plan.md"]), true)
+        );
+        assert_eq!(
+            parse(&["dewline", "open", "plan.md"]).unwrap(),
+            (files(&["plan.md"]), false)
+        );
+        // After --, a name that looks like a flag is a file.
+        assert_eq!(
+            parse(&["dewline", "open", "--", "--wait"]).unwrap(),
+            (files(&["--wait"]), false)
+        );
+    }
+
+    #[test]
+    fn open_is_the_only_command() {
+        for args in [
+            &["dewline"][..],
+            &["dewline", "open"],
+            &["dewline", "open", "--wait"],
+            &["dewline", "open", "--line", "3", "plan.md"],
+            &["dewline", "help"],
+            &["dewline", "capture"],
+            &["dewline", "plan.md"],
+        ] {
+            assert!(parse(args).is_err(), "{args:?}");
+        }
+    }
 }
