@@ -17,7 +17,7 @@ final class SettingsWindowController: NSWindowController {
         tabs.tabStyle = .toolbar
         tabs.addTabViewItem(Self.pane("Appearance", "paintpalette", AppearancePane(store: store)))
         tabs.addTabViewItem(Self.pane("Editor", "character.cursor.ibeam", EditorPane(store: store)))
-        tabs.addTabViewItem(Self.pane("Fonts", "textformat", FontsPane(store: store)))
+        tabs.addTabViewItem(Self.pane("Fonts", "textformat", FontsPane(store: store, library: .shared)))
         let window = NSWindow(contentViewController: tabs)
         window.styleMask = [.titled, .closable]
         window.toolbarStyle = .preference
