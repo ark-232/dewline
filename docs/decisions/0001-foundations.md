@@ -15,3 +15,5 @@ Date: 2026-10-25. Each line is the owner's decision unless marked as recommended
 | Design | an achromatic page under standard chrome; color only for other writers and decisions (recommended) | user evidence after G1 |
 | Name | Dewline | the trademark or App Store checks fail |
 | Pricing promise | free core writing forever; own-Mac sync free; any paid tier covers hosted services only (recommended) | not planned |
+
+[0002](0002-1.0-scope.md) replaced the release order and 1.0 scope rows on 2026-10-26.
