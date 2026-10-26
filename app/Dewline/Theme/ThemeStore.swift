@@ -15,6 +15,7 @@ final class ThemeStore {
     }
 
     static let shared: ThemeStore = {
+        FontLibrary.waitForLaunchRegistration()
         let store = ThemeStore(defaults: .standard)
         store.applyAppearance()
         return store
@@ -129,6 +130,24 @@ final class ThemeStore {
         return (width / CGFloat(sample.count) * columnWidth).rounded()
     }
 
+    /// Puts every slot that uses `family` back on its default, before the family is removed; returns the slots' names.
+    func release(_ family: String) -> [String] {
+        var slots: [String] = []
+        if bodyFace == family {
+            bodyFace = Faces.body
+            slots.append("Body")
+        }
+        if headingFace == family {
+            headingFace = Faces.heading
+            slots.append("Headings")
+        }
+        if codeFace == family {
+            codeFace = Faces.code
+            slots.append("Code")
+        }
+        return slots
+    }
+
     func codeFont(size: CGFloat) -> NSFont {
         Faces.font(codeFace, size: size)
     }
@@ -176,6 +195,24 @@ extension NSAppearance {
     }
 }
 
+/// Three faces chosen together in the Fonts pane (synthesis 2.8); one click sets all three slots, installing any
+/// catalog family they need first.
+struct Pairing: Identifiable {
+    let name: String
+    let body: String
+    let heading: String
+    let code: String
+
+    var id: String { name }
+    var faces: [String] { [body, heading, code] }
+
+    static let all = [
+        Pairing(name: "Editorial", body: "New York", heading: "Newsreader", code: "JetBrains Mono"),
+        Pairing(name: "Manuscript", body: "Courier Prime", heading: "Courier Prime", code: "Courier Prime"),
+        Pairing(name: "Hyperlegible", body: "Atkinson Hyperlegible Next", heading: "Atkinson Hyperlegible Next", code: "Atkinson Hyperlegible Mono"),
+    ]
+}
+
 /// Faces by family name, where New York, SF Pro, SF Pro Rounded and SF Mono name the system designs.
 enum Faces {
     static let body = "New York"
@@ -194,8 +231,14 @@ enum Faces {
         }
     }
 
+    /// CoreText sees a font registered for the process at once; NSFontManager's lists catch up a run loop later.
     static func exists(_ family: String) -> Bool {
-        design(family) != nil || NSFontManager.shared.availableMembers(ofFontFamily: family) != nil
+        design(family) != nil || !faces(of: family).isEmpty
+    }
+
+    static func faces(of family: String) -> [CTFontDescriptor] {
+        let descriptor = CTFontDescriptorCreateWithAttributes([kCTFontFamilyNameAttribute: family] as CFDictionary)
+        return CTFontDescriptorCreateMatchingFontDescriptors(descriptor, [kCTFontFamilyNameAttribute as String] as Set<String> as CFSet) as? [CTFontDescriptor] ?? []
     }
 
     /// Installed families other than the system's hidden ones, by name; `monospaced` keeps the fixed-pitch ones.
