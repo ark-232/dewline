@@ -20,6 +20,10 @@ settings:
 packages:
   MdCore:
     path: ../Packages/MdCore
+  # The M0 math engine trial; the decision record keeps SwiftMath or RaTeX.
+  SwiftMath:
+    url: https://github.com/mgriebling/SwiftMath
+    revision: 1d2c90827e9c3908269d810d055fb03b7da5fd53
 
 targets:
   Dewline:
@@ -34,6 +38,7 @@ targets:
         buildPhase: resources
     dependencies:
       - package: MdCore
+      - package: SwiftMath
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.arkwerx.dewline

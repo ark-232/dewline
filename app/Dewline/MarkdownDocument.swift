@@ -18,8 +18,6 @@ final class MarkdownDocument: NSDocument {
 
     override func makeWindowControllers() {
         let scrollView = EditorTextView.scrollView(variant: .current)
-        (scrollView.documentView as! NSTextView).string = text
-
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 760, height: 640),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -27,6 +25,10 @@ final class MarkdownDocument: NSDocument {
             defer: false
         )
         window.contentView = scrollView
+        // Rendered blocks fit the column, so the text arrives once the view has its width.
+        let textView = scrollView.documentView as! EditorTextView
+        textView.documentFolder = fileURL?.deletingLastPathComponent()
+        textView.string = text
         window.center()
         addWindowController(NSWindowController(window: window))
     }
