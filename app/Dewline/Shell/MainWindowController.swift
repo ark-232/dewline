@@ -35,7 +35,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         window.tabbingMode = .preferred
         window.tabbingIdentifier = folder.map { "folder " + $0.url.path } ?? "files"
         window.isRestorable = folder == nil
-        window.center()
+        if let front = NSApp.orderedWindows.first(where: { $0.windowController is MainWindowController }) {
+            window.cascadeTopLeft(from: front.cascadeTopLeft(from: .zero))
+        } else {
+            window.center()
+        }
         super.init(window: window)
         let toolbar = NSToolbar(identifier: "Main")
         toolbar.delegate = self

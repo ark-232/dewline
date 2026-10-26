@@ -48,6 +48,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     /// The location of the heading whose section is at the top of the page.
     private var section: Int?
     private var watch: FolderWatch?
+    private var showsIgnored = false
 
     init(folder: Folder?) {
         self.folder = folder
@@ -60,7 +61,12 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             )
         }
         super.init(nibName: nil, bundle: nil)
-        watch = folder.map { folder in FolderWatch(folder.url) { [weak self] in self?.filesChanged($0) } }
+        watch = folder.map { folder in
+            FolderWatch(folder.url) { [weak self] folders in
+                let changed = Set(folders.map(\.standardizedFileURL.path))
+                self?.relist { changed.contains($0.path) }
+            }
+        }
     }
 
     required init?(coder: NSCoder) {
@@ -92,6 +98,9 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             case .more:
                 self?.showsAllHeadings = true
                 self?.listHeadings()
+            case .ignored:
+                self?.showsIgnored.toggle()
+                self?.relist { _ in true }
             default:
                 return false
             }
@@ -195,14 +204,13 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         return node
     }
 
-    /// Lists again each loaded folder FSEvents reported, keeping the rows that remain so their expansion holds.
-    private func filesChanged(_ folders: [URL]) {
+    /// Lists again each loaded folder that `matches`, keeping the rows that remain so their expansion holds.
+    private func relist(_ matches: (URL) -> Bool) {
         guard let folder, let tree else { return }
-        let changed = Set(folders.map(\.standardizedFileURL.path))
         func visit(_ node: SidebarNode, _ url: URL) {
             guard let children = node.children else { return }
-            if changed.contains(url.path) {
-                let listing = folder.children(of: url)
+            if matches(url) {
+                let listing = folder.children(of: url, showingIgnored: showsIgnored)
                 var kept: [URL: SidebarNode] = [:]
                 for child in children {
                     if case .entry(let entry) = child.kind { kept[entry.url] = child }
@@ -221,7 +229,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     private func children(of node: SidebarNode) -> [SidebarNode] {
         if let children = node.children { return children }
         guard case .entry(let entry) = node.kind, entry.isFolder, let folder else { return [] }
-        let listing = folder.children(of: entry.url)
+        let listing = folder.children(of: entry.url, showingIgnored: showsIgnored)
         let children = listing.entries.map { SidebarNode(.entry($0)) }
         node.children = children
         return children
@@ -237,16 +245,18 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         reload()
     }
 
+    /// A click opens in this tab and a Command-click in a new one.
     @objc private func clicked(_ sender: Any?) {
         guard let node = outlineView.item(atRow: outlineView.clickedRow) as? SidebarNode else { return }
+        let newTab = NSApp.currentEvent?.modifierFlags.contains(.command) == true
         switch node.kind {
         case .entry(let entry) where entry.isMarkdown:
-            open(entry.url, false)
+            open(entry.url, newTab)
         case .shortcut(let entry, _):
             if entry.isFolder {
                 (NSApp.delegate as? AppDelegate)?.openFolder(at: entry.url)
             } else {
-                open(entry.url, false)
+                open(entry.url, newTab)
             }
         default:
             break
@@ -330,6 +340,13 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         }
     }
 
+    func outlineView(_ outlineView: NSOutlineView, typeSelectStringFor tableColumn: NSTableColumn?, item: Any) -> String? {
+        switch (item as! SidebarNode).kind {
+        case .entry(let entry), .shortcut(let entry, _): entry.url.lastPathComponent
+        default: nil
+        }
+    }
+
     func outlineView(_ outlineView: NSOutlineView, isGroupItem item: Any) -> Bool {
         if case .section = (item as! SidebarNode).kind { return true }
         return false
@@ -367,8 +384,8 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             return cell
         case .ignored(let names):
             let cell = cell(SidebarCell.note)
-            cell.textField?.stringValue = names.count > 2
-                ? "\(names.count) items hidden by .gitignore"
+            cell.textField?.stringValue = showsIgnored ? "Hide what .gitignore hides"
+                : names.count > 2 ? "\(names.count) items hidden by .gitignore"
                 : names.joined(separator: ", ") + " hidden by .gitignore"
             cell.textField?.textColor = .tertiaryLabelColor
             cell.toolTip = names.joined(separator: "\n")
@@ -504,7 +521,7 @@ private final class SidebarCell: NSTableCellView {
 
     /// A file or folder; one that has `gone` from disk shows dimmed.
     func show(_ entry: FolderEntry, detail text: String?, gone: Bool) {
-        let openable = !gone && (entry.isFolder || entry.isMarkdown)
+        let dim = gone || entry.isIgnored || !(entry.isFolder || entry.isMarkdown)
         let type = UTType(filenameExtension: entry.url.pathExtension)
         let symbol = entry.isFolder ? "folder.fill"
             : entry.isMarkdown ? "doc.text"
@@ -512,9 +529,9 @@ private final class SidebarCell: NSTableCellView {
             : type?.conforms(to: .text) == true ? "doc.plaintext"
             : "doc"
         imageView?.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
-        imageView?.contentTintColor = entry.isFolder ? .controlAccentColor : openable ? .secondaryLabelColor : .quaternaryLabelColor
+        imageView?.contentTintColor = dim ? .tertiaryLabelColor : entry.isFolder ? .controlAccentColor : .secondaryLabelColor
         textField?.stringValue = entry.url.lastPathComponent
-        textField?.textColor = openable ? .labelColor : .tertiaryLabelColor
+        textField?.textColor = dim ? .tertiaryLabelColor : .labelColor
         toolTip = gone ? "Moved or deleted" : nil
         detail.stringValue = text ?? ""
     }

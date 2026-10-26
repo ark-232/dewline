@@ -30,6 +30,9 @@ struct ShellTests {
         #expect(listing.entries.map(\.url.lastPathComponent) == ["Journal", "note 2.md", "note 10.md", "photo.png"])
         #expect(listing.entries.map(\.isMarkdown) == [false, true, true, false])
         #expect(listing.ignored == ["build/", "debug.log"])
+        let all = folder.children(of: folder.url, showingIgnored: true).entries
+        #expect(all.map(\.url.lastPathComponent) == ["build", "Journal", "debug.log", "note 2.md", "note 10.md", "photo.png"])
+        #expect(all.filter(\.isIgnored).map(\.url.lastPathComponent) == ["build", "debug.log"])
         #expect(folder.relativePath(of: root.appending(path: "Journal/today.md")) == "Journal/today.md")
         #expect(folder.relativePath(of: root.deletingLastPathComponent()) == nil)
     }

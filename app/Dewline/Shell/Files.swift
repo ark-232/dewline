@@ -35,6 +35,8 @@ struct GitIgnore {
 struct FolderEntry: Equatable {
     let url: URL
     let isFolder: Bool
+    /// Matched by the root's .gitignore, and listed only while the sidebar shows what it hides.
+    var isIgnored = false
 
     var isMarkdown: Bool {
         !isFolder && ["md", "markdown", "mdown", "mkd"].contains(url.pathExtension.lowercased())
@@ -51,9 +53,9 @@ struct Folder {
         ignore = GitIgnore((try? String(contentsOf: url.appending(path: ".gitignore"), encoding: .utf8)) ?? "")
     }
 
-    /// The visible children of `folder`, folders first, in Finder order, and the names .gitignore hid.
-    /// Dotfiles, .git and node_modules never show.
-    func children(of folder: URL) -> (entries: [FolderEntry], ignored: [String]) {
+    /// The children of `folder`, folders first in Finder order, and the names the root's .gitignore hides,
+    /// which are among the children only when `showingIgnored`. Dotfiles, .git and node_modules never show.
+    func children(of folder: URL, showingIgnored: Bool = false) -> (entries: [FolderEntry], ignored: [String]) {
         let urls = (try? FileManager.default.contentsOfDirectory(
             at: folder, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]
         )) ?? []
@@ -61,12 +63,13 @@ struct Folder {
         var ignored: [String] = []
         for child in urls where child.lastPathComponent != "node_modules" {
             let isFolder = (try? child.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
-            let entry = FolderEntry(url: child.standardizedFileURL, isFolder: isFolder)
+            var entry = FolderEntry(url: child.standardizedFileURL, isFolder: isFolder)
             if let path = relativePath(of: entry.url), ignore.ignores(path, isFolder: isFolder) {
                 ignored.append(child.lastPathComponent + (isFolder ? "/" : ""))
-            } else {
-                entries.append(entry)
+                entry.isIgnored = true
+                if !showingIgnored { continue }
             }
+            entries.append(entry)
         }
         entries.sort { a, b in
             a.isFolder != b.isFolder
