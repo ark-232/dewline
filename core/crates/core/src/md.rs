@@ -263,8 +263,8 @@ pub struct Parse {
 #[derive(Debug, Clone, Copy)]
 pub struct Window<'a> {
     /// Whole blocks: those holding the edit, and the block above when no blank line separates them or the window
-    /// starts with a blank or a line break. For an edit in a table's body, the table's head and then the edited rows;
-    /// for an edit in its head, the whole table.
+    /// starts with a blank or a line break, with a quote, item or footnote right above that block. For an edit in a
+    /// table's body, the table's head and then the edited rows; for an edit in its head, the whole table.
     pub text: &'a str,
     /// The lines after `text` through the first one that is not blank and the line after that, which can make it a
     /// table's header; nothing at the end of the document.
@@ -1939,7 +1939,7 @@ mod tests {
     }
 
     /// The block above joins the window when no blank line separates them, or when the window starts with a blank
-    /// or a line break.
+    /// or a line break; so does a quote, item or footnote right above that one.
     fn window_of(
         blocks: &[Block],
         index: usize,
@@ -1974,7 +1974,22 @@ mod tests {
                 {
                     pieces.push(blocks[head].start..blocks[head].end);
                 }
-                above.start
+                // A quote, item or footnote right above that block can take its first line as a lazy continuation.
+                match i.checked_sub(1).map(|j| blocks[j]) {
+                    Some(container)
+                        if container.end == above.start
+                            && matches!(
+                                container.kind,
+                                BlockKind::Quote
+                                    | BlockKind::Callout
+                                    | BlockKind::Item
+                                    | BlockKind::FootnoteDefinition
+                            ) =>
+                    {
+                        container.start
+                    }
+                    _ => above.start,
+                }
             }
             _ => block.start,
         };
