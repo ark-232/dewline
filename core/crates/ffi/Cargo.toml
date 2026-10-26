@@ -19,6 +19,13 @@ required-features = ["bindgen"]
 
 [dependencies]
 dewline-core = { path = "../core" }
+mermaid-rs-renderer = { version = "=0.3.1", default-features = false }
+ratex-layout = "=0.1.15"
+ratex-parser = "=0.1.15"
+ratex-render = { version = "=0.1.15", features = ["embed-fonts"] }
+ratex-types = "=0.1.15"
+resvg = { version = "=0.48.1", default-features = false, features = ["text", "system-fonts", "memmap-fonts"] }
+thiserror = "=2.0.21"
 uniffi = { version = "=0.32.2", default-features = false }
 
 [features]

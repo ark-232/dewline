@@ -5,6 +5,7 @@ all-features = true
 yanked = "deny"
 ignore = [
     { id = "RUSTSEC-2026-0374", reason = "basic-toml is unmaintained; askama uses it only inside uniffi-bindgen, a build tool that never ships. Remove it once a uniffi bump takes basic-toml out of Cargo.lock" },
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser is unmaintained; mermaid-rs-renderer and RaTeX read fonts with it directly. Remove it once both move to skrifa" },
 ]
 
 [licenses]
@@ -21,7 +22,15 @@ exceptions = [
     { allow = ["MPL-2.0"], crate = "uniffi_meta" },
     { allow = ["MPL-2.0"], crate = "uniffi_pipeline" },
     { allow = ["MPL-2.0"], crate = "uniffi_udl" },
+    { allow = ["Zlib"], crate = "slotmap" },
+    { allow = ["OFL-1.1"], crate = "ratex-katex-fonts" },
 ]
+
+# The crate says MIT, but the KaTeX fonts it embeds are under the SIL Open Font License.
+[[licenses.clarify]]
+crate = "ratex-katex-fonts"
+expression = "MIT AND OFL-1.1"
+license-files = [{ path = "fonts/OFL.txt", hash = 0x55ee1b8a }]
 
 [licenses.private]
 ignore = true
