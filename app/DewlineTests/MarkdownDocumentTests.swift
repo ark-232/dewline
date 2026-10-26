@@ -10,14 +10,19 @@ struct MarkdownDocumentTests {
         #expect(document.text == "# Notes\r\n- one\n")
     }
 
-    @Test func showsTheTextReadOnly() throws {
+    @Test func editsWithoutMarkingTheDocumentEdited() throws {
         let document = MarkdownDocument()
         try document.read(from: Data("# Notes\n".utf8), ofType: "net.daringfireball.markdown")
         document.makeWindowControllers()
         let scrollView = try #require(document.windowControllers.first?.window?.contentView as? NSScrollView)
-        let textView = try #require(scrollView.documentView as? NSTextView)
+        let textView = try #require(scrollView.documentView as? EditorTextView)
         #expect(textView.string == "# Notes\n")
-        #expect(!textView.isEditable)
+        #expect(textView.isEditable)
+        textView.setSelectedRange(NSRange(location: 7, length: 0))
+        textView.insertText("!", replacementRange: textView.selectedRange())
+        #expect(textView.string == "# Notes!\n")
+        #expect(textView.undoManager === textView.styler.undoManager)
+        #expect(!document.isDocumentEdited)
     }
 
     @Test func refusesTextThatIsNotUTF8() {
