@@ -1,9 +1,9 @@
 #!/bin/bash
-# Measures the editor on this Mac: the perf tests in a Release build, then launch, memory, idle CPU and wakeups,
-# and the app and DMG sizes. Writes perf/<version>.json for the Cargo workspace version, with the 1-minute load
-# average at the start, after the tests and at the end, and each budget in perf/budgets.jq with its result; prints
-# the budgets, the other measurements and whether every budget holds. Windows come to the front while it runs; no app
-# is left running.
+# Measures the editor on this Mac: the perf tests in a Release build, each part of a keystroke (KeystrokeLatency in
+# front), then launch, memory, idle CPU and wakeups, and the app and DMG sizes. Writes perf/<version>.json for the
+# Cargo workspace version, with the 1-minute load average at the start, after the tests and at the end, and each
+# budget in perf/budgets.jq with its result; prints the budgets, the other measurements and whether every budget
+# holds. Windows come to the front while it runs; no app is left running.
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -74,6 +74,21 @@ xcodegen generate --spec "$root/app/project.yml" --quiet
 TEST_RUNNER_DEWLINE_PERF=1 TEST_RUNNER_DEWLINE_PERF_OUT="$work/tests.json" \
     xcodebuild test "${xcode[@]}" -only-testing:DewlineTests/PerfTests ENABLE_TESTABILITY=YES
 jq -e '.scroll' "$work/tests.json" > /dev/null
+
+# KeystrokeLatency's parts in front, three runs pooled. A run whose clock probe reads 1.5 times the fastest run's ran
+# at a slower clock and runs again, for up to three rounds.
+keystrokes() { # n
+    TEST_RUNNER_DEWLINE_LATENCY=1 TEST_RUNNER_DEWLINE_LATENCY_FRONT=1 TEST_RUNNER_DEWLINE_LATENCY_OUT="$work/keystrokes-$1.json" \
+        xcodebuild test-without-building "${xcode[@]}" '-only-testing:DewlineTests/KeystrokeLatency/parts()' ENABLE_TESTABILITY=YES
+}
+reruns=0
+for n in 1 2 3; do keystrokes "$n"; done
+for _ in 1 2 3; do
+    slow=$(jq -rs 'map(.clockUs) | (min * 1.5) as $limit | to_entries[] | select(.value > $limit) | .key + 1' "$work"/keystrokes-[123].json)
+    [[ -n $slow ]] || break
+    for n in $slow; do keystrokes "$n"; reruns=$((reruns + 1)); done
+done
+jq -s -f "$root/perf/keystroke-parts.jq" "$work"/keystrokes-[123].json > "$work/keystrokes"
 xcodebuild build "${xcode[@]}"
 load="$load $(sysctl -n vm.loadavg | awk '{ print $2 }')"
 
@@ -100,9 +115,11 @@ jq -n --slurpfile tests "$work/tests.json" --slurpfile cold "$work/cold" --slurp
     --argjson corpus1 "$(stat -f %z "$work/1MB.md")" --argjson corpus10 "$(stat -f %z "$work/10MB.md")" \
     --argjson app "$(find "$app" -type f -exec stat -f %z {} + | awk '{ s += $1 } END { print s }')" \
     --argjson dmg "$(stat -f %z "$work/Dewline.dmg")" --slurpfile first "$work/first" \
+    --slurpfile keystrokes "$work/keystrokes" --argjson reruns "$reruns" \
     '{date: $date, commit: $commit, mac: $mac, xcode: $xcode, build: "Release, arm64, unsigned", load: $load,
       corpusBytes: {"1MB": $corpus1, "10MB": $corpus10}, appBytes: $app, dmgBytes: $dmg, firstLaunchMs: $first[0],
-      launch1MB: {coldMs: $cold, warmMs: $warm}, idle1MB: $one[0], idle10MB: $ten[0]} + $tests[0]' \
+      launch1MB: {coldMs: $cold, warmMs: $warm}, idle1MB: $one[0], idle10MB: $ten[0],
+      keystrokeParts: ($keystrokes[0] + {reruns: $reruns})} + $tests[0]' \
     | jq -f "$root/perf/budgets.jq" > "$result"
 
 jq -r '
@@ -117,6 +134,8 @@ jq -r '
     (["Also measured", "Measured"] | @tsv),
     row("Keystroke 1 MB p95 / max, ms"; "\(.keystroke1MB.p95 | f) / \(.keystroke1MB.max | f)"),
     row("Keystroke 10 MB p50 / p99, ms"; "\(.keystroke10MB.p50 | f) / \(.keystroke10MB.p99 | f)"),
+    row("Keystroke parts, 1 MB p50 / p99, 10 MB p95, ms"; "\(.keystrokeParts."1MB".frame.p50 | f) / \(.keystrokeParts."1MB".frame.p99 | f), \(.keystrokeParts."10MB".frame.p95 | f)"),
+    row("Keystroke parts clock probe by run, µs"; .keystrokeParts.clockUs | map(f) | join(" / ")),
     row("Reveal p50 / p99, ms"; "\(.reveal.p50 | f) / \(.reveal.p99 | f)"),
     row("Select all / deselect 1 MB, ms"; "\(.reveal.selectAll1MB | f) / \(.reveal.deselect1MB | f)"),
     row("Scroll step p50 / p99, ms"; "\(.scroll.p50 | f) / \(.scroll.p99 | f)"),

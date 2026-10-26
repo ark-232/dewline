@@ -83,6 +83,8 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
         changeInLength delta: Int
     ) {
         guard editedMask.contains(.editedCharacters) else { return }
+        LatencyProbe.begin(.attributes)
+        defer { LatencyProbe.end(.attributes) }
         MainActor.assumeIsolated {
             let oldEnd = NSMaxRange(editedRange) - delta
             revealed = Set(revealed.compactMap { span in
@@ -100,7 +102,9 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
                 let start = moved(waiting.location)
                 range = NSUnionRange(NSRange(location: start, length: moved(NSMaxRange(waiting)) - start), editedRange)
             }
+            LatencyProbe.begin(.parse)
             let changed = blocks.textDidChange(textView!.textStorage!.mutableString, edited: editedRange, delta: delta)
+            LatencyProbe.end(.parse)
             if textView!.defersStyling {
                 pending = changed.reduce(range, NSUnionRange)
             } else {
@@ -231,7 +235,9 @@ extension MarkdownStyler {
         let selection = selection.map { NSRange(location: $0.location - paragraphs.location, length: $0.length) }
         text.enumerateSubstrings(in: whole, options: [.byParagraphs, .substringNotRequired]) { _, line, paragraph, _ in
             guard !self.blocks.contains(NSRange(location: line.location + paragraphs.location, length: line.length)) else { return }
+            LatencyProbe.begin(.parse)
             let spans = SpikeTokenizer.spans(in: text, line: line)
+            LatencyProbe.end(.parse)
             for span in spans {
                 switch span.kind {
                 case .heading where source:
@@ -319,6 +325,8 @@ extension MarkdownStyler {
     }
 
     private func updateReveal() {
+        LatencyProbe.begin(.reveal)
+        defer { LatencyProbe.end(.reveal) }
         guard !showsSource else { return }
         let textView = textView!
         let storage = textView.textStorage!
