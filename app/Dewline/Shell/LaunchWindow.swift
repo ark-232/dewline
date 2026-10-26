@@ -530,6 +530,7 @@ private final class FileCell: NSTableCellView {
 
     private let preview = NSTextField(labelWithString: "")
     private let time = NSTextField(labelWithString: "")
+    private let leader = DotLeader()
 
     init() {
         super.init(frame: .zero)
@@ -547,7 +548,6 @@ private final class FileCell: NSTableCellView {
         time.textColor = .secondaryLabelColor
         time.setContentHuggingPriority(.required, for: .horizontal)
         time.setContentCompressionResistancePriority(.required, for: .horizontal)
-        let leader = DotLeader()
         for view in [icon, name, preview, time, leader] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
@@ -586,6 +586,7 @@ private final class FileCell: NSTableCellView {
         preview.font = isFolder ? .systemFont(ofSize: 11) : Self.prose
         preview.lineBreakMode = isFolder ? .byTruncatingMiddle : .byTruncatingTail
         time.stringValue = date.map { shortDate($0) } ?? ""
+        leader.isHidden = date == nil
     }
 }
 
