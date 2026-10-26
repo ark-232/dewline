@@ -377,10 +377,24 @@ struct KeystrokeLatency {
             #expect(keystrokes.map(\.storageEdits) == Array(repeating: 1, count: 8))
             #expect(keystrokes.map(\.revealWrites) == Array(repeating: 0, count: 8))
         }
-        withKnownIssue("A2: each restyle builds the body font from its descriptor") {
-            #expect(keystrokes.map(\.fonts) == Array(repeating: 0, count: 8))
-        }
+        #expect(keystrokes.map(\.fonts) == Array(repeating: 0, count: 8))
         print("KeystrokeLatency counts: storage edits \(keystrokes.map(\.storageEdits)), restyles \(keystrokes.map(\.restyles)), fonts \(keystrokes.map(\.fonts)), reveal writes \(keystrokes.map(\.revealWrites))")
+    }
+
+    /// Once 1 MB is styled, restyling all of it builds no font from a descriptor.
+    @Test func documentRestyle() throws {
+        let wraps = try wrapTextSystem()
+        defer { wraps.forEach { $0.restore() } }
+        let editor = try Editor(front: false)
+        defer { editor.close() }
+        editor.open(MarkdownCorpus.text(bytes: 1 << 20))
+        LatencyProbe.stamps.removeAll()
+        LatencyProbe.enabled = true
+        editor.view.styler.restyleDocument()
+        LatencyProbe.enabled = false
+        let fonts = LatencyProbe.stamps.filter { $0.code >> 1 == TestPart.font.rawValue }.count
+        print("KeystrokeLatency document restyle: fonts \(fonts)")
+        #expect(fonts == 0)
     }
 
     /// Off, a stamp is a load and a branch and records nothing: its time, less an empty loop's, is a few nanoseconds.

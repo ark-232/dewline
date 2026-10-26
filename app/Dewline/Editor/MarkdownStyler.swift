@@ -33,15 +33,13 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
         NSAttributedString.Key.font, .foregroundColor, .backgroundColor, .paragraphStyle, .underlineStyle, .strikethroughStyle, .kern,
         .dewlineMarkerFont, .dewlineBlock, .dewlineQuote,
     ].map { $0.rawValue as NSString }
-    /// Fonts with added traits by font and traits, since matching a font descriptor costs more than styling a run.
-    private static var traited: [NSFont: [UInt32: NSFont]] = [:]
     /// The most text one pass styles while more waits: several screens, a few milliseconds of work.
     private static let chunk = 1 << 14
     private static var base: [NSAttributedString.Key: Any] {
         [
             .font: bodyFont,
             .foregroundColor: ThemeStore.shared.color(.ink),
-            .paragraphStyle: lines(ThemeStore.shared.bodyLineHeight),
+            .paragraphStyle: ThemeStore.shared.paragraphStyle(lineHeight: ThemeStore.shared.bodyLineHeight),
             .underlineStyle: 0,
             .strikethroughStyle: 0,
         ]
@@ -55,7 +53,9 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
 
     var baseAttributes: [NSAttributedString.Key: Any] {
         guard showsSource else { return Self.base }
-        return Self.base.merging([.font: Self.code(matching: Self.bodyFont), .paragraphStyle: Self.lines(sourceLineHeight)]) { $1 }
+        return Self.base.merging([
+            .font: Self.code(matching: Self.bodyFont), .paragraphStyle: ThemeStore.shared.paragraphStyle(lineHeight: sourceLineHeight),
+        ]) { $1 }
     }
 
     func undoManager(for view: NSTextView) -> UndoManager? {
@@ -135,12 +135,6 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
 
     func restyleDocument() {
         restyle(NSRange(location: 0, length: textView!.textStorage!.length))
-    }
-
-    /// Restyles the document in the theme's new colors and faces.
-    func themeDidChange() {
-        Self.traited = [:]
-        restyleDocument()
     }
 
     /// Restyles `range`, or after the composition while an input method composes.
@@ -246,16 +240,14 @@ extension MarkdownStyler {
                 case .heading(let level):
                     let heading = store.heading(level)
                     styled.addAttributes([
-                        .font: heading.font, .paragraphStyle: Self.lines(heading.lineHeight), .foregroundColor: store.color(level < 5 ? .heading : .ink2),
+                        .font: heading.font, .paragraphStyle: store.paragraphStyle(lineHeight: heading.lineHeight),
+                        .foregroundColor: store.color(level < 5 ? .heading : .ink2),
                     ], range: paragraph)
                     if heading.kern != 0 { styled.addAttribute(.kern, value: heading.kern, range: paragraph) }
                 case .quote where source:
                     break
                 case .quote:
-                    let style = Self.lines(store.bodyLineHeight).mutableCopy() as! NSMutableParagraphStyle
-                    style.firstLineHeadIndent = (18 * store.bodySize / 17).rounded()
-                    style.headIndent = style.firstLineHeadIndent
-                    styled.addAttributes([.paragraphStyle: style, .foregroundColor: store.color(.heading), .dewlineQuote: true], range: paragraph)
+                    styled.addAttributes([.paragraphStyle: store.quoteParagraphStyle, .foregroundColor: store.color(.heading), .dewlineQuote: true], range: paragraph)
                     Self.add(.italic, in: span.content, of: styled)
                 case .strong:
                     Self.add(.bold, in: span.content, of: styled)
@@ -360,21 +352,8 @@ extension MarkdownStyler {
 
     private static func add(_ traits: NSFontDescriptor.SymbolicTraits, in range: NSRange, of storage: NSMutableAttributedString) {
         storage.enumerateAttribute(.font, in: range) { value, run, _ in
-            let font = value as! NSFont
-            let derived = traited[font]?[traits.rawValue] ?? {
-                let descriptor = font.fontDescriptor.withSymbolicTraits(font.fontDescriptor.symbolicTraits.union(traits))
-                return NSFont(descriptor: descriptor, size: font.pointSize)!
-            }()
-            traited[font, default: [:]][traits.rawValue] = derived
-            storage.addAttribute(.font, value: derived, range: run)
+            storage.addAttribute(.font, value: ThemeStore.shared.font(value as! NSFont, adding: traits), range: run)
         }
-    }
-
-    private static func lines(_ height: CGFloat) -> NSParagraphStyle {
-        let style = NSMutableParagraphStyle()
-        style.minimumLineHeight = height
-        style.maximumLineHeight = height
-        return style
     }
 }
 

@@ -74,7 +74,7 @@ final class EditorTextView: CaretTextView {
 
     @objc private func themeDidChange(_ notification: Notification) {
         applyTheme()
-        styler.themeDidChange()
+        styler.restyleDocument()
     }
 
     /// Rendered diagrams and math take the colors of the appearance they were drawn in.
