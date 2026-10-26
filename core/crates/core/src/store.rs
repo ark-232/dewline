@@ -31,6 +31,8 @@ struct Index {
     path: PathBuf,
     history: Vec<Snapshot>,
     draft: Option<Snapshot>,
+    /// BLAKE3 of the last index a move took in.
+    moved: Option<Hash>,
 }
 
 /// Snapshots of files, kept under a root folder. `blobs/` holds each version
@@ -129,7 +131,8 @@ impl Store {
     /// by time with any history `to` already has, and gives them new ids. Its
     /// draft takes `to`'s slot, and a draft `to` held joins the history. A
     /// kill between the two index writes leaves the snapshots under both
-    /// paths, and running the move again finishes it.
+    /// paths; `to` records the hash of the index it took in, so running the
+    /// move again only removes the old one.
     pub fn moved(&self, from: &Path, to: &Path) -> io::Result<()> {
         if from.as_os_str() == to.as_os_str() {
             return Ok(());
@@ -139,39 +142,37 @@ impl Store {
         if moving.history.is_empty() && moving.draft.is_none() {
             return Ok(());
         }
+        let taken = blake3::hash(&serialize(&moving)?);
         let mut index = self.index(to)?;
-        let mut there = std::mem::take(&mut index.history);
-        // A move that a kill cut short left these in `to` already.
-        let same =
-            |a: &Snapshot, b: &Snapshot| (a.hash, a.time, &a.origin) == (b.hash, b.time, &b.origin);
-        if let Some(draft) = moving.draft
-            && let Some(displaced) = index.draft.replace(draft)
-            && !index
-                .draft
-                .as_ref()
-                .is_some_and(|draft| same(draft, &displaced))
-        {
-            there.insert(
-                there.partition_point(|entry| entry.time <= displaced.time),
-                displaced,
+        if index.moved != Some(taken) {
+            let mut there = std::mem::take(&mut index.history);
+            if let Some(draft) = moving.draft
+                && let Some(displaced) = index.draft.replace(draft)
+            {
+                there.insert(
+                    there.partition_point(|entry| entry.time <= displaced.time),
+                    displaced,
+                );
+            }
+            let (mut there, mut moving) = (
+                there.into_iter().peekable(),
+                moving.history.into_iter().peekable(),
             );
+            while let (Some(a), Some(b)) = (there.peek(), moving.peek()) {
+                let next = if a.time <= b.time {
+                    there.next()
+                } else {
+                    moving.next()
+                };
+                index.history.extend(next);
+            }
+            index.history.extend(there.chain(moving));
+            for (id, snapshot) in (1..).zip(index.history.iter_mut().chain(&mut index.draft)) {
+                snapshot.id = id;
+            }
+            index.moved = Some(taken);
+            self.write(&index)?;
         }
-        let mut moving = moving.history;
-        moving.retain(|entry| !there.iter().any(|kept| same(kept, entry)));
-        let (mut there, mut moving) = (there.into_iter().peekable(), moving.into_iter().peekable());
-        while let (Some(a), Some(b)) = (there.peek(), moving.peek()) {
-            let next = if a.time <= b.time {
-                there.next()
-            } else {
-                moving.next()
-            };
-            index.history.extend(next);
-        }
-        index.history.extend(there.chain(moving));
-        for (id, snapshot) in (1..).zip(index.history.iter_mut().chain(&mut index.draft)) {
-            snapshot.id = id;
-        }
-        self.write(&index)?;
         step("moved");
         fs::remove_file(self.root.join("files").join(key(from)))?;
         File::open(self.root.join("files"))?.sync_all()
@@ -304,33 +305,14 @@ impl Store {
                 path: path.to_owned(),
                 history: Vec::new(),
                 draft: None,
+                moved: None,
             }),
             Err(error) => Err(error),
         }
     }
 
     fn write(&self, index: &Index) -> io::Result<()> {
-        let mut bytes = HEADER.to_vec();
-        bytes.push(b'\n');
-        bytes.extend(escape(index.path.as_os_str().as_bytes()));
-        bytes.push(b'\n');
-        let lines = index
-            .history
-            .iter()
-            .map(|entry| (entry, if entry.pinned { "pinned" } else { "-" }))
-            .chain(index.draft.iter().map(|draft| (draft, "draft")));
-        for (snapshot, mark) in lines {
-            write!(
-                bytes,
-                "{} {} {} {mark} ",
-                snapshot.id,
-                snapshot.hash.to_hex(),
-                millis(snapshot.time),
-            )?;
-            bytes.extend(escape(snapshot.origin.as_bytes()));
-            bytes.push(b'\n');
-        }
-        self.replace("files", &key(&index.path), &bytes)
+        self.replace("files", &key(&index.path), &serialize(index)?)
     }
 
     /// Puts `bytes` at `folder/name` through a synced file in `tmp/`.
@@ -413,9 +395,37 @@ fn unescape(mut bytes: &[u8]) -> Option<Vec<u8>> {
     Some(plain)
 }
 
-/// Reads an index: a header line, the escaped path, then a line per
-/// snapshot with its id, hash, milliseconds, mark (`-`, `pinned` or
-/// `draft`) and escaped origin.
+/// An index as `parse` reads it.
+fn serialize(index: &Index) -> io::Result<Vec<u8>> {
+    let mut bytes = HEADER.to_vec();
+    bytes.push(b'\n');
+    bytes.extend(escape(index.path.as_os_str().as_bytes()));
+    bytes.push(b'\n');
+    if let Some(taken) = index.moved {
+        writeln!(bytes, "moved {}", taken.to_hex())?;
+    }
+    let lines = index
+        .history
+        .iter()
+        .map(|entry| (entry, if entry.pinned { "pinned" } else { "-" }))
+        .chain(index.draft.iter().map(|draft| (draft, "draft")));
+    for (snapshot, mark) in lines {
+        write!(
+            bytes,
+            "{} {} {} {mark} ",
+            snapshot.id,
+            snapshot.hash.to_hex(),
+            millis(snapshot.time),
+        )?;
+        bytes.extend(escape(snapshot.origin.as_bytes()));
+        bytes.push(b'\n');
+    }
+    Ok(bytes)
+}
+
+/// Reads an index: a header line, the escaped path, `moved` and a hash when
+/// a move took in another index, then a line per snapshot with its id,
+/// hash, milliseconds, mark (`-`, `pinned` or `draft`) and escaped origin.
 fn parse(bytes: &[u8]) -> Option<Index> {
     let mut lines = bytes.strip_suffix(b"\n")?.split(|&byte| byte == b'\n');
     if lines.next()? != HEADER {
@@ -425,9 +435,16 @@ fn parse(bytes: &[u8]) -> Option<Index> {
         path: PathBuf::from(OsString::from_vec(unescape(lines.next()?)?)),
         history: Vec::new(),
         draft: None,
+        moved: None,
     };
     let number = |field: &[u8]| std::str::from_utf8(field).ok()?.parse().ok();
     for line in lines {
+        if let Some(taken) = line.strip_prefix(b"moved ") {
+            if index.moved.replace(Hash::from_hex(taken).ok()?).is_some() {
+                return None;
+            }
+            continue;
+        }
         let mut fields = line.splitn(5, |&byte| byte == b' ');
         let id = number(fields.next()?)?;
         let hash = Hash::from_hex(fields.next()?).ok()?;
@@ -989,6 +1006,48 @@ mod tests {
         assert!(names(&store.root.join("tmp")).is_empty());
         assert_eq!(ids(&store, NOTES), [1]);
         assert_eq!(store.draft(notes).unwrap(), None);
+    }
+
+    #[test]
+    fn a_draft_a_move_displaces_joins_the_history_even_when_it_matches() {
+        let (_dir, store) = store();
+        let (notes, other) = (Path::new(NOTES), Path::new(OTHER));
+        store
+            .set_draft(other, b"version 0", "You", hours(0))
+            .unwrap();
+        store
+            .set_draft(notes, b"version 0", "You", hours(0))
+            .unwrap();
+        store.moved(notes, other).unwrap();
+        let history = store.list(other).unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(store.get(&history[0].hash).unwrap(), b"version 0");
+        // The draft that moved can change; the one it displaced stays.
+        store
+            .set_draft(other, b"version 1", "You", hours(1))
+            .unwrap();
+        store.prune(hours(2), &[other]).unwrap();
+        assert_eq!(
+            store.get(&blake3::hash(b"version 0")).unwrap(),
+            b"version 0"
+        );
+    }
+
+    #[test]
+    fn a_move_keeps_a_pin_when_the_new_path_holds_the_same_snapshot() {
+        let (_dir, store) = store();
+        let (notes, other) = (Path::new(NOTES), Path::new(OTHER));
+        let template = store.put(notes, b"template", "git", day(0)).unwrap();
+        store.pin(notes, &template, true).unwrap();
+        store.put(other, b"template", "git", day(0)).unwrap();
+        store.moved(notes, other).unwrap();
+        let pinned: Vec<_> = store
+            .list(other)
+            .unwrap()
+            .iter()
+            .map(|s| s.pinned)
+            .collect();
+        assert_eq!(pinned, [true, false]);
     }
 
     #[test]
