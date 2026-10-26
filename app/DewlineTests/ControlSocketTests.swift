@@ -34,6 +34,30 @@ struct ControlSocketTests {
         #expect(client.line() == nil)
     }
 
+    /// A normal quit stops the socket, and every request still waiting hears closed. A connection the app drops any
+    /// other way, as a crash drops them all, just ends.
+    @Test func aQuitAnswersEveryWaitingRequestClosed() async throws {
+        let listening = try await Listening()
+        defer { listening.finish() }
+        let request = #"{"v":1,"op":"open","path":"\#(try listening.file("COMMIT_EDITMSG").path)","wait":true}"# + "\n"
+        let waiting = try (0..<2).map { _ in try Client(listening.socket.path) }
+        for client in waiting {
+            client.send(request)
+            #expect(client.line() == #"{"reply":"opened","v":1}"#)
+        }
+        let dropped = try Client(listening.socket.path)
+        dropped.send(request)
+        #expect(dropped.line() == #"{"reply":"opened","v":1}"#)
+        dropped.send(request)
+        #expect(dropped.line() == nil, "a second request drops the connection")
+        listening.socket.stop()
+        for client in waiting {
+            #expect(client.line() == #"{"reply":"closed","v":1}"#)
+            #expect(client.line() == nil)
+        }
+        #expect(dropped.line() == nil)
+    }
+
     /// Restart to Update, with `dewline open --wait` waiting on a file, says which file and holds; the restart runs
     /// once the file closes, after the tool heard closed. A tool that gives up stops the wait at the next return to
     /// the app.

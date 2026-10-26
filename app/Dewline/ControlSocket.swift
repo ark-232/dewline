@@ -104,13 +104,15 @@ final class ControlSocket: @unchecked Sendable {
         source.resume()
     }
 
-    /// Stops listening, removes the socket file and drops every connection, so a `dewline open --wait` still
-    /// waiting exits with an error.
+    /// Stops listening, removes the socket file and drops every connection, first telling each request still
+    /// waiting that its file closed. The app stops the socket as it quits normally, so `dewline open --wait` exits 0
+    /// then, as it does when the file closes; a crash leaves it to exit 1.
     func stop() {
         queue.sync {
             listener?.cancel()
             listener = nil
             for connection in Array(connections.values) {
+                if connection.request?.wait == true { send(.closed, to: connection) }
                 drop(connection)
             }
             var info = stat()

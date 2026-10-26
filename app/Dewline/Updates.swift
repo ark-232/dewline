@@ -238,7 +238,6 @@ final class Updates: NSObject, NSMenuItemValidation, SPUUpdaterDelegate, SPUStan
         guard afterTools != nil, toolObservers.isEmpty else { return }
         for name in [MarkdownDocument.didCloseNotification, NSApplication.didBecomeActiveNotification] {
             toolObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                // A closing document answers its tools on the next pass, so the check waits a turn behind it.
                 Task { @MainActor in self?.toolsMayHaveFinished() }
             })
         }
