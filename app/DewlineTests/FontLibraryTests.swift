@@ -72,6 +72,11 @@ struct FontLibraryTests {
         #expect(library.installed == ["JetBrains Mono"] && library.progress.isEmpty)
         #expect(library.fonts(of: "JetBrains Mono").map(\.lastPathComponent) == ["JetBrainsMono-Regular.ttf"])
         #expect(registered(font, "JetBrains Mono"))
+        // A dropped copy of the same family goes with it on Remove.
+        let bundled = try #require(Bundle.main.resourceURL).appending(path: "Fonts/JetBrainsMono-Regular.ttf")
+        #expect(library.add([bundled]) == [.added("JetBrains Mono")])
+        let dropped = folder.appending(path: "Added/JetBrainsMono-Regular.ttf")
+        #expect(library.fonts(of: "JetBrains Mono").count == 2 && registered(dropped, "JetBrains Mono"))
 
         let suite = "DewlineFontTests-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
@@ -84,8 +89,9 @@ struct FontLibraryTests {
 
         try library.remove("JetBrains Mono")
         #expect(!FileManager.default.fileExists(atPath: font.deletingLastPathComponent().path))
-        #expect(library.installed.isEmpty)
-        #expect(!registered(font, "JetBrains Mono"))
+        #expect(!FileManager.default.fileExists(atPath: dropped.path))
+        #expect(library.installed.isEmpty && library.added.isEmpty)
+        #expect(!registered(font, "JetBrains Mono") && !registered(dropped, "JetBrains Mono"))
         #expect(NSFont(name: "JetBrainsMono-Regular", size: 12) != nil, "the bundled copy stays")
     }
 

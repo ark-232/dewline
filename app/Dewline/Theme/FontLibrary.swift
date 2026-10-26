@@ -74,9 +74,9 @@ final class FontLibrary {
         Array(Set(added.map(\.family))).sorted()
     }
 
-    /// The font files Dewline keeps for `family`, from the catalog or dropped in.
+    /// The font files Dewline keeps for `family`, from the catalog and dropped in.
     func fonts(of family: String) -> [URL] {
-        installed.contains(family) ? Self.fontFiles(in: folder.appending(path: family)) : added.filter { $0.family == family }.map(\.url)
+        (installed.contains(family) ? Self.fontFiles(in: folder.appending(path: family)) : []) + added.filter { $0.family == family }.map(\.url)
     }
 
     func reload() {
@@ -159,16 +159,14 @@ final class FontLibrary {
         installed.insert(family.name)
     }
 
-    /// Unregisters and deletes a catalog family or every dropped file of a family.
+    /// Unregisters and deletes every copy Dewline keeps of `family`: its catalog folder and any dropped files.
     func remove(_ family: String) throws {
-        let fonts = fonts(of: family)
-        Self.unregister(fonts)
+        Self.unregister(fonts(of: family))
         if installed.contains(family) {
             try FileManager.default.removeItem(at: folder.appending(path: family))
-        } else {
-            for font in fonts {
-                try FileManager.default.removeItem(at: font)
-            }
+        }
+        for font in added where font.family == family {
+            try FileManager.default.removeItem(at: font.url)
         }
         reload()
     }
