@@ -417,6 +417,26 @@ struct KeystrokeLatency {
         #expect(nanoseconds < 10, "a stamp with the probe off costs \(nanoseconds) ns")
     }
 
+    /// Milliseconds from setting 1 MB of text to its first screen drawn, p50 of five opens.
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["DEWLINE_LATENCY"] != nil))
+    func firstScreen() throws {
+        try Editor(front: false).close()
+        let text = MarkdownCorpus.text(bytes: 1 << 20)
+        var samples: [Double] = []
+        for _ in 0..<5 {
+            let editor = try Editor(front: false)
+            let start = mach_absolute_time()
+            editor.view.string = text
+            editor.window.layoutIfNeeded()
+            editor.window.displayIfNeeded()
+            CATransaction.flush()
+            samples.append(milliseconds(mach_absolute_time() - start))
+            editor.close()
+        }
+        let all = samples.map { String(format: "%.1f", $0) }.joined(separator: " ")
+        print(String(format: "KeystrokeLatency first screen of 1 MB: %.1f ms p50 of %@", percentile(samples, 0.5), all))
+    }
+
     @Test(.enabled(if: ProcessInfo.processInfo.environment["DEWLINE_LATENCY"] != nil))
     func parts() throws {
         let environment = ProcessInfo.processInfo.environment
