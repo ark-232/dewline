@@ -4,8 +4,8 @@ import Synchronization
 /// The socket the `dewline` command (core/crates/cli) talks to, in a folder only this user can enter. A connection
 /// carries one request, a JSON line such as `{"v":1,"op":"open","path":"/Users/me/plan.md","line":12,"col":4,
 /// "wait":true}`. The answers are JSON lines too: `{"reply":"opened","v":1}`, then `{"reply":"closed","v":1}` once
-/// the document closes if the request waits, or `{"error":"not_a_file","reply":"error","v":1}`. Only absolute paths
-/// of existing regular files get through, and nothing that arrives here writes to a file.
+/// the document closes or the app quits if the request waits, or `{"error":"not_a_file","reply":"error","v":1}`.
+/// Only absolute paths of existing regular files get through, and nothing that arrives here writes to a file.
 final class ControlSocket: @unchecked Sendable {
     struct Open: Sendable, Equatable {
         let path: String

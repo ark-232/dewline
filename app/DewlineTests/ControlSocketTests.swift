@@ -40,6 +40,7 @@ struct ControlSocketTests {
         let listening = try await Listening()
         defer { listening.finish() }
         let request = #"{"v":1,"op":"open","path":"\#(try listening.file("COMMIT_EDITMSG").path)","wait":true}"# + "\n"
+        let idle = try Client(listening.socket.path)
         let waiting = try (0..<2).map { _ in try Client(listening.socket.path) }
         for client in waiting {
             client.send(request)
@@ -56,6 +57,7 @@ struct ControlSocketTests {
             #expect(client.line() == nil)
         }
         #expect(dropped.line() == nil)
+        #expect(idle.line() == nil, "a connection with no request hears nothing")
     }
 
     /// Restart to Update, with `dewline open --wait` waiting on a file, says which file and holds; the restart runs
