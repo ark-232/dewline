@@ -496,7 +496,9 @@ mod tests {
     }
 
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(64))]
+        #![proptest_config(ProptestConfig::with_cases(
+            std::env::var("PROPTEST_CASES").map_or(64, |cases| cases.parse().unwrap())
+        ))]
 
         #[test]
         fn saves_are_byte_identical(

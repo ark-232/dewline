@@ -1262,7 +1262,9 @@ mod tests {
     }
 
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(16))]
+        #![proptest_config(ProptestConfig::with_cases(
+            std::env::var("PROPTEST_CASES").map_or(16, |cases| cases.parse().unwrap())
+        ))]
 
         #[test]
         fn random_puts_drafts_pins_moves_and_prunes_keep_the_rules(
