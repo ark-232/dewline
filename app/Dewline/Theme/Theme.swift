@@ -41,6 +41,20 @@ struct OKLCH: Hashable, Sendable {
         ])
         return NSColor(displayP3Red: p3[0], green: p3[1], blue: p3[2], alpha: 1)
     }
+
+    /// The WCAG contrast ratio between this color and `other`.
+    func contrast(with other: OKLCH) -> Double {
+        func luminance(_ color: OKLCH) -> Double {
+            let rgb = color.linearSRGB
+            return max(0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2], 0)
+        }
+        let (a, b) = (luminance(self), luminance(other))
+        return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+    }
+
+    func lightened(by delta: Double) -> OKLCH {
+        OKLCH(l: l + delta, c: c, h: h)
+    }
 }
 
 /// A theme's named colors (synthesis 2.1).
@@ -61,6 +75,8 @@ struct Theme: Identifiable, Hashable, Sendable {
     let dark: [Token: OKLCH]
     let lightColors: [Token: NSColor]
     let darkColors: [Token: NSColor]
+    let increasedLightColors: [Token: NSColor]
+    let increasedDarkColors: [Token: NSColor]
 
     var id: String { name }
 
@@ -83,6 +99,28 @@ struct Theme: Identifiable, Hashable, Sendable {
         self.dark = dark
         lightColors = light.mapValues(\.color)
         darkColors = dark.mapValues(\.color)
+        increasedLightColors = Self.increased(light, dark: false).mapValues(\.color)
+        increasedDarkColors = Self.increased(dark, dark: true).mapValues(\.color)
+    }
+
+    /// `tokens` under Increase Contrast (synthesis 2.1): ink at L 0.15 or 0.97, ink2 at 7:1 on paper and syntax with it,
+    /// link and accent 0.06 further from the paper, and no sky.
+    static func increased(_ tokens: [Token: OKLCH], dark: Bool) -> [Token: OKLCH] {
+        let step = dark ? 0.01 : -0.01
+        var tokens = tokens
+        let ink = tokens[.ink]!
+        tokens[.ink] = OKLCH(l: dark ? 0.97 : 0.15, c: ink.c, h: ink.h)
+        var ink2 = tokens[.ink2]!
+        while ink2.contrast(with: tokens[.paper]!) < 7 {
+            ink2 = ink2.lightened(by: step)
+        }
+        tokens[.ink2] = ink2
+        tokens[.syntax] = ink2
+        tokens[.link] = tokens[.link]!.lightened(by: 6 * step)
+        tokens[.accent] = tokens[.accent]!.lightened(by: 6 * step)
+        tokens[.sky1] = nil
+        tokens[.sky2] = nil
+        return tokens
     }
 
     static func == (lhs: Theme, rhs: Theme) -> Bool {
@@ -103,7 +141,7 @@ struct Theme: Identifiable, Hashable, Sendable {
         paper           0.99  0.006 250   0.20  0.02  262
         ink             0.24  0.02  262   0.92  0.01  262
         ink2            0.47  0.02  262   0.77  0.02  262
-        syntax          0.74  0.02  262   0.50  0.02  262
+        syntax          0.66  0.02  262   0.50  0.02  262
         heading         0.30  0.09  266   0.88  0.06  262
         accent          0.50  0.20  266   0.70  0.15  262
         link            0.48  0.19  266   0.84  0.10  258
@@ -117,7 +155,7 @@ struct Theme: Identifiable, Hashable, Sendable {
         paper           0.988 0.008 160   0.19  0.02  250
         ink             0.25  0.02  165   0.92  0.015 160
         ink2            0.47  0.025 165   0.77  0.02  165
-        syntax          0.74  0.02  165   0.50  0.02  220
+        syntax          0.655 0.02  165   0.50  0.02  220
         heading         0.34  0.07  158   0.88  0.09  155
         accent          0.55  0.14  152   0.80  0.15  155
         link            0.50  0.13  152   0.84  0.13  152
@@ -131,7 +169,7 @@ struct Theme: Identifiable, Hashable, Sendable {
         paper           0.985 0.008 20    0.21  0.022 268
         ink             0.24  0.025 265   0.92  0.01  30
         ink2            0.48  0.03  265   0.77  0.015 30
-        syntax          0.74  0.02  20    0.50  0.02  268
+        syntax          0.655 0.02  20    0.505 0.02  268
         heading         0.32  0.08  262   0.90  0.04  40
         accent          0.52  0.17  258   0.76  0.10  252
         link            0.50  0.17  258   0.85  0.08  250
@@ -145,7 +183,7 @@ struct Theme: Identifiable, Hashable, Sendable {
         paper           0.978 0.010 268   0.21  0.03  272
         ink             0.25  0.03  270   0.92  0.012 262
         ink2            0.47  0.03  268   0.77  0.02  265
-        syntax          0.73  0.02  266   0.50  0.03  270
+        syntax          0.65  0.02  266   0.505 0.03  270
         heading         0.32  0.10  270   0.88  0.07  160
         accent          0.52  0.12  158   0.80  0.12  158
         link            0.48  0.15  264   0.84  0.09  262
@@ -161,7 +199,7 @@ struct Theme: Identifiable, Hashable, Sendable {
         paper           0.975 0.01  245   0.17  0.025 255
         ink             0.22  0.03  255   0.90  0.02  230
         ink2            0.46  0.03  252   0.77  0.03  235
-        syntax          0.72  0.025 250   0.47  0.035 245
+        syntax          0.65  0.025 250   0.485 0.035 245
         heading         0.27  0.06  255   0.95  0.03  235
         accent          0.47  0.16  255   0.76  0.12  240
         link            0.45  0.15  255   0.84  0.095 238
@@ -177,7 +215,7 @@ struct Theme: Identifiable, Hashable, Sendable {
         paper           0.97  0.003 250   0.185 0.003 260
         ink             0.21  0.004 260   0.92  0.003 250
         ink2            0.45  0.004 260   0.78  0.004 255
-        syntax          0.70  0.004 260   0.48  0.004 260
+        syntax          0.645 0.004 260   0.495 0.004 260
         heading         0.21  0.004 260   0.92  0.003 250
         accent          0.46  0.17  258   0.80  0.10  258
         link            0.46  0.17  258   0.84  0.10  258

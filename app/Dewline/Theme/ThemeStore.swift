@@ -80,13 +80,25 @@ final class ThemeStore {
         }
     }
 
-    /// The token in the light slot's theme under a light appearance and the dark slot's under a dark one. The sky
-    /// falls back to `sidebarTint` in themes without one.
+    /// The token in the light slot's theme under a light appearance and the dark slot's under a dark one, raised under
+    /// Increase Contrast. The sky falls back to `sidebarTint` in themes without one.
     func color(_ token: Token) -> NSColor {
         if let color = colors[token] { return color }
-        let light = lightTheme.lightColors[token] ?? lightTheme.lightColors[.sidebarTint]!
-        let dark = darkTheme.darkColors[token] ?? darkTheme.darkColors[.sidebarTint]!
-        let color = NSColor(name: nil) { $0.isDark ? dark : light }
+        func pick(_ colors: [Token: NSColor]) -> NSColor {
+            colors[token] ?? colors[.sidebarTint]!
+        }
+        let light = pick(lightTheme.lightColors)
+        let dark = pick(darkTheme.darkColors)
+        let increasedLight = pick(lightTheme.increasedLightColors)
+        let increasedDark = pick(darkTheme.increasedDarkColors)
+        let color = NSColor(name: nil) {
+            switch $0.bestMatch(from: [.aqua, .darkAqua, .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua]) {
+            case .darkAqua?: dark
+            case .accessibilityHighContrastAqua?: increasedLight
+            case .accessibilityHighContrastDarkAqua?: increasedDark
+            default: light
+            }
+        }
         colors[token] = color
         return color
     }

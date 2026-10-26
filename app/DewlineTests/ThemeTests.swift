@@ -42,6 +42,23 @@ struct ThemeTests {
         #expect(Theme.all.filter(\.hasSky).map(\.name) == ["Dusk", "Nightwatch"])
     }
 
+    @Test func textMeetsContrastInEveryVariant() {
+        for theme in Theme.all {
+            for (dark, authored) in [(false, theme.light), (true, theme.dark)] {
+                for (variant, tokens) in [("authored", authored), ("increased", Theme.increased(authored, dark: dark))] {
+                    let paper = tokens[.paper]!
+                    let label = "\(theme.name) \(dark ? "dark" : "light") \(variant)"
+                    for token in [Token.ink, .ink2, .heading, .link] {
+                        #expect(tokens[token]!.contrast(with: paper) >= 4.5, "\(label) \(token)")
+                    }
+                    #expect(tokens[.syntax]!.contrast(with: paper) >= 3, "\(label) syntax")
+                    #expect(tokens[.accent]!.contrast(with: paper) >= 3, "\(label) accent")
+                    #expect(tokens[.ink]!.contrast(with: tokens[.selection]!) >= 4.5, "\(label) ink on selection")
+                }
+            }
+        }
+    }
+
     @MainActor @Test func choicesPersistAndPost() throws {
         let suite = "dev.arkwerx.dewline.tests.themes"
         let defaults = try #require(UserDefaults(suiteName: suite))
