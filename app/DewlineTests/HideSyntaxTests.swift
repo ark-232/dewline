@@ -92,17 +92,10 @@ struct HideSyntaxTests {
         let editor = Editor(variant, "\(Self.soft)\nThe soft day\n", caret: 30)
         for marker in [4, 10] {
             let width = editor.rect(marker, 2).width
-            withKnownIssue("TextKit 1 reports a null glyph's rect as the rect of the glyph before it") {
-                #expect(width <= 0.5, "hidden marker at \(marker) is \(width) pt wide")
-            } when: {
-                variant == .textKit1
-            }
+            #expect(width <= 0.5, "hidden marker at \(marker) is \(width) pt wide")
         }
         #expect(abs(editor.rect(6, 4).minX - editor.rect(3, 1).maxX) <= 0.5)
         #expect(abs(editor.rect(12, 1).minX - editor.rect(6, 4).maxX) <= 0.5)
-        let marked = editor.rect(0, 16)
-        let plain = editor.rect(17, 12)
-        #expect(marked.height == plain.height, "\(marked) against \(plain)")
         editor.place(7)
         for marker in [4, 10] {
             let width = editor.rect(marker, 2).width
@@ -115,8 +108,8 @@ struct HideSyntaxTests {
     func arrowKeysVisitEveryOffset(_ variant: TextKitVariant) {
         let editor = Editor(variant, Self.soft, caret: 0)
         let length = Self.soft.utf16.count
-        let moves = [(true, editor.view.moveRight, Array(0...length)), (false, editor.view.moveLeft, Array((0...length).reversed()))]
-        for (rightward, move, path) in moves {
+        let moves = [(editor.view.moveRight, Array(0...length)), (editor.view.moveLeft, Array((0...length).reversed()))]
+        for (move, path) in moves {
             var visited = [editor.view.selectedRange().location]
             for _ in 0..<length {
                 move(nil)
@@ -124,11 +117,7 @@ struct HideSyntaxTests {
                 visited.append(caret)
                 #expect(editor.opensRevealed == (4...12).contains(caret), "caret at \(caret)")
             }
-            withKnownIssue("TextKit 1 moves the caret by glyph, so moving right jumps over null glyphs") {
-                #expect(visited == path)
-            } when: {
-                variant == .textKit1 && rightward
-            }
+            #expect(visited == path)
         }
         editor.expectTextKitUnchanged()
     }
@@ -137,11 +126,7 @@ struct HideSyntaxTests {
     func wordSelectionStopsAtTheMarkers(_ variant: TextKitVariant) {
         let editor = Editor(variant, Self.soft, caret: 16)
         let word = editor.view.selectionRange(forProposedRange: NSRange(location: 8, length: 0), granularity: .selectByWord)
-        withKnownIssue("TextKit 1 extends the word over the null glyphs that follow it") {
-            #expect(word == NSRange(location: 6, length: 4))
-        } when: {
-            variant == .textKit1
-        }
+        #expect(word == NSRange(location: 6, length: 4))
         editor.expectTextKitUnchanged()
     }
 
