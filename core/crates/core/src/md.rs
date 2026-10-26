@@ -375,9 +375,13 @@ fn run(window: &Window<'_>, table: &Labels) -> Parse {
         && (next == source.len()
             || (!open
                 && after.is_some_and(|(kind, _)| window.row || *kind != BlockKind::TableRow)));
+    // A row window ends at its last row: a blank line after it would end the table.
     if window.row {
         holds &= matches!(blocks.split_first(), Some(((BlockKind::TableHead, _), rows))
-            if !rows.is_empty() && rows.iter().all(|(kind, _)| *kind == BlockKind::TableRow));
+            if !rows.is_empty() && rows.iter().all(|(kind, _)| *kind == BlockKind::TableRow))
+            && blocks
+                .last()
+                .is_some_and(|(_, range)| range.end == text.len());
     }
 
     let utf16 = Utf16::new(text);
@@ -476,7 +480,14 @@ fn front_matter(text: &str) -> Option<Result<Front, ()>> {
     let mut at = open;
     while at < bytes.len() {
         let close = closing_fence(&bytes[at..]);
-        if at == open && (close.is_some() || is_blank_line(&bytes[at..])) {
+        // pulldown-cmark's metadata scan counts vertical tabs and form feeds as blank too.
+        let blank = bytes[at..]
+            .iter()
+            .take_while(|&&byte| matches!(byte, b' ' | b'\t' | b'\x0b' | b'\x0c'))
+            .count();
+        if at == open
+            && (close.is_some() || matches!(bytes.get(at + blank), None | Some(b'\n' | b'\r')))
+        {
             return None;
         }
         if let Some(length) = close {
@@ -506,12 +517,17 @@ fn closing_fence(bytes: &[u8]) -> Option<usize> {
     matches!(bytes.get(length), None | Some(b'\n' | b'\r')).then_some(length)
 }
 
+/// A line of spaces and tabs, as pulldown-cmark's blocks see it.
 fn is_blank_line(bytes: &[u8]) -> bool {
     let blanks = bytes
         .iter()
-        .take_while(|&&byte| matches!(byte, b' ' | b'\t' | b'\x0b' | b'\x0c'))
+        .take_while(|&&byte| matches!(byte, b' ' | b'\t'))
         .count();
     matches!(bytes.get(blanks), None | Some(b'\n' | b'\r'))
+}
+
+fn is_blank(c: char) -> bool {
+    matches!(c, ' ' | '\t' | '\n' | '\r')
 }
 
 fn line_break(bytes: &[u8]) -> usize {
@@ -532,15 +548,9 @@ fn line_after(text: &str, at: usize) -> usize {
 /// `range` grown to whole lines, without blank lines at its end.
 fn lines(text: &str, range: Range<usize>) -> Range<usize> {
     let source = &text[range.clone()];
-    let first = range.end
-        - source
-            .trim_start_matches(|c: char| c.is_ascii_whitespace())
-            .len();
+    let first = range.end - source.trim_start_matches(is_blank).len();
     let start = text[..first].rfind(['\n', '\r']).map_or(0, |at| at + 1);
-    let last = range.start
-        + source
-            .trim_end_matches(|c: char| c.is_ascii_whitespace())
-            .len();
+    let last = range.start + source.trim_end_matches(is_blank).len();
     start..line_after(text, last.max(start))
 }
 
@@ -760,7 +770,17 @@ fn walk(source: &str, table: &Labels) -> Walk {
             callout = Some(start);
         }
         after_quote = matches!(tag, Tag::BlockQuote(_));
-        let token = token_kind(&tag).map(|kind| {
+        // pulldown-cmark pads a short row with empty cells after its last one.
+        let padding = matches!(tag, Tag::TableCell)
+            && range.is_empty()
+            && stack.last().is_some_and(|row| {
+                start
+                    >= row.range.start
+                        + source[row.range.clone()]
+                            .trim_end_matches(['\n', '\r'])
+                            .len()
+            });
+        let token = token_kind(&tag).filter(|_| !padding).map(|kind| {
             walk.tokens.push((kind, [start; 4]));
             walk.tokens.len() - 1
         });
@@ -792,7 +812,10 @@ fn walk(source: &str, table: &Labels) -> Walk {
     walk.units(source, definitions);
     walk.tokens.retain(|(_, offsets)| *offsets != REMOVED);
     let order = |(_, [start, .., end]): &(TokenKind, [usize; 4])| (*start, std::cmp::Reverse(*end));
-    debug_assert!(walk.tokens.is_sorted_by_key(order));
+    // pulldown-cmark can report events inside a wikilink out of order.
+    if !walk.tokens.is_sorted_by_key(order) {
+        walk.tokens.sort_by_key(order);
+    }
     walk.extra.sort_by_key(order);
     let mut tokens = Vec::with_capacity(walk.tokens.len() + walk.extra.len());
     let mut extra = walk.extra.drain(..).peekable();
@@ -830,12 +853,12 @@ impl Walk {
         // pulldown-cmark can start two blocks on one line, as with `[^1]:[^1]: a`; they are one.
         let mut lined: Vec<(BlockKind, Range<usize>)> = Vec::with_capacity(self.blocks.len());
         for (kind, range) in self.blocks.drain(..) {
-            let range = lines(source, range);
             match lined.last_mut() {
+                Some((_, before)) if range.end <= before.end => {}
                 Some((_, before)) if range.start < before.end => {
-                    before.end = before.end.max(range.end)
+                    before.end = lines(source, before.end..range.end).end
                 }
-                _ => lined.push((kind, range)),
+                _ => lined.push((kind, lines(source, range))),
             }
         }
         let mut outside: Vec<(BlockKind, Range<usize>)> = definitions
@@ -879,8 +902,15 @@ impl Walk {
             }
             at = at.max(end);
         }
-        self.blocks
-            .extend(gaps.into_iter().map(|gap| (BlockKind::Definition, gap)));
+        // A gap is a label's later definitions; pulldown-cmark also drops a paragraph after a lone `\r` line.
+        self.blocks.extend(gaps.into_iter().map(|gap| {
+            let mut events = Parser::new_ext(&source[gap.clone()], OPTIONS).into_offset_iter();
+            events.by_ref().for_each(drop);
+            match events.reference_definitions().iter().next() {
+                Some(_) => (BlockKind::Definition, gap),
+                None => (BlockKind::Paragraph, gap),
+            }
+        }));
         self.blocks.sort_by_key(|(_, range)| range.start);
         // A block that parses only after the one above joins it: definitions start a paragraph, so a paragraph or
         // setext heading right after them is the same block, and a line indented four columns starts code unless the
@@ -945,29 +975,18 @@ impl Walk {
     }
 
     fn close(&mut self, source: &str, node: Node, parent: Option<&mut Node>) {
-        let reach = self.finish(source, &node, parent.as_deref());
+        let reach = self.finish(source, &node);
         if let Some(parent) = parent {
             parent.inner_end = parent.inner_end.max(reach);
         }
     }
 
     /// Sets the node's token, and returns the end of the tokens it holds.
-    fn finish(&mut self, source: &str, node: &Node, parent: Option<&Node>) -> usize {
+    fn finish(&mut self, source: &str, node: &Node) -> usize {
         let Some(index) = node.token else {
             return node.inner_end;
         };
         let kind = self.tokens[index].0;
-        // pulldown-cmark pads a short row with empty cells after its last one.
-        if kind == TokenKind::TableCell
-            && node.range.is_empty()
-            && parent.is_some_and(|row| {
-                let text = &source[row.range.clone()];
-                node.range.start >= row.range.start + text.trim_end_matches(['\n', '\r']).len()
-            })
-        {
-            self.tokens[index].1 = REMOVED;
-            return node.inner_end;
-        }
         let offsets = marks(
             source,
             kind,
@@ -1073,10 +1092,7 @@ fn between(start: usize, end: usize, open: usize, close: usize) -> [usize; 4] {
 
 /// `[` and `]:`, the destination and the title, around a definition's label.
 fn definition_marks(source: &str, span: Range<usize>) -> [usize; 4] {
-    let end = span.start
-        + source[span.clone()]
-            .trim_end_matches(|c: char| c.is_ascii_whitespace())
-            .len();
+    let end = span.start + source[span.clone()].trim_end_matches(is_blank).len();
     let bytes = source.as_bytes();
     let Some(open) = source[span.start..end]
         .find('[')
@@ -1117,10 +1133,7 @@ fn marks(
     let start = range.start;
     let source = &text[range.clone()];
     // A block's last line, without its terminator or the blank lines after it.
-    let last = start
-        + source
-            .trim_end_matches(|c: char| c.is_ascii_whitespace())
-            .len();
+    let last = start + source.trim_end_matches(is_blank).len();
     let block_end = (last
         + text[last..range.end]
             .find(['\n', '\r'])
@@ -1251,6 +1264,11 @@ fn inline_marks(text: &str, kind: TokenKind, range: &Range<usize>, child_end: us
         TokenKind::FencedCode => source.find('\n').map_or(source.len(), |at| at + 1),
         _ => 0,
     };
+    // pulldown-cmark can report a link or emphasis inside a wikilink over less than its markers.
+    let mut marker = marker.min(source.len());
+    while !source.is_char_boundary(marker) {
+        marker -= 1;
+    }
     let content_start = start + marker;
     let child_end = child_end.clamp(content_start, end);
     let content_end = match kind {
@@ -1276,7 +1294,12 @@ fn inline_marks(text: &str, kind: TokenKind, range: &Range<usize>, child_end: us
         }
         _ => child_end,
     };
-    [start, content_start, content_end, end]
+    let offsets = [start, content_start, content_end, end];
+    match offsets.iter().all(|&at| text.is_char_boundary(at)) {
+        true => offsets,
+        // Out of order, so that `well_formed` drops it.
+        false => [end, start, start, start],
+    }
 }
 
 /// The Obsidian syntax pulldown-cmark lacks, in one node's runs of text: `%%comments%%`, `==highlights==` and `#tags`.
@@ -2572,6 +2595,33 @@ mod tests {
             )
             .is_none()
         );
+    }
+
+    #[test]
+    fn hostile_input_parses() {
+        // pulldown-cmark reports links and emphasis inside a wikilink over less than their markers, out of order.
+        for text in [
+            "[[![](|)]]",
+            "![[~~|日![[![[[[[x](]]|日)]]]]]",
+            "![[![[>|![[|[[![]]]]]]]]()",
+        ] {
+            check(text);
+        }
+        // Thousands of blocks on one line.
+        let text = "[^1]:".repeat(20_000);
+        assert_eq!(parse(&text).blocks.len(), 1);
+        // A form feed line is no blank line to pulldown-cmark; a lone `\r` line can drop the paragraph after it.
+        check("u\n\u{c}\n>");
+        assert_eq!(check_edit("u\n\u{c}\n>", 1, 0, 0, "]"), Ok(()));
+        check("    c\n\r|");
+        // Return at the end of a row ends the table there.
+        let window = Window {
+            text: "| a | b |\n|---|---|\n| 1 | 2 |\n\n",
+            next: "| 3 | 4 |\n",
+            at_start: false,
+            row: true,
+        };
+        assert!(!parse_window(&window, &Labels::default()).unwrap().holds);
     }
 
     #[test]
