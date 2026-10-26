@@ -6,7 +6,7 @@ Swift owns the pixels. Rust owns the bytes.
 
 The Mac app (`app/`, Swift 6 and AppKit) owns every pixel and the keystroke path: the text view and its layout, drawing, the system text services (spell check, Writing Tools, dictation, the find bar), documents, windows and menus.
 
-The engine (`core/`, Rust) owns the bytes: decoding, parsing, the change engine, snapshots, the path jail, diagram rendering, collaboration, export, and the `dewline` CLI and MCP server. The app reaches it through UniFFI, and it is never on the keystroke path. One engine serves the app, the Quick Look extension and the CLI.
+The engine (`core/`, Rust) owns the bytes: decoding, parsing, the change engine, snapshots, the path jail, diagram rendering, collaboration, export, and the `dewline` CLI and MCP server. The app reaches it through UniFFI. On the keystroke path it does one thing: it parses the edited window, at most 4 KB, with no locks or I/O ([0006](decisions/0006-editor-architecture.md)). One engine serves the app, the Quick Look extension and the CLI.
 
 A pure-Rust UI was ruled out: no Rust GUI framework offers VoiceOver for text, Writing Tools, the find bar, Services and spell check, and rebuilding them was estimated at 28 weeks of solo work. A web view editor was ruled out as the default: it breaks the single-process memory budget and limits Writing Tools to a panel. CodeMirror 6 in a web view stays the fallback if TextKit fails the first measurement milestone.
 
@@ -27,10 +27,10 @@ A pure-Rust UI was ruled out: no Rust GUI framework offers VoiceOver for text, W
 |---|---|
 | App | Swift 6, AppKit, NSDocument, native tabs, macOS 26+, universal binary |
 | Editor | NSTextView on TextKit 2 ([0004](decisions/0004-textkit.md)) |
-| Parsing | pulldown-cmark, reparsing only the edited lines |
+| Parsing | pulldown-cmark and an extension pass for the Obsidian syntax, the only parser; a keystroke reparses the block holding the edit ([0006](decisions/0006-editor-architecture.md)) |
 | Diff and merge | imara-diff, three-way merge against the last known contents |
 | Snapshots | content-addressed BLAKE3 and zstd store |
-| Bridge | UniFFI in an XCFramework |
+| Bridge | UniFFI in an XCFramework; a parse returns flat records of kinds and UTF-16 ranges, and a panic returns as a Swift error |
 | Updates | Sparkle 2, EdDSA-signed |
 | Quick Look | static HTML with no web view and no scripts |
 | Diagrams | Mermaid through mermaid-rs-renderer, off the main thread and cached; no JavaScript |
