@@ -25,7 +25,7 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
         .strikethroughStyle: 0,
     ]
 
-    /// The Code font slot (the face `DewlineCodeFont` names, JetBrains Mono when installed, else SF Mono) at `font`'s x-height.
+    /// The Code font slot (the face `DewlineCodeFont` names, else the bundled JetBrains Mono) at `font`'s x-height.
     static func code(matching font: NSFont) -> NSFont {
         func face(_ size: CGFloat) -> NSFont {
             NSFont(name: UserDefaults.standard.string(forKey: "DewlineCodeFont") ?? "JetBrainsMono-Regular", size: size)
