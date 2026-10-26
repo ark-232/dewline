@@ -23,7 +23,9 @@ struct UpdatesPane: View {
                 if let text = updates.stagedText {
                     Text(text)
                 }
+                // Sparkle starts no check while it holds a staged update.
                 Button("Check Now") { updates.checkNow() }
+                    .disabled(updates.staged != nil)
             }
         }
         .disabled(updates.updater == nil)
