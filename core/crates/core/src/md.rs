@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag};
+use pulldown_cmark::{CodeBlockKind, Event, LinkType, Options, Parser, Tag};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpanKind {
@@ -30,6 +30,7 @@ const BLANK: [char; 4] = [' ', '\t', '\x0b', '\x0c'];
 struct Open {
     index: usize,
     range: Range<usize>,
+    end: usize,
     child_end: usize,
 }
 
@@ -42,11 +43,20 @@ pub fn spans(text: &str) -> Vec<Span> {
             && let Some(top) = open.pop_if(|top| top.range == range)
         {
             let span = &mut found[top.index];
-            span.1 = offsets(text, span.0, &range, top.child_end);
+            span.1 = offsets(text, span.0, &(range.start..top.end), top.child_end);
             continue;
         }
+        // pulldown-cmark ends a collapsed reference, `[text][]`, before its `[]`.
+        let end = match &event {
+            Event::Start(Tag::Link { link_type, .. } | Tag::Image { link_type, .. })
+                if *link_type == LinkType::Collapsed && text[range.end..].starts_with("[]") =>
+            {
+                range.end + 2
+            }
+            _ => range.end,
+        };
         if let Some(top) = open.last_mut() {
-            top.child_end = range.end;
+            top.child_end = end;
         }
         let kind = match event {
             Event::Start(Tag::Heading { level, .. }) => SpanKind::Heading { level: level as u8 },
@@ -65,6 +75,7 @@ pub fn spans(text: &str) -> Vec<Span> {
         };
         open.push(Open {
             index: found.len(),
+            end,
             child_end: range.start,
             range,
         });
@@ -287,6 +298,25 @@ mod tests {
         assert_eq!(
             split("- [a\n  ](u)"),
             [(SpanKind::Link, ["[", "a\n  ", "](u)"])]
+        );
+    }
+
+    #[test]
+    fn a_collapsed_reference_ends_after_its_brackets() {
+        assert_eq!(
+            split("[x]: /u\n\n[![x][]](v) [x][]"),
+            [
+                (SpanKind::Link, ["[", "![x][]", "](v)"]),
+                (SpanKind::Image, ["![", "x", "][]"]),
+                (SpanKind::Link, ["[", "x", "][]"]),
+            ]
+        );
+        assert_eq!(
+            split("[x]: /u\n\n# a [x][]"),
+            [
+                (SpanKind::Heading { level: 1 }, ["# ", "a [x][]", ""]),
+                (SpanKind::Link, ["[", "x", "][]"]),
+            ]
         );
     }
 
