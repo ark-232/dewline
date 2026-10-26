@@ -11,7 +11,8 @@
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs::{self, OpenOptions};
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Instant, SystemTime};
@@ -360,7 +361,7 @@ impl Engine {
 
     pub fn open(&self, path: &Path) -> io::Result<Opened> {
         let real = fs::canonicalize(path)?;
-        let bytes = fs::read(&real)?;
+        let bytes = read(&real)?;
         let (now, _) = (self.clock)();
         let base_hash = blake3::hash(&bytes);
         let contents = text::Opened::new(bytes.clone());
@@ -435,7 +436,7 @@ impl Engine {
                 (!d.base_kept && !d.private).then(|| (d.base.clone(), d.base_origin.label()));
             (d.path.clone(), d.private, d.base_hash, d.disk.hash(), kept)
         };
-        let read = fs::read(&path);
+        let read = read(&path);
         let (now, wall) = (self.clock)();
         let bytes = match read {
             Ok(bytes) => bytes,
@@ -1114,6 +1115,21 @@ impl Engine {
         let open: Vec<&Path> = open.iter().map(PathBuf::as_path).collect();
         self.store.prune((self.clock)().1, &open)
     }
+}
+
+/// Reads a regular file. The open doesn't block, so a FIFO put at the path
+/// can't stall the document.
+fn read(path: &Path) -> io::Result<Vec<u8>> {
+    let mut file = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK)
+        .open(path)?;
+    if !file.metadata()?.is_file() {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "not a file"));
+    }
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)?;
+    Ok(bytes)
 }
 
 fn closed() -> io::Error {
@@ -1950,6 +1966,17 @@ mod tests {
         fx.replace(&to, "three\n");
         let (landing, _) = fx.land(doc, "two\n", 2);
         assert!(landing.marked, "an agent file now");
+
+        fs::remove_file(&to).unwrap();
+        let fifo = std::ffi::CString::new(to.as_os_str().as_encoded_bytes()).unwrap();
+        // SAFETY: the path outlives the call.
+        assert_eq!(unsafe { libc::mkfifo(fifo.as_ptr(), 0o600) }, 0);
+        assert!(fx.engine.observe(doc).unwrap(), "a FIFO doesn't stall");
+        let refused = fx.engine.save(doc, "three\n", 4, auto());
+        assert!(
+            matches!(refused, Err(SaveRefused::Unreadable)),
+            "{refused:?}"
+        );
 
         let binary = fx.root.join("latin1.md");
         fs::write(&binary, b"caf\xe9\n").unwrap();
