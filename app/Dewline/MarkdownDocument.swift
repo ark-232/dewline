@@ -29,7 +29,7 @@ final class MarkdownDocument: NSDocument {
     override func showWindows() {
         super.showWindows()
         if ProcessInfo.processInfo.environment["DEWLINE_CARET_PROBE"] != nil {
-            ((windowControllers.first?.window?.contentView as? NSScrollView)?.documentView as? CaretTextView)?.probe()
+            (windowControllers.first as? MainWindowController)?.textView?.probe()
         }
         // scripts/perf.sh: print milliseconds from process start to this first display, then quit.
         guard ProcessInfo.processInfo.environment["DEWLINE_LAUNCH_PROBE"] != nil else { return }
