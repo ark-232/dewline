@@ -1,0 +1,17 @@
+# 0006: Editor architecture
+
+Date: 2026-10-26. Decided by evidence, as the owner authorized.
+
+| Decision | Choice | Reopens if |
+|---|---|---|
+| Markdown parser | pulldown-cmark 0.13.5 and an extension pass in `core::md` are the only parser. Every consumer reads its blocks and tokens, so each Obsidian construct is written once. | a construct needs a block rule the extension pass cannot add |
+| The keystroke's parse | The editor parses the edited window synchronously: the top-level block or top-level list item holding the edit (in a table's body, the head and the edited row), with the block above when no blank line separates them. The parse holds when the next block still starts where it did. A window that does not hold keeps its neighbors' styling until the whole document reparses off the main thread after 300 ms idle. | a break appears that windows cannot see: item and row windows go, whole top-level blocks stay |
+| Rust in the keystroke path | One window per keystroke, at most 4 KB with the lines after it; no locks and no I/O; block and token kinds and UTF-16 ranges come back as flat records; a panic comes back as a Swift error, since release builds unwind. Swift owns the buffer, and Rust keeps only the link and footnote labels. | the parse's p99 in the frame passes 0.5 ms: windows then parse off the main thread, a frame late |
+
+**Why one parser.** Parsing does not decide latency. Our code takes 0.4 to 0.9 ms of an 8.3 ms frame, and in place the parsers differ by about 0.05 ms: a paragraph takes 142 µs through the FFI and 93 µs in Swift, 2 KB takes 363 µs and 432 µs. A Swift scanner would be a second parser of 3,000 to 5,000 lines, three to four weeks of work, with every construct built twice. The hybrid adds a second inline grammar, a worker, a text mirror and late block structure. pulldown-cmark already passes the 652 CommonMark examples and the GFM suites. Leaving out the mirror removes ropey, MirrorTests and mirror drift, and keeps M2's model, in which Swift owns the buffer; all three designs named this shape as their fallback.
+
+**Budget.** At 1 MB, mid-document, a keystroke's frame is 8.30 ms at p50 and 21.6 ms at p99 today. The target is 6.8 and 15.5 ms, with the parse at 0.2 and 0.5 ms of it; lane A's fixes make up the difference under any parser. At 10 MB the target is about 7.5 ms at p50 and under 16 ms at p95.
+
+**What `core::md` measures.** In a release build on an M4 Pro, a paragraph's window parses in 2.7 µs at p50, a 2 KB window in 23 µs, and a whole 1 MB document in 12 ms, of which pulldown-cmark takes 6. The 652 CommonMark 0.31.2 examples and the GFM table, strikethrough and task list examples pass the marker property, and every window of every example parses alone as it does in its document, as does every window of 256 generated documents in each test run.
+
+This record bounds the rule in [the architecture](../architecture.md) that kept Rust off the keystroke path.
