@@ -138,6 +138,7 @@ struct FontLibraryTests {
             #expect(family.files.contains { FontLibrary.isFontFile(URL(filePath: $0.name)) }, "\(family.name) has no font file")
             #expect(Set(family.files.map(\.name)).count == family.files.count)
             #expect(URL(string: family.project)?.scheme == "https")
+            #expect(Bundle.main.url(forResource: family.name, withExtension: "pdf", subdirectory: "Specimens") != nil, "\(family.name) has no specimen")
             for file in family.files {
                 #expect(file.sha256.wholeMatch(of: /[0-9a-f]{64}/) != nil, "\(family.name): \(file.name)")
                 #expect(file.size > 0 && file.size < 50 << 20, "\(family.name): \(file.name)")

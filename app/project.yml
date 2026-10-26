@@ -40,7 +40,11 @@ targets:
       - path: Dewline
         excludes:
           - Fonts
+          - Specimens
       - path: Dewline/Fonts
+        type: folder
+        buildPhase: resources
+      - path: Dewline/Specimens
         type: folder
         buildPhase: resources
       - path: ../THIRD_PARTY_NOTICES.md

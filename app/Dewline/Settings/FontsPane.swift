@@ -251,17 +251,22 @@ private struct CatalogRow: View {
         let installed = library.installed.contains(family.name)
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(family.name)
-                    .font(installed ? face(family.name, 20) : .system(size: 20))
-                    .foregroundStyle(installed ? .primary : .secondary)
+                if installed {
+                    Text(family.name)
+                        .font(face(family.name, 20))
+                    Text("Public beta opens on 2 December.")
+                        .font(face(family.name, 14))
+                } else {
+                    // The same two lines, drawn ahead of time as outlines by scripts/font-specimens.swift.
+                    Image(nsImage: specimen(family))
+                        .renderingMode(.template)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel(family.name)
+                }
                 Text("\(family.role.rawValue) · \(megabytes(family.size)) MB · \(family.why)")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
-                if installed {
-                    Text("Public beta opens on 2 December.")
-                        .font(face(family.name, 14))
-                }
                 if let failure = library.failures[family.name] {
                     Label(failure, systemImage: "exclamationmark.triangle.fill")
                         .font(.callout)
@@ -316,6 +321,18 @@ private struct CatalogRow: View {
             .accessibilityLabel("Install \(family.name)")
         }
     }
+}
+
+@MainActor private var specimens: [String: NSImage] = [:]
+
+/// The family's name and sample line as a template image, from the app's Specimens folder.
+@MainActor private func specimen(_ family: FontCatalog.Family) -> NSImage {
+    if let image = specimens[family.name] { return image }
+    let url = Bundle.main.url(forResource: family.name, withExtension: "pdf", subdirectory: "Specimens")
+    let image = url.flatMap(NSImage.init(contentsOf:)) ?? NSImage()
+    image.isTemplate = true
+    specimens[family.name] = image
+    return image
 }
 
 /// The pull-down on an installed family: which slots use it, Install for All Apps, Remove. Only fixed-pitch families
