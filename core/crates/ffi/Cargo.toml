@@ -28,5 +28,8 @@ resvg = { version = "=0.48.1", default-features = false, features = ["text", "sy
 thiserror = "=2.0.21"
 uniffi = { version = "=0.32.2", default-features = false }
 
+[dev-dependencies]
+tempfile = "=3.27.0"
+
 [features]
 bindgen = ["uniffi/cli", "uniffi/cargo-metadata"]
