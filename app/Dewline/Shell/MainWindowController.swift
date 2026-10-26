@@ -35,6 +35,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         window.tabbingMode = .preferred
         window.tabbingIdentifier = folder.map { "folder " + $0.url.path } ?? "files"
         window.isRestorable = folder == nil
+        window.identifier = NSUserInterfaceItemIdentifier("Document")
         if let front = NSApp.orderedWindows.first(where: { $0.windowController is MainWindowController }) {
             window.cascadeTopLeft(from: front.cascadeTopLeft(from: .zero))
         } else {

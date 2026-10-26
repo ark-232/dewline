@@ -114,6 +114,11 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         view = scrollView
         NotificationCenter.default.addObserver(self, selector: #selector(libraryChanged), name: Library.changed, object: nil)
         libraryChanged()
+        if let folder {
+            for path in UserDefaults.standard.stringArray(forKey: "Expanded " + folder.url.path) ?? [] {
+                _ = treeNode(for: folder.url.appending(path: path))
+            }
+        }
     }
 
     override func viewDidLayout() {
@@ -322,6 +327,29 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     }
 
     // MARK: Data source and delegate
+
+    func outlineViewItemDidExpand(_ notification: Notification) {
+        rememberExpansion(notification, expanded: true)
+    }
+
+    func outlineViewItemDidCollapse(_ notification: Notification) {
+        rememberExpansion(notification, expanded: false)
+    }
+
+    /// Keeps each root's expanded folders in user defaults; collapsing a folder forgets the folders inside it.
+    private func rememberExpansion(_ notification: Notification, expanded: Bool) {
+        guard let folder, let node = notification.userInfo?["NSObject"] as? SidebarNode,
+            case .entry(let entry) = node.kind, entry.isFolder, let path = folder.relativePath(of: entry.url)
+        else { return }
+        let key = "Expanded " + folder.url.path
+        var paths = Set(UserDefaults.standard.stringArray(forKey: key) ?? [])
+        if expanded {
+            paths.insert(path)
+        } else {
+            paths = paths.filter { $0 != path && !$0.hasPrefix(path + "/") }
+        }
+        UserDefaults.standard.set(paths.sorted(), forKey: key)
+    }
 
     func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
         (item as? SidebarNode).map { children(of: $0).count } ?? sections.count
