@@ -113,6 +113,11 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         scrollView.autohidesScrollers = true
         view = scrollView
         NotificationCenter.default.addObserver(self, selector: #selector(libraryChanged), name: Library.changed, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(fillUnderReducedTransparency), name: ThemeStore.didChange, object: nil)
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self, selector: #selector(fillUnderReducedTransparency), name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil
+        )
+        fillUnderReducedTransparency()
         libraryChanged()
         if let folder {
             for path in UserDefaults.standard.stringArray(forKey: "Expanded " + folder.url.path) ?? [] {
@@ -124,6 +129,13 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     override func viewDidLayout() {
         super.viewDidLayout()
         outlineView.sizeLastColumnToFit()
+    }
+
+    /// Reduce Transparency makes the sidebar's glass opaque, and the sidebar takes the theme's tint (synthesis 2.1).
+    @objc private func fillUnderReducedTransparency() {
+        guard let scrollView = view as? NSScrollView else { return }
+        scrollView.drawsBackground = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+        scrollView.backgroundColor = ThemeStore.shared.color(.sidebarTint)
     }
 
     /// Shows `url` as the open file: reveals and selects its row and lists its headings.
