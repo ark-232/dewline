@@ -77,6 +77,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
         (NSApp.delegate as? AppDelegate)?.closeLaunchWindow()
+        if let window { Updates.shared.windowDidShow(window) }
     }
 
     /// Shows `document` in this tab, closing the one it replaces.

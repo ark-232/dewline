@@ -19,6 +19,10 @@ enum DewlineApp {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var launchWindow: LaunchWindowController?
 
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        Updates.shared.start()
+    }
+
     // AppKit asks at launch when nothing opens or restores, and when the Dock icon is clicked with no windows.
     func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {
         LaunchWindowController.showsWhenNothingIsOpen

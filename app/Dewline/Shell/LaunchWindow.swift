@@ -14,6 +14,7 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
     }
 
     private let list = LaunchList()
+    private let icon = NSImageView(image: LaunchWindowController.icon)
     private let segments = NSSegmentedControl(labels: ["Recent", "Pinned", "Folders"], trackingMode: .selectOne, target: nil, action: nil)
     private let filter = NSSearchField()
     private let empty = NSTextField(labelWithString: "")
@@ -45,6 +46,14 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
         window.standardWindowButton(.zoomButton)?.isHidden = true
         super.init(window: window)
         window.contentView = content()
+        // The tops follow the content layout guide, so the first-run update line pushes them down rather than covering them.
+        if let guide = window.contentLayoutGuide as? NSLayoutGuide {
+            let titlebar = window.frame.height - window.contentLayoutRect.height
+            NSLayoutConstraint.activate([
+                icon.topAnchor.constraint(equalTo: guide.topAnchor, constant: 48 - titlebar),
+                segments.topAnchor.constraint(equalTo: guide.topAnchor, constant: 18 - titlebar),
+            ])
+        }
         window.initialFirstResponder = list
         window.autorecalculatesKeyViewLoop = true
         window.center()
@@ -72,6 +81,7 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
     /// The first time per launch, the window rises 10 pt as it fades in and the rules draw in; under
     /// Reduce Motion it only fades.
     override func showWindow(_ sender: Any?) {
+        defer { if let window { Updates.shared.windowDidShow(window) } }
         guard let window, !window.isVisible, !Self.entered else { return super.showWindow(sender) }
         Self.entered = true
         let still = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
@@ -95,7 +105,6 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
         let left = BackdropView()
         let right = PaperView()
 
-        let icon = NSImageView(image: Self.icon)
         let actions = NSStackView(views: [
             LaunchAction("New Document", symbol: "square.and.pencil", shortcut: "⌘N", action: #selector(AppDelegate.newDocument(_:))),
             LaunchAction("Open…", symbol: "folder", shortcut: "⌘O", action: #selector(NSDocumentController.openDocument(_:))),
@@ -162,7 +171,6 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
             root.widthAnchor.constraint(equalToConstant: 760),
             root.heightAnchor.constraint(equalToConstant: 460),
 
-            icon.topAnchor.constraint(equalTo: left.topAnchor, constant: 48),
             icon.centerXAnchor.constraint(equalTo: left.centerXAnchor),
             icon.widthAnchor.constraint(equalToConstant: 96),
             icon.heightAnchor.constraint(equalToConstant: 96),
@@ -185,7 +193,6 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
             version.bottomAnchor.constraint(equalTo: left.bottomAnchor, constant: -18),
             version.centerXAnchor.constraint(equalTo: left.centerXAnchor),
 
-            segments.topAnchor.constraint(equalTo: right.topAnchor, constant: 18),
             segments.centerXAnchor.constraint(equalTo: right.centerXAnchor),
             filter.topAnchor.constraint(equalTo: segments.bottomAnchor, constant: 12),
             filter.leadingAnchor.constraint(equalTo: right.leadingAnchor, constant: 20),

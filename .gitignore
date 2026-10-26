@@ -7,8 +7,16 @@
 /Packages/MdCore/DewlineFFI.xcframework/
 /Packages/MdCore/Sources/DewlineFFIBindings/
 
-# XcodeGen output: regenerate with `xcodegen generate --spec app/project.yml`
-/app/Dewline.xcodeproj/
+# XcodeGen output: regenerate with `xcodegen generate --spec app/project.yml`. Package.resolved stays: it pins
+# every Swift package's revision, and release builds resolve only from it.
+/app/Dewline.xcodeproj/*
+!/app/Dewline.xcodeproj/project.xcworkspace/
+/app/Dewline.xcodeproj/project.xcworkspace/*
+!/app/Dewline.xcodeproj/project.xcworkspace/xcshareddata/
+/app/Dewline.xcodeproj/project.xcworkspace/xcshareddata/*
+!/app/Dewline.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+/app/Dewline.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/*
+!/app/Dewline.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 /app/Dewline/Info.plist
 
 # Xcode

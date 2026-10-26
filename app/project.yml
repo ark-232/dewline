@@ -13,6 +13,9 @@ settings:
     MARKETING_VERSION: "0.0.1"
     CURRENT_PROJECT_VERSION: "1"
     DEVELOPMENT_TEAM: "7W6LLR2DK7"
+    # The base64 EdDSA public key from Sparkle's generate_keys (docs/release.md). While it is empty the updater
+    # refuses to start, so nothing can be checked, downloaded or installed.
+    SPARKLE_PUBLIC_ED_KEY: ""
   configs:
     Release:
       ENABLE_HARDENED_RUNTIME: YES
@@ -24,6 +27,10 @@ packages:
   SwiftMath:
     url: https://github.com/mgriebling/SwiftMath
     revision: 1d2c90827e9c3908269d810d055fb03b7da5fd53
+  # Moves only by hand, with the tarball SHA-256 in .github/workflows/release.yml (docs/release.md).
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    exactVersion: 2.10.0
 
 targets:
   Dewline:
@@ -36,9 +43,12 @@ targets:
       - path: Dewline/Fonts
         type: folder
         buildPhase: resources
+      - path: ../THIRD_PARTY_NOTICES.md
+        buildPhase: resources
     dependencies:
       - package: MdCore
       - package: SwiftMath
+      - package: Sparkle
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.arkwerx.dewline
@@ -50,6 +60,15 @@ targets:
       path: Dewline/Info.plist
       properties:
         ATSApplicationFontsPath: Fonts
+        SUFeedURL: https://updates.dewline.dev/appcast.xml
+        SUPublicEDKey: $(SPARKLE_PUBLIC_ED_KEY)
+        SURequireSignedFeed: true
+        SUVerifyUpdateBeforeExtraction: true
+        SUEnableAutomaticChecks: true
+        SUScheduledCheckInterval: 86400
+        SUAutomaticallyUpdate: true
+        SUEnableSystemProfiling: false
+        SUEnableJavaScript: false
         CFBundleDocumentTypes:
           - CFBundleTypeName: Markdown
             CFBundleTypeRole: Editor
