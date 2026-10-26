@@ -10,6 +10,7 @@ use ratex_types::color::Color;
 use resvg::{tiny_skia, usvg};
 
 mod save;
+mod search;
 
 uniffi::setup_scaffolding!();
 
