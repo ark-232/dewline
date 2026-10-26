@@ -60,9 +60,17 @@ jobs:
           echo "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
           unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
           echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: 1.99.1
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - run: scripts/build-xcframework.sh --universal
+      - run: du -sh Packages/MdCore/DewlineFFI.xcframework
       - run: xcodebuild -version
       - run: xcodegen generate --spec app/project.yml
       - run: xcodebuild test -project app/Dewline.xcodeproj -scheme Dewline -destination 'platform=macOS,arch=arm64' CODE_SIGNING_ALLOWED=NO
+      - run: xcodebuild build -project app/Dewline.xcodeproj -scheme Dewline -configuration Release -destination 'generic/platform=macOS' CODE_SIGNING_ALLOWED=NO
+      - run: lipo -info Packages/MdCore/DewlineFFI.xcframework/macos-arm64_x86_64/libdewline_ffi.a
 
   zizmor:
     runs-on: ubuntu-latest

@@ -17,12 +17,18 @@ settings:
     Release:
       ENABLE_HARDENED_RUNTIME: YES
 
+packages:
+  MdCore:
+    path: ../Packages/MdCore
+
 targets:
   Dewline:
     type: application
     platform: macOS
     sources:
       - path: Dewline
+    dependencies:
+      - package: MdCore
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.arkwerx.dewline
