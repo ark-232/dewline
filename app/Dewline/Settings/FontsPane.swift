@@ -45,7 +45,7 @@ struct FontsPane: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             Section {
-                HStack(spacing: 14) {
+                HStack(alignment: .top, spacing: 14) {
                     ForEach(Pairing.all) { pairing in
                         PairingButton(pairing: pairing, store: store, library: library, colors: colors, busy: applying == pairing.name) {
                             apply(pairing)
@@ -221,7 +221,9 @@ private struct PairingButton: View {
                 Text(pairing.name)
                     .font(.callout)
                     .foregroundStyle(selected ? .primary : .secondary)
-                Text(download > 0 ? "Downloads \(megabytes(download)) MB" : Array(Set(pairing.faces)).sorted().joined(separator: ", "))
+                Text(download > 0 ? "Downloads \(megabytes(download)) MB" : [pairing.heading, pairing.body, pairing.code].reduce(into: [String]()) {
+                    if !$0.contains($1) { $0.append($1) }
+                }.joined(separator: ", "))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
@@ -273,7 +275,7 @@ private struct CatalogRow: View {
                         .foregroundStyle(.red)
                 }
             }
-            Spacer(minLength: 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
             action(installed: installed)
             Button {
                 showsInfo = true
@@ -302,6 +304,7 @@ private struct CatalogRow: View {
                         .font(.system(size: 11))
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
+                        .fixedSize()
                 }
                 Button {
                     library.stopInstall(family)
@@ -410,7 +413,7 @@ private struct AddedRow: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
-            Spacer(minLength: 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
             UseMenu(family: family, monospaced: monospaced, library: library, store: store, remove: remove)
         }
         .padding(.vertical, 2)
