@@ -222,6 +222,38 @@ struct HideSyntaxTests {
     }
 
     @Test(arguments: TextKitVariant.allCases)
+    func spellingMarksOnlyProse(_ variant: TextKitVariant) {
+        let text = """
+            ---
+            title: wrongg
+            ---
+            A wrongg word, `wrongg` code, [wrongg](docs/wrongg.md) ![a](img/wrongg.png) [[wrongg|wronggs]] <b class="wrongg">
+
+            [ref]: docs/wrongg.md
+
+            ```sh
+            wrongg
+            ```
+
+                wrongg
+
+            $$
+            \\wrongg
+            $$
+
+            """
+        let editor = Editor(variant, text, caret: 0)
+        editor.view.checkText(in: NSRange(location: 0, length: text.utf16.count), types: NSTextCheckingResult.CheckingType.spelling.rawValue, options: [:])
+        let deadline = Date(timeIntervalSinceNow: 2)
+        while editor.misspellings.isEmpty && Date() < deadline {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01))
+        }
+        let marked = editor.misspellings.map { (text as NSString).substring(with: NSRange(location: $0.location - 1, length: $0.length + 2)) }
+        #expect(marked == [" wrongg ", "[wrongg]", "|wronggs]"])
+        editor.expectTextKitUnchanged()
+    }
+
+    @Test(arguments: TextKitVariant.allCases)
     func editsAtSpanEdgesLeaveTheCaretAfterTheEdit(_ variant: TextKitVariant) {
         let type = { (text: String) in { (view: EditorTextView) in view.insertText(text, replacementRange: view.selectedRange()) } }
         let cases: [(String, Int, (EditorTextView) -> Void, String, Int)] = [
