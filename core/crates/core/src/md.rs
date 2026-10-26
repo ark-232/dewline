@@ -374,6 +374,42 @@ mod tests {
     }
 
     #[test]
+    fn a_lone_cr_ends_a_block_line() {
+        assert_eq!(
+            split("# a\r"),
+            [(SpanKind::Heading { level: 1 }, ["# ", "a", ""])]
+        );
+        assert_eq!(
+            split("#b\r==="),
+            [(SpanKind::Heading { level: 1 }, ["", "#b", "\r==="])]
+        );
+    }
+
+    #[test]
+    fn an_atx_opener_takes_every_blank_after_its_hashes() {
+        assert_eq!(
+            split("#\ta"),
+            [(SpanKind::Heading { level: 1 }, ["#\t", "a", ""])]
+        );
+        assert_eq!(
+            split("##\x0b\x0cb"),
+            [(SpanKind::Heading { level: 2 }, ["##\x0b\x0c", "b", ""])]
+        );
+    }
+
+    #[test]
+    fn an_unclosed_fence_runs_to_the_end_of_the_text() {
+        assert_eq!(
+            split("```\na\n"),
+            [(SpanKind::FencedCode, ["```\n", "a", ""])]
+        );
+        assert_eq!(
+            split("~~~\nb"),
+            [(SpanKind::FencedCode, ["~~~\n", "b", ""])]
+        );
+    }
+
+    #[test]
     fn empty_content() {
         assert_eq!(
             split("#"),
