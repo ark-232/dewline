@@ -52,13 +52,15 @@ struct SourceModeMeasurements {
         let storage = try #require(view.textStorage)
         let caret = storage.mutableString.range(of: " ", range: NSRange(location: storage.length / 2, length: 2000)).location
         view.setSelectedRange(NSRange(location: caret, length: 0))
-        view.scrollRangeToVisible(NSRange(location: caret, length: 0))
-        frame(window)
         repeat {
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.5))
         } while view.textLayoutManager == nil && (view.layoutManager?.firstUnlaidCharacterIndex() ?? 0) < storage.length
-        // TextKit 1 repeats the earlier scrollRangeToVisible once its background layout completes.
+        // TextKit 1 sizes the view only as far as it has laid out, so a scroll made during its background layout can stop short.
+        view.scrollRangeToVisible(NSRange(location: caret, length: 0))
+        frame(window)
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.5))
+        let line = try #require(view.baseline(at: caret)) - view.visibleRect.minY
+        try #require(line > 0 && line < view.visibleRect.height, "the caret line sits \(line) pt below the top of the visible rect")
         return (window, view, caret)
     }
 
@@ -82,20 +84,28 @@ struct SourceModeMeasurements {
         return paragraphs
     }
 
-    /// Sends the toggle and draws a frame: milliseconds to the committed fade and to the end, and how far the caret line moved.
-    static func press(_ window: NSWindow, _ view: EditorTextView, caret: Int, offset: CGFloat) throws -> (fade: Double, done: Double, drift: Double) {
+    /// Sends the toggle and draws a frame: milliseconds to the committed fade and to the end, and how far the caret line
+    /// moved in the toggle's first frame and once it is done.
+    static func press(_ window: NSWindow, _ view: EditorTextView, caret: Int, offset: CGFloat) throws -> (fade: Double, done: Double, first: Double, drift: Double) {
+        var first: CGFloat?
+        let witness = Witness(frame: NSRect(x: 0, y: 0, width: 1, height: 1))
+        witness.drawn = {
+            if first == nil { first = view.baseline(at: caret).map { $0 - view.visibleRect.minY - offset } }
+        }
+        window.contentView?.addSubview(witness)
+        defer { witness.removeFromSuperview() }
         let start = ContinuousClock.now
         NSApp.sendAction(#selector(EditorTextView.toggleSource(_:)), to: view, from: nil)
         frame(window)
         let done = ContinuousClock.now
         let fade = try #require(view.fadeStarted)
         let drift = try #require(view.baseline(at: caret)) - view.visibleRect.minY - offset
-        return (milliseconds(fade - start), milliseconds(done - start), drift)
+        return (milliseconds(fade - start), milliseconds(done - start), try #require(first), drift)
     }
 
     // TextKit 1 at 10 MB times the styler's whole-document restyle, which the hot-paths lane measures, not the toggle.
-    @Test(arguments: [(TextKitVariant.textKit1, 1_000_000), (.textKit2, 1_000_000), (.textKit2, 10_000_000)])
-    func toggle(_ variant: TextKitVariant, bytes: Int) throws {
+    @Test(arguments: [(TextKitVariant.textKit1, 1_000_000, 20), (.textKit2, 1_000_000, 20), (.textKit2, 10_000_000, 10)])
+    func toggle(_ variant: TextKitVariant, bytes: Int, toggles: Int) throws {
         let unopened = Self.footprint()
         let (window, view, caret) = try Self.editor(variant, bytes: bytes)
         defer { window.close() }
@@ -103,15 +113,17 @@ struct SourceModeMeasurements {
         let offset = try #require(view.baseline(at: caret)) - view.visibleRect.minY
         var fades: [[Double]] = [[], []]
         var dones: [[Double]] = [[], []]
+        var first: [Double] = []
         var drift: [Double] = []
         var settled: [Double] = []
-        for toggle in 0..<10 {
+        for toggle in 0..<toggles {
             // Each keystroke in the app drains its own autorelease pool.
             try autoreleasepool {
                 let pressed = try Self.press(window, view, caret: caret, offset: offset)
                 #expect(view.styler.showsSource == toggle.isMultiple(of: 2))
                 fades[toggle % 2].append(pressed.fade)
                 dones[toggle % 2].append(pressed.done)
+                first.append(pressed.first)
                 drift.append(pressed.drift)
                 RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.4))
                 settled.append(try #require(view.baseline(at: caret)) - view.visibleRect.minY - offset)
@@ -130,6 +142,7 @@ struct SourceModeMeasurements {
             full.append(String(format: "%.0f ms, after which the caret line sits %.1f pt off", laidOut, moved))
         }
 
+        let points = { (values: [Double]) in values.map { String(format: "%.2f", $0) }.joined(separator: " ") }
         let format = { (values: [Double]) in
             String(format: "p50 %.1f, p95 %.1f, max %.1f ms", Self.percentile(values, 0.5), Self.percentile(values, 0.95), Self.percentile(values, 1))
                 + " (in order: " + values.map { String(format: "%.0f", $0) }.joined(separator: " ") + ")"
@@ -139,9 +152,9 @@ struct SourceModeMeasurements {
             SOURCE-MODE \(variant) \(bytes / 1_000_000) MB
               fade starts, Live to Source: \(format(fades[0])); Source to Live: \(format(fades[1]))
               toggle done, Live to Source: \(format(dones[0])); Source to Live: \(format(dones[1]))
-              caret line drift per toggle, pt: at the frame \(drift.map { String(format: "%.2f", $0) }.joined(separator: " ")); after 0.4 s \(settled.map { String(format: "%.2f", $0) }.joined(separator: " "))
+              caret line per toggle, pt off: first frame \(points(first)); toggle done \(points(drift)); after 0.4 s \(points(settled))
               full layout after a toggle, Live to Source: \(full[0]); Source to Live: \(full[1])
-              phys_footprint: \(Int(unopened)) MB before opening, \(Int(opened)) MB open, \(Int(toggled)) MB after ten toggles
+              phys_footprint: \(Int(unopened)) MB before opening, \(Int(opened)) MB open, \(Int(toggled)) MB after \(toggles) toggles
             """
         )
     }
