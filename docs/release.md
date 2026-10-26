@@ -16,7 +16,7 @@ scripts/perf.sh                          # measures this Mac; writes perf/<versi
 
 `sign.sh` reads `SIGN_IDENTITY` (`Developer ID Application: ArkWerx LLC (7W6LLR2DK7)`) and `ASC_KEY_PATH`, `ASC_KEY_ID`, `ASC_ISSUER_ID`, and prints a skip line for each stage whose inputs are missing. Releases are built only in CI.
 
-A release PR sets the version in `core/Cargo.toml`, adds the version's section to `CHANGELOG.md` (`## 1.4.0 (2 Nov 2026)`, or `## 1.4.1 (critical)` for a critical update), and commits `perf/1.4.0.json` from `scripts/perf.sh` on the owner's Mac. `verify` refuses a tag whose perf file misses a budget in `perf/budgets.jq`. The section becomes the appcast notes, the release body and the app's What's New.
+A release PR sets the version in `core/Cargo.toml`, adds the version's section to `CHANGELOG.md` (`## 1.4.0 (2 Nov 2026)`, or `## 1.4.1 (critical)` for a critical update), and commits `perf/1.4.0.json` from `scripts/perf.sh` on the owner's Mac. `verify` refuses a `v*` tag whose perf file is missing or misses a budget in `perf/budgets.jq` (`scripts/perf-gate.sh`). For a `rehearse/v*` tag the gate is advisory (owner decision D26): verify still judges the file and lists each missed budget in the job summary and as a warning, so signing and notarization can be rehearsed before the budgets hold. The section becomes the appcast notes, the release body and the app's What's New.
 
 ## Owner setup
 

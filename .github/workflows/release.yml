@@ -72,10 +72,7 @@ jobs:
           ((build > newest)) || fail "build $build is not above the newest sparkle:version in the feed, $newest"
 
           heading=$(grep -E "^## ${version//./\\.}( |$)" CHANGELOG.md | head -1) || fail "CHANGELOG.md has no section for $version"
-          [[ -f perf/$version.json ]] || fail "perf/$version.json is missing (scripts/perf.sh writes it)"
-          judged=$(jq -f perf/budgets.jq "perf/$version.json") || fail "perf/$version.json is not perf.sh's JSON"
-          jq -e .pass <<< "$judged" > /dev/null \
-            || fail "perf/$version.json misses budgets: $(jq -r '[.budgets[] | select(.pass | not) | .metric] | join("; ")' <<< "$judged")"
+          scripts/perf-gate.sh "perf/$version.json" "$TAG"
           if gh api "repos/$GITHUB_REPOSITORY/releases/tags/v$version" > /dev/null 2>&1; then fail "v$version is already released"; fi
 
           channel=stable

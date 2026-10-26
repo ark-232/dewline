@@ -82,6 +82,20 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: The perf gate fails a v* tag on a missed budget and warns a rehearse/v* tag
+        run: |
+          check() { echo "::error::scripts/perf-gate.sh: $*"; exit 1; }
+          summary=$RUNNER_TEMP/perf-summary.md
+          scripts/perf-gate.sh perf/fixtures/within-budgets.json v1.0.0 > /dev/null || check "a v* tag failed within budgets"
+          if GITHUB_STEP_SUMMARY=$summary scripts/perf-gate.sh perf/fixtures/over-budgets.json v1.0.0 > /dev/null; then
+            check "a v* tag passed a missed budget"
+          fi
+          out=$(GITHUB_STEP_SUMMARY=$summary scripts/perf-gate.sh perf/fixtures/over-budgets.json rehearse/v1.0.0) \
+            || check "a rehearse/v* tag failed on a missed budget"
+          [[ $out == *"::warning::"*"Open 1 MB"* ]] || check "a rehearse/v* tag did not warn: $out"
+          grep -q "| Open 1 MB | 50 ms | 51 ms |" "$summary" || check "the job summary does not list the missed budget"
+          if scripts/perf-gate.sh perf/fixtures/absent.json v1.0.0 > /dev/null; then check "a v* tag passed with no perf file"; fi
+          scripts/perf-gate.sh perf/fixtures/absent.json rehearse/v1.0.0 > /dev/null || check "a rehearse/v* tag failed with no perf file"
       - name: Install XcodeGen 2.46.0
         run: |
           curl -sSL -o "$RUNNER_TEMP/xcodegen.zip" https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip

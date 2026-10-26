@@ -1,0 +1,50 @@
+{
+  "keystroke1MB": {
+    "p50": 8,
+    "p95": 12,
+    "p99": 16,
+    "max": 20
+  },
+  "keystroke10MB": {
+    "p50": 10,
+    "p95": 16,
+    "p99": 20,
+    "max": 30
+  },
+  "launch1MB": {
+    "coldMs": [
+      250,
+      300,
+      280
+    ],
+    "warmMs": [
+      140,
+      150,
+      120,
+      149,
+      160
+    ]
+  },
+  "open1MB": {
+    "ms": 50
+  },
+  "open10MB": {
+    "ms": 250
+  },
+  "idle1MB": {
+    "footprintMB": 80,
+    "cpuPercent": 0,
+    "idleWakeups": 0,
+    "contextSwitches": 40,
+    "frontmost": false
+  },
+  "idle10MB": {
+    "footprintMB": 150,
+    "cpuPercent": 0,
+    "idleWakeups": 0,
+    "contextSwitches": 90,
+    "frontmost": false
+  },
+  "appBytes": 30000000,
+  "dmgBytes": 20971520
+}
