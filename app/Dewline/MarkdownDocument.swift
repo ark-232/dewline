@@ -7,8 +7,9 @@ final class MarkdownDocument: NSDocument {
 
     /// The text as opened or last saved; the tab's text view holds the edits.
     private(set) var text = ""
-    /// The file's bytes as opened or last saved, and their hash.
-    private var base = (bytes: Data(), hash: contentHash(Data()))
+    /// The hash of the file's bytes as opened or last saved.
+    private var baseHash = contentHash(Data())
+    private var hasBOM = false
 
     override class var autosavesInPlace: Bool {
         false
@@ -21,7 +22,8 @@ final class MarkdownDocument: NSDocument {
         // Documents read on the main thread unless canConcurrentlyReadDocuments says otherwise.
         MainActor.assumeIsolated {
             text = decoded
-            base = (data, contentHash(data))
+            baseHash = contentHash(data)
+            hasBOM = data.starts(with: Self.bom)
         }
     }
 
@@ -35,7 +37,7 @@ final class MarkdownDocument: NSDocument {
 
     /// Decoding drops a byte-order mark, so the file's own goes back in front.
     private func bytes(of text: String) -> Data {
-        (base.bytes.starts(with: Self.bom) ? Self.bom : Data()) + Data(text.utf8)
+        (hasBOM ? Self.bom : Data()) + Data(text.utf8)
     }
 
     override func save(withDelegate delegate: Any?, didSave didSaveSelector: Selector?, contextInfo: UnsafeMutableRawPointer?) {
@@ -55,12 +57,12 @@ final class MarkdownDocument: NSDocument {
             guard saveOperation == .saveOperation || target != nil && target == fileURL.flatMap(Self.identity) else {
                 try super.writeSafely(to: url, ofType: typeName, for: saveOperation)
                 if saveOperation == .saveAsOperation {
-                    (text, base) = (shown, (bytes, contentHash(bytes)))
+                    (text, baseHash) = (shown, contentHash(bytes))
                 }
                 return
             }
             do throws(SaveFailure) {
-                base = (bytes, try saveFile(bytes, to: url, base: base.hash))
+                baseHash = try saveFile(bytes, to: url, base: baseHash)
                 text = shown
             } catch .conflict {
                 throw SaveConflict(document: self, name: url.lastPathComponent)
@@ -125,7 +127,7 @@ struct SaveConflict: LocalizedError, RecoverableError {
     }
 
     var recoveryOptions: [String] {
-        ["Save a Copy…", "Cancel"]
+        ["Save As…", "Cancel"]
     }
 
     func attemptRecovery(optionIndex: Int) -> Bool {
