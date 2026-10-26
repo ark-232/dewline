@@ -1,7 +1,7 @@
 import Foundation
 
-struct SyntaxSpan: Equatable {
-    enum Kind: Equatable {
+struct SyntaxSpan: Hashable {
+    enum Kind: Hashable {
         case heading(level: Int), emphasis, strong, strikethrough, inlineCode, link
     }
 
@@ -23,13 +23,9 @@ struct SyntaxSpan: Equatable {
             content: NSRange(location: content.location + offset, length: content.length)
         )
     }
-
-    func contains(_ other: SyntaxSpan) -> Bool {
-        other.range.location >= content.location && NSMaxRange(other.range) <= NSMaxRange(content)
-    }
 }
 
-/// The spike's tokenizer, replaced by the Rust parser in M1.
+/// The spike's tokenizer.
 enum SpikeTokenizer {
     private static let heading = try! NSRegularExpression(pattern: "^(#{1,6})[ \\t]+(.*?)(?:[ \\t]+#+)?[ \\t]*$")
     private static let inline: [(SyntaxSpan.Kind, NSRegularExpression)] = [
@@ -62,8 +58,8 @@ enum SpikeTokenizer {
                 let candidate = span(kind, match)
                 let fits = spans.allSatisfy { other in
                     NSIntersectionRange(candidate.range, other.range).length == 0
-                        || (other.kind != .inlineCode && other.contains(candidate))
-                        || candidate.contains(other)
+                        || (other.kind != .inlineCode && NSIntersectionRange(candidate.range, other.content) == candidate.range)
+                        || NSIntersectionRange(other.range, candidate.content) == other.range
                 }
                 if fits { spans.append(candidate) }
             }

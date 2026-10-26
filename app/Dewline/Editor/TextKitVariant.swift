@@ -1,6 +1,6 @@
 import Foundation
 
-/// The M0 spike's switch between the two TextKit stacks. Deleted with the losing variant.
+/// The M0 spike's switch between the two TextKit stacks.
 enum TextKitVariant: String, CaseIterable, Sendable {
     case textKit1 = "1"
     case textKit2 = "2"

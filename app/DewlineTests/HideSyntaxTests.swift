@@ -55,6 +55,10 @@ private struct Editor {
         return ranges
     }
 
+    var flagged: IndexSet {
+        misspellings.reduce(into: IndexSet()) { $0.insert(integersIn: Range($1)!) }
+    }
+
     /// Whether the opening `**` of `The **soft** day` takes space: the caret after it sits right of the caret before it.
     var opensRevealed: Bool {
         rect(6, 0).minX - rect(4, 0).minX > 2
@@ -146,7 +150,7 @@ struct HideSyntaxTests {
         let view = editor.view
         let storage = view.textStorage!
         let styled = (0..<17).map { storage.attributes(at: $0, effectiveRange: nil) as NSDictionary }
-        let restyles = view.styler.paragraphRestyles
+        let restyles = view.styler.restyles
         for composed in ["か", "かな"] {
             let length = composed.utf16.count
             view.setMarkedText(composed, selectedRange: NSRange(location: length, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))
@@ -154,7 +158,7 @@ struct HideSyntaxTests {
             let now = (0..<17).map { storage.attributes(at: $0 < 8 ? $0 : $0 + length, effectiveRange: nil) as NSDictionary }
             #expect(now == styled)
         }
-        #expect(view.styler.paragraphRestyles == restyles)
+        #expect(view.styler.restyles == restyles)
         let marked = view.markedRange()
         let rect = view.firstRect(forCharacterRange: marked, actualRange: nil)
         let line = editor.rect(0, 4)
@@ -163,7 +167,7 @@ struct HideSyntaxTests {
         view.insertText("かな", replacementRange: marked)
         #expect(view.string == "The **soかなft** day\n")
         #expect(!view.hasMarkedText())
-        #expect(view.styler.paragraphRestyles == restyles + 1)
+        #expect(view.styler.restyles == restyles + 1)
         let font = storage.attribute(.font, at: 8, effectiveRange: nil) as! NSFont
         #expect(font.fontDescriptor.symbolicTraits.contains(.bold))
         editor.expectTextKitUnchanged()
@@ -208,6 +212,31 @@ struct HideSyntaxTests {
         #expect(editor.misspellings == [word], "after the restyle")
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.5))
         #expect(editor.misspellings == [word], "after continuous checking catches up")
+        editor.place(4)
+        view.insertText("x", replacementRange: view.selectedRange())
+        #expect(view.selectedRange() == NSRange(location: 5, length: 0))
+        #expect(editor.flagged == IndexSet(integersIn: 7..<13), "after typing at the span's start")
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 1))
+        #expect(editor.flagged == IndexSet(integersIn: 7..<13), "a second after typing at the span's start")
         editor.expectTextKitUnchanged()
+    }
+
+    @Test(arguments: TextKitVariant.allCases)
+    func editsAtSpanEdgesLeaveTheCaretAfterTheEdit(_ variant: TextKitVariant) {
+        let type = { (text: String) in { (view: EditorTextView) in view.insertText(text, replacementRange: view.selectedRange()) } }
+        let cases: [(String, Int, (EditorTextView) -> Void, String, Int)] = [
+            (Self.soft, 4, type("x"), "The x**soft** day", 5),
+            (Self.soft, 4, { type("x")($0); type("y")($0) }, "The xy**soft** day", 6),
+            (Self.soft, 6, { $0.deleteBackward(nil) }, "The *soft** day", 5),
+            ("The soft** day", 4, type("**"), "The **soft** day", 6),
+            ("# Title\n\(Self.soft)\n", 0, type("#"), "## Title\n\(Self.soft)\n", 1),
+        ]
+        for (text, caret, edit, edited, after) in cases {
+            let editor = Editor(variant, text, caret: caret)
+            edit(editor.view)
+            #expect(editor.view.string == edited)
+            #expect(editor.view.selectedRange() == NSRange(location: after, length: 0), "\(edited)")
+            editor.expectTextKitUnchanged()
+        }
     }
 }
