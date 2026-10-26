@@ -94,6 +94,31 @@ struct ThemeTests {
         #expect(abs(gray.l - 0.35) < 1e-9 && gray.c == 0)
     }
 
+    @Test func thumbnailWordsKeepToTheirSideOfTheDiagonal() {
+        let cut = CGSize(width: 180, height: 100)
+        let frame = CGRect(x: 42, y: 20, width: 132, height: 76)
+        let sizes = (0..<60).map { CGSize(width: CGFloat(8 + $0 % 5 * 6), height: 9) }
+        func diagonal(_ y: CGFloat) -> CGFloat {
+            cut.width * (1 - y / cut.height)
+        }
+        let upper = flowAroundDiagonal(sizes[...], breaks: [3], space: 2, leading: 1.5, in: frame, cut: cut, half: .upper)
+        let lower = flowAroundDiagonal(sizes[upper.count...], breaks: [3], space: 2, leading: 1.5, in: frame, cut: cut, half: .lower)
+        #expect(upper.count > 3 && !lower.isEmpty)
+        for (origin, size) in zip(upper, sizes) {
+            #expect(origin.x + size.width <= diagonal(origin.y + size.height), "\(origin)")
+            #expect(frame.contains(CGRect(origin: origin, size: size)), "\(origin)")
+        }
+        for (origin, size) in zip(lower, sizes[upper.count...]) {
+            #expect(origin.x >= diagonal(origin.y), "\(origin)")
+            #expect(frame.contains(CGRect(origin: origin, size: size)), "\(origin)")
+        }
+        #expect(upper[3].x == frame.minX && upper[3].y > upper[2].y)
+        // Uncut, the words fill the frame in reading order.
+        let whole = flowAroundDiagonal(sizes[...], space: 2, leading: 1.5, in: frame, cut: cut, half: .whole)
+        #expect(whole.count > upper.count + lower.count / 2)
+        #expect(zip(whole, whole.dropFirst()).allSatisfy { $0.y < $1.y || ($0.y == $1.y && $0.x < $1.x) })
+    }
+
     @MainActor @Test func choicesPersistAndPost() throws {
         let suite = "dev.arkwerx.dewline.tests.themes"
         let defaults = try #require(UserDefaults(suiteName: suite))
