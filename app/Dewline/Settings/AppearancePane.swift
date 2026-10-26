@@ -53,43 +53,44 @@ private struct ThemeCard: View {
 
     var body: some View {
         let selected = (dark ? store.darkTheme : store.lightTheme) == theme
-        VStack(spacing: 6) {
-            ZStack {
-                PagePreview(colors: theme.lightColors, store: store)
-                PagePreview(colors: theme.darkColors, store: store)
-                    .clipShape(LowerTriangle())
-            }
-            .frame(height: 92)
-            .clipShape(.rect(cornerRadius: 6))
-            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.separator, lineWidth: 0.5))
-            .padding(3)
-            .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(selected ? Color.accentColor : .clear, lineWidth: 2))
-            HStack(spacing: 4) {
-                Text(theme.name)
-                if store.lightTheme == theme {
-                    Image(systemName: "sun.max.fill").help("Used in Light")
-                }
-                if store.darkTheme == theme {
-                    Image(systemName: "moon.fill").help("Used in Dark")
-                }
-            }
-            .font(.callout)
-            .imageScale(.small)
-            .foregroundStyle(selected ? .primary : .secondary)
-        }
-        .contentShape(.rect)
-        .onTapGesture {
+        Button {
             if dark { store.darkTheme = theme } else { store.lightTheme = theme }
+        } label: {
+            VStack(spacing: 6) {
+                ZStack {
+                    PagePreview(colors: theme.lightColors, store: store)
+                    PagePreview(colors: theme.darkColors, store: store)
+                        .clipShape(LowerTriangle())
+                }
+                .frame(height: 92)
+                .clipShape(.rect(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.separator, lineWidth: 0.5))
+                .padding(3)
+                .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(selected ? Color.accentColor : .clear, lineWidth: 2))
+                HStack(spacing: 4) {
+                    Text(theme.name)
+                    if store.lightTheme == theme {
+                        Image(systemName: "sun.max.fill").help("Used in Light")
+                    }
+                    if store.darkTheme == theme {
+                        Image(systemName: "moon.fill").help("Used in Dark")
+                    }
+                }
+                .font(.callout)
+                .imageScale(.small)
+                .foregroundStyle(selected ? .primary : .secondary)
+            }
+            .contentShape(.rect)
         }
+        .buttonStyle(.plain)
         .contextMenu {
             Button("Use in Light") { store.lightTheme = theme }
             Button("Use in Dark") { store.darkTheme = theme }
         }
         .help(theme.summary)
-        .accessibilityElement(children: .ignore)
         .accessibilityLabel(theme.name)
         .accessibilityHint(theme.summary)
-        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
