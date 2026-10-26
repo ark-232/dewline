@@ -57,19 +57,22 @@ private struct FontPreview: View {
         let body = store.bodyFont
         let heading = store.heading(2).font
         let code = store.codeFont(size: body.pointSize * body.xHeight / store.codeFont(size: body.pointSize).xHeight)
-        var paragraph = AttributedString("Ship the notarized build to the first forty testers, then open the waitlist. The goal for the week is ")
-        var emphasis = AttributedString("boring reliability")
-        emphasis.swiftUI.font = Font(NSFont(descriptor: body.fontDescriptor.withSymbolicTraits(.italic), size: body.pointSize) ?? body)
-        paragraph += emphasis + AttributedString(": every outside write lands, gets named, and can be undone.")
+        let excerpt = Excerpt.open
+        var paragraph = AttributedString(excerpt.paragraph)
+        for link in excerpt.links {
+            guard let range = Range(link, in: paragraph) else { continue }
+            paragraph[range].swiftUI.foregroundColor = color(.link)
+            paragraph[range].swiftUI.underlineStyle = .single
+        }
         return VStack(alignment: .leading, spacing: 10) {
-            Text("Before the beta")
+            Text(excerpt.heading)
                 .font(Font(heading))
                 .foregroundStyle(color(.heading))
             Text(paragraph)
                 .font(Font(body))
                 .lineSpacing(max(store.bodyLineHeight - (body.ascender - body.descender + body.leading), 0))
                 .foregroundStyle(color(.ink))
-            Text("CTFontManagerRegisterFontURLs(urls, .process, true)")
+            Text(excerpt.code)
                 .font(Font(code))
                 .foregroundStyle(color(.ink))
                 .padding(.horizontal, 8)

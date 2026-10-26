@@ -5,6 +5,7 @@ struct AppearancePane: View {
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
+        let excerpt = Excerpt.open
         Form {
             Section {
                 LabeledContent("Appearance") {
@@ -31,7 +32,7 @@ struct AppearancePane: View {
                 }
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 14), count: 3), spacing: 14) {
                     ForEach(Theme.all) { theme in
-                        ThemeCard(theme: theme, store: store, dark: scheme == .dark)
+                        ThemeCard(theme: theme, store: store, excerpt: excerpt, dark: scheme == .dark)
                     }
                 }
                 .padding(.vertical, 6)
@@ -49,6 +50,7 @@ struct AppearancePane: View {
 private struct ThemeCard: View {
     let theme: Theme
     @Bindable var store: ThemeStore
+    let excerpt: Excerpt
     let dark: Bool
 
     var body: some View {
@@ -58,8 +60,8 @@ private struct ThemeCard: View {
         } label: {
             VStack(spacing: 6) {
                 ZStack {
-                    PagePreview(colors: theme.lightColors, store: store)
-                    PagePreview(colors: theme.darkColors, store: store)
+                    PagePreview(colors: theme.lightColors, store: store, excerpt: excerpt)
+                    PagePreview(colors: theme.darkColors, store: store, excerpt: excerpt)
                         .clipShape(LowerTriangle())
                 }
                 .frame(height: 92)
@@ -141,11 +143,12 @@ private struct LowerTriangle: Shape {
     }
 }
 
-/// A small window in one theme's colors: the sidebar tint, and a page set in the store's faces, or drawn as bars
-/// when `lines` is set.
+/// A small window in one theme's colors: the sidebar tint, and a page that sets the excerpt in the store's faces, or
+/// draws bars when `lines` is set.
 struct PagePreview: View {
     let colors: [Token: NSColor]
     let store: ThemeStore
+    var excerpt = Excerpt()
     var lines = false
 
     private func color(_ token: Token) -> Color {
@@ -153,13 +156,16 @@ struct PagePreview: View {
     }
 
     private var paragraph: AttributedString {
-        var picked = AttributedString("on 2 December")
-        picked.swiftUI.backgroundColor = color(.selection)
-        var link = AttributedString("release checklist")
-        link.swiftUI.foregroundColor = color(.link)
-        link.swiftUI.underlineStyle = .single
-        return AttributedString("Ship the notarized build to the first forty testers. Public beta opens ") + picked
-            + AttributedString(", after the dry run. Steps in the ") + link + AttributedString(".")
+        var text = AttributedString(excerpt.paragraph)
+        for link in excerpt.links {
+            guard let range = Range(link, in: text) else { continue }
+            text[range].swiftUI.foregroundColor = color(.link)
+            text[range].swiftUI.underlineStyle = .single
+        }
+        if let range = Range(excerpt.selection, in: text) {
+            text[range].swiftUI.backgroundColor = color(.selection)
+        }
+        return text
     }
 
     var body: some View {
@@ -183,14 +189,17 @@ struct PagePreview: View {
                     }
                 } else {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Dewline 1.0 launch plan")
+                        Text(excerpt.heading)
                             .font(Font(Faces.font(store.headingFace, size: 10.5, weight: .semibold)))
+                            .lineLimit(1)
                             .foregroundStyle(color(.heading))
                         Text(paragraph)
                             .font(Font(Faces.font(store.bodyFace, size: 7.5)))
                             .foregroundStyle(color(.ink))
                             .lineSpacing(1)
-                        Text("xcodebuild -scheme Dewline")
+                            .lineLimit(4)
+                        Text(excerpt.code)
+                            .lineLimit(1)
                             .font(Font(Faces.font(store.codeFace, size: 6.5)))
                             .foregroundStyle(color(.ink))
                             .padding(.horizontal, 3)
