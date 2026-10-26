@@ -17,20 +17,13 @@ final class MarkdownDocument: NSDocument {
     }
 
     override func makeWindowControllers() {
-        let scrollView = EditorTextView.scrollView(variant: .current)
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 760, height: 640),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
-            backing: .buffered,
-            defer: false
-        )
-        window.contentView = scrollView
-        // Rendered blocks fit the column, so the text arrives once the view has its width.
-        let textView = scrollView.documentView as! EditorTextView
-        textView.documentFolder = fileURL?.deletingLastPathComponent()
-        textView.string = text
-        window.center()
-        addWindowController(NSWindowController(window: window))
+        // A file inside the folder of the window in front opens there: in place of its empty page, else in a new tab.
+        let front = NSApp.orderedWindows.lazy.compactMap { $0.windowController as? MainWindowController }.first
+        guard let front, let folder = front.folder, fileURL.map({ folder.relativePath(of: $0) != nil }) ?? true else {
+            MainWindowController(folder: nil).display(self)
+            return
+        }
+        (front.document == nil ? front : MainWindowController(folder: folder)).display(self)
     }
 
     override func showWindows() {
