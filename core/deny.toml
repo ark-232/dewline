@@ -4,7 +4,7 @@ all-features = true
 [advisories]
 yanked = "deny"
 ignore = [
-    { id = "RUSTSEC-2026-0374", reason = "basic-toml is unmaintained; askama uses it only inside uniffi-bindgen, a build tool that never ships" },
+    { id = "RUSTSEC-2026-0374", reason = "basic-toml is unmaintained; askama uses it only inside uniffi-bindgen, a build tool that never ships. Remove it once a uniffi bump takes basic-toml out of Cargo.lock" },
 ]
 
 [licenses]
