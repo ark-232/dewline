@@ -74,6 +74,7 @@ dependencies = [
  "imara-diff",
  "libc",
  "pulldown-cmark",
+ "unicase",
  "zstd",
 ]
 
