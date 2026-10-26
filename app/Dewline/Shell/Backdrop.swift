@@ -13,8 +13,8 @@ final class BackdropView: NSView {
         }
     }
 
-    /// Where the sky meets its horizon, measured from the top; the top of the safe area when nil.
-    var horizon: CGFloat? {
+    /// Where the sky meets its horizon; the top of the safe area when nil.
+    var horizon: NSLayoutYAxisAnchor? {
         didSet { horizonConstraint = makeHorizonConstraint() }
     }
 
@@ -52,10 +52,7 @@ final class BackdropView: NSView {
     }
 
     private func makeHorizonConstraint() -> NSLayoutConstraint {
-        if let horizon {
-            return sky.heightAnchor.constraint(equalToConstant: horizon + SkyView.fade)
-        }
-        return sky.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: SkyView.fade)
+        sky.bottomAnchor.constraint(equalTo: horizon ?? safeAreaLayoutGuide.topAnchor, constant: SkyView.fade)
     }
 
     override var wantsUpdateLayer: Bool { true }

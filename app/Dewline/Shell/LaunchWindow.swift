@@ -17,8 +17,11 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
     private let segments = NSSegmentedControl(labels: ["Recent", "Pinned", "Folders"], trackingMode: .selectOne, target: nil, action: nil)
     private let filter = NSSearchField()
     private let empty = NSTextField(labelWithString: "")
+    private let wordmark = NSTextField(labelWithString: "")
+    private let tagline = NSTextField(labelWithString: "Nothing changes behind your back.")
+    private let version = NSTextField(labelWithString: "")
     private let underline = Stroke(LaunchWindowController.cobalt)
-    private let horizon = Stroke(.tertiaryLabelColor)
+    private let horizon = Stroke(.clear)
     private var rows: [Row] = []
     /// First lines of files and paths of folders, empty for a file or folder that no longer exists.
     private var previews: [URL: String] = [:]
@@ -46,7 +49,20 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
         window.autorecalculatesKeyViewLoop = true
         window.center()
         NotificationCenter.default.addObserver(self, selector: #selector(reload), name: Library.changed, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(applyTheme), name: ThemeStore.didChange, object: nil)
+        applyTheme()
         reload()
+    }
+
+    /// The wordmark in the theme's ink, the tagline and version in its second ink, and the horizon in its syntax ink.
+    @objc private func applyTheme() {
+        let store = ThemeStore.shared
+        var attributes = Self.wordmark
+        attributes[.foregroundColor] = store.color(.ink)
+        wordmark.attributedStringValue = NSAttributedString(string: "dewline", attributes: attributes)
+        tagline.textColor = store.color(.ink2)
+        version.textColor = store.color(.ink2)
+        horizon.color = store.color(.syntax)
     }
 
     required init?(coder: NSCoder) {
@@ -76,16 +92,10 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
     }
 
     private func content() -> NSView {
-        let left = NSVisualEffectView()
-        left.material = .sidebar
-        left.blendingMode = .behindWindow
-        left.state = .active
+        let left = BackdropView()
         let right = PaperView()
 
         let icon = NSImageView(image: Self.icon)
-        let wordmark = NSTextField(labelWithAttributedString: NSAttributedString(string: "dewline", attributes: Self.wordmark))
-        let tagline = NSTextField(labelWithString: "Nothing changes behind your back.")
-        tagline.textColor = .secondaryLabelColor
         let actions = NSStackView(views: [
             LaunchAction("New Document", symbol: "square.and.pencil", shortcut: "⌘N", action: #selector(AppDelegate.newDocument(_:))),
             LaunchAction("Open…", symbol: "folder", shortcut: "⌘O", action: #selector(NSDocumentController.openDocument(_:))),
@@ -94,9 +104,8 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
         actions.orientation = .vertical
         actions.spacing = 2
         let info = Bundle.main.infoDictionary ?? [:]
-        let version = NSTextField(labelWithString: "Version \(info["CFBundleShortVersionString"] ?? "") (\(info["CFBundleVersion"] ?? ""))")
+        version.stringValue = "Version \(info["CFBundleShortVersionString"] ?? "") (\(info["CFBundleVersion"] ?? ""))"
         version.font = .systemFont(ofSize: 11)
-        version.textColor = .secondaryLabelColor
 
         segments.selectedSegment = 0
         segments.target = self
@@ -167,8 +176,8 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
             tagline.topAnchor.constraint(equalTo: wordmark.bottomAnchor, constant: 6),
             tagline.centerXAnchor.constraint(equalTo: left.centerXAnchor),
             horizon.topAnchor.constraint(equalTo: tagline.bottomAnchor, constant: 20),
-            horizon.leadingAnchor.constraint(equalTo: left.leadingAnchor, constant: 24),
-            horizon.trailingAnchor.constraint(equalTo: left.trailingAnchor, constant: -24),
+            horizon.leadingAnchor.constraint(equalTo: left.leadingAnchor),
+            horizon.trailingAnchor.constraint(equalTo: left.trailingAnchor),
             horizon.heightAnchor.constraint(equalToConstant: 1),
             actions.topAnchor.constraint(equalTo: horizon.bottomAnchor, constant: 16),
             actions.leadingAnchor.constraint(equalTo: left.leadingAnchor, constant: 16),
@@ -193,6 +202,8 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
         for action in actions.arrangedSubviews {
             action.widthAnchor.constraint(equalTo: actions.widthAnchor).isActive = true
         }
+        // Dusk's and Nightwatch's skies meet their horizon at the line.
+        left.horizon = horizon.centerYAnchor
         return root
     }
 
@@ -351,7 +362,6 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
 
     private static let wordmark: [NSAttributedString.Key: Any] = [
         .font: NSFont(descriptor: NSFont.systemFont(ofSize: 30, weight: .medium).fontDescriptor.withDesign(.serif)!, size: 30)!,
-        .foregroundColor: NSColor.labelColor,
         .kern: -0.4,
     ]
 
@@ -483,22 +493,37 @@ private final class LaunchAction: NSControl {
     }
 }
 
-/// A folder's header in the recents list: its name, its path, and its branch.
+/// A folder's header in the recents list: its name, its path, and its branch. The path gives way first, from the
+/// middle, so the folders nearest the files stay readable.
 private final class GroupCell: NSTableCellView {
     static let identifier = NSUserInterfaceItemIdentifier("group")
+    private let path = NSTextField(labelWithString: "")
+    private let branch = NSTextField(labelWithString: "")
 
     init() {
         super.init(frame: .zero)
         identifier = Self.identifier
-        let label = NSTextField(labelWithString: "")
-        label.maximumNumberOfLines = 1
-        label.translatesAutoresizingMaskIntoConstraints = false
-        textField = label
-        addSubview(label)
+        let name = NSTextField(labelWithString: "")
+        name.font = .systemFont(ofSize: 11, weight: .semibold)
+        name.textColor = .secondaryLabelColor
+        name.lineBreakMode = .byTruncatingTail
+        textField = name
+        for label in [path, branch] {
+            label.font = .systemFont(ofSize: 11)
+            label.textColor = .tertiaryLabelColor
+        }
+        path.lineBreakMode = .byTruncatingMiddle
+        path.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let row = NSStackView(views: [name, path, branch])
+        row.spacing = 8
+        row.alignment = .firstBaseline
+        row.detachesHiddenViews = true
+        row.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(row)
         NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
-            label.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -4),
-            label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
+            row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
+            row.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -4),
+            row.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
         ])
     }
 
@@ -507,19 +532,10 @@ private final class GroupCell: NSTableCellView {
     }
 
     func show(_ folder: URL, branch: String?) {
-        let text = NSMutableAttributedString(string: FileManager.default.displayName(atPath: folder.path), attributes: [
-            .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
-            .foregroundColor: NSColor.secondaryLabelColor,
-        ])
-        let quiet: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.tertiaryLabelColor]
-        text.append(NSAttributedString(string: "   " + abbreviatedPath(folder), attributes: quiet))
-        if let branch, !branch.isEmpty {
-            text.append(NSAttributedString(string: "   git · \(branch)", attributes: quiet))
-        }
-        let truncating = NSMutableParagraphStyle()
-        truncating.lineBreakMode = .byTruncatingTail
-        text.addAttribute(.paragraphStyle, value: truncating, range: NSRange(location: 0, length: text.length))
-        textField?.attributedStringValue = text
+        textField?.stringValue = FileManager.default.displayName(atPath: folder.path)
+        path.stringValue = abbreviatedPath(folder)
+        self.branch.stringValue = "git · \(branch ?? "")"
+        self.branch.isHidden = branch?.isEmpty ?? true
     }
 }
 
@@ -592,7 +608,9 @@ private final class FileCell: NSTableCellView {
 
 /// A horizontal rule that can draw itself in from the left.
 private final class Stroke: NSView {
-    private let color: NSColor
+    var color: NSColor {
+        didSet { needsDisplay = true }
+    }
     private let shape = CAShapeLayer()
 
     init(_ color: NSColor) {

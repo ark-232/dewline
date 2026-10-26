@@ -66,6 +66,15 @@ struct ShellTests {
         #expect(shortDate(lastYear, now: now, calendar: calendar) == "14 Mar 2025")
     }
 
+    @Test func pathsAbbreviateTheHomeFolder() {
+        let home = "/Users/rick"
+        #expect(abbreviatedPath(URL(filePath: "/Users/rick/Notes/essays/"), home: home) == "~/Notes/essays")
+        #expect(abbreviatedPath(URL(filePath: "/Users/rick"), home: home) == "~")
+        #expect(abbreviatedPath(URL(filePath: "/Users/rick/Notes/../Plans"), home: home) == "~/Plans")
+        #expect(abbreviatedPath(URL(filePath: "/Users/ricky/Notes"), home: home) == "/Users/ricky/Notes")
+        #expect(abbreviatedPath(URL(filePath: "/Volumes/Work/Users/rick"), home: home) == "/Volumes/Work/Users/rick")
+    }
+
     @Test func visitsMoveToTheFrontWithoutDuplicates() {
         let a = Library.Visit(url: URL(filePath: "/a.md"), date: .distantPast)
         let b = Library.Visit(url: URL(filePath: "/b.md"), date: .distantPast)
