@@ -5,13 +5,11 @@ import Testing
 /// An editor in a window that is never ordered front.
 @MainActor
 private struct Editor {
-    let variant: TextKitVariant
     let window: NSWindow
     let view: EditorTextView
 
-    init(_ variant: TextKitVariant, _ text: String, caret: Int) {
-        self.variant = variant
-        let scrollView = EditorTextView.scrollView(variant: variant)
+    init(_ text: String, caret: Int) {
+        let scrollView = EditorTextView.scrollView()
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 640), styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = scrollView
@@ -29,7 +27,7 @@ private struct Editor {
         view.firstRect(forCharacterRange: NSRange(location: location, length: length), actualRange: nil)
     }
 
-    /// Ranges the spell checker flagged, read from whichever layout manager the variant uses.
+    /// Ranges the spell checker flagged, read from the text layout manager's rendering attributes.
     var misspellings: [NSRange] {
         var ranges: [NSRange] = []
         if let layout = view.textLayoutManager {
@@ -41,15 +39,6 @@ private struct Editor {
                     ranges.append(NSRange(location: location, length: content.offset(from: textRange.location, to: textRange.endLocation)))
                 }
                 return true
-            }
-        } else {
-            let layout = view.layoutManager!
-            var index = 0
-            while index < view.string.utf16.count {
-                var effective = NSRange()
-                let state = layout.temporaryAttribute(.spellingState, atCharacterIndex: index, effectiveRange: &effective) as? Int ?? 0
-                if state & NSAttributedString.SpellingState.spelling.rawValue != 0 { ranges.append(effective) }
-                index = NSMaxRange(effective)
             }
         }
         return ranges
@@ -65,7 +54,7 @@ private struct Editor {
     }
 
     func expectTextKitUnchanged() {
-        #expect((view.textLayoutManager != nil) == (variant == .textKit2))
+        #expect(view.textLayoutManager != nil)
     }
 }
 
@@ -73,10 +62,9 @@ private struct Editor {
 struct HideSyntaxTests {
     static let soft = "The **soft** day"
 
-    @Test(arguments: TextKitVariant.allCases)
-    func editingKeepsTheExactString(_ variant: TextKitVariant) {
+    @Test func editingKeepsTheExactString() {
         let text = "# Title\n\nThe **soft** day, *quiet* `code` ~~gone~~ [link](https://example.com) _too_.\n"
-        let editor = Editor(variant, text, caret: 0)
+        let editor = Editor(text, caret: 0)
         #expect(editor.view.string == text)
         for caret in 0...text.utf16.count {
             editor.place(caret)
@@ -91,9 +79,8 @@ struct HideSyntaxTests {
         editor.expectTextKitUnchanged()
     }
 
-    @Test(arguments: TextKitVariant.allCases)
-    func hiddenMarkersTakeNoSpace(_ variant: TextKitVariant) {
-        let editor = Editor(variant, "\(Self.soft)\nThe soft day\n", caret: 30)
+    @Test func hiddenMarkersTakeNoSpace() {
+        let editor = Editor("\(Self.soft)\nThe soft day\n", caret: 30)
         for marker in [4, 10] {
             let width = editor.rect(marker, 2).width
             #expect(width <= 0.5, "hidden marker at \(marker) is \(width) pt wide")
@@ -108,9 +95,8 @@ struct HideSyntaxTests {
         editor.expectTextKitUnchanged()
     }
 
-    @Test(arguments: TextKitVariant.allCases)
-    func arrowKeysVisitEveryOffset(_ variant: TextKitVariant) {
-        let editor = Editor(variant, Self.soft, caret: 0)
+    @Test func arrowKeysVisitEveryOffset() {
+        let editor = Editor(Self.soft, caret: 0)
         let length = Self.soft.utf16.count
         let moves = [(editor.view.moveRight, Array(0...length)), (editor.view.moveLeft, Array((0...length).reversed()))]
         for (move, path) in moves {
@@ -126,17 +112,15 @@ struct HideSyntaxTests {
         editor.expectTextKitUnchanged()
     }
 
-    @Test(arguments: TextKitVariant.allCases)
-    func wordSelectionStopsAtTheMarkers(_ variant: TextKitVariant) {
-        let editor = Editor(variant, Self.soft, caret: 16)
+    @Test func wordSelectionStopsAtTheMarkers() {
+        let editor = Editor(Self.soft, caret: 16)
         let word = editor.view.selectionRange(forProposedRange: NSRange(location: 8, length: 0), granularity: .selectByWord)
         #expect(word == NSRange(location: 6, length: 4))
         editor.expectTextKitUnchanged()
     }
 
-    @Test(arguments: TextKitVariant.allCases)
-    func hitTestingFindsTheRenderedWord(_ variant: TextKitVariant) {
-        let editor = Editor(variant, "\(Self.soft)\n", caret: 17)
+    @Test func hitTestingFindsTheRenderedWord() {
+        let editor = Editor("\(Self.soft)\n", caret: 17)
         for word in [6, 13] {
             let glyph = editor.rect(word, 1)
             #expect(editor.view.characterIndex(for: NSPoint(x: glyph.midX, y: glyph.midY)) == word)
@@ -144,9 +128,8 @@ struct HideSyntaxTests {
         editor.expectTextKitUnchanged()
     }
 
-    @Test(arguments: TextKitVariant.allCases)
-    func compositionDefersStylingUntilCommit(_ variant: TextKitVariant) {
-        let editor = Editor(variant, "\(Self.soft)\n", caret: 8)
+    @Test func compositionDefersStylingUntilCommit() {
+        let editor = Editor("\(Self.soft)\n", caret: 8)
         let view = editor.view
         let storage = view.textStorage!
         let styled = (0..<17).map { storage.attributes(at: $0, effectiveRange: nil) as NSDictionary }
@@ -173,10 +156,9 @@ struct HideSyntaxTests {
         editor.expectTextKitUnchanged()
     }
 
-    @Test(arguments: TextKitVariant.allCases)
-    func accessibilityReadsTheSource(_ variant: TextKitVariant) {
+    @Test func accessibilityReadsTheSource() {
         let text = "# Title\n\(Self.soft)\n"
-        let editor = Editor(variant, text, caret: text.utf16.count)
+        let editor = Editor(text, caret: text.utf16.count)
         let view = editor.view
         #expect(view.accessibilityValue() == text)
         for index in [0, 1, 12, 13, 18, 19] {
@@ -192,10 +174,9 @@ struct HideSyntaxTests {
         editor.expectTextKitUnchanged()
     }
 
-    @Test(arguments: TextKitVariant.allCases)
-    func spellingFlagsSurviveRestyling(_ variant: TextKitVariant) {
+    @Test func spellingFlagsSurviveRestyling() {
         let text = "The **wrongg** day\nNext line\n"
-        let editor = Editor(variant, text, caret: text.utf16.count)
+        let editor = Editor(text, caret: text.utf16.count)
         let view = editor.view
         let word = NSRange(location: 6, length: 6)
         view.checkText(in: NSRange(location: 0, length: text.utf16.count), types: NSTextCheckingResult.CheckingType.spelling.rawValue, options: [:])
@@ -221,8 +202,7 @@ struct HideSyntaxTests {
         editor.expectTextKitUnchanged()
     }
 
-    @Test(arguments: TextKitVariant.allCases)
-    func spellingMarksOnlyProse(_ variant: TextKitVariant) {
+    @Test func spellingMarksOnlyProse() {
         let text = """
             ---
             title: wrongg
@@ -242,7 +222,7 @@ struct HideSyntaxTests {
             $$
 
             """
-        let editor = Editor(variant, text, caret: 0)
+        let editor = Editor(text, caret: 0)
         editor.view.checkText(in: NSRange(location: 0, length: text.utf16.count), types: NSTextCheckingResult.CheckingType.spelling.rawValue, options: [:])
         let deadline = Date(timeIntervalSinceNow: 2)
         while editor.misspellings.isEmpty && Date() < deadline {
@@ -253,8 +233,7 @@ struct HideSyntaxTests {
         editor.expectTextKitUnchanged()
     }
 
-    @Test(arguments: TextKitVariant.allCases)
-    func editsAtSpanEdgesLeaveTheCaretAfterTheEdit(_ variant: TextKitVariant) {
+    @Test func editsAtSpanEdgesLeaveTheCaretAfterTheEdit() {
         let type = { (text: String) in { (view: EditorTextView) in view.insertText(text, replacementRange: view.selectedRange()) } }
         let cases: [(String, Int, (EditorTextView) -> Void, String, Int)] = [
             (Self.soft, 4, type("x"), "The x**soft** day", 5),
@@ -264,7 +243,7 @@ struct HideSyntaxTests {
             ("# Title\n\(Self.soft)\n", 0, type("#"), "## Title\n\(Self.soft)\n", 1),
         ]
         for (text, caret, edit, edited, after) in cases {
-            let editor = Editor(variant, text, caret: caret)
+            let editor = Editor(text, caret: caret)
             edit(editor.view)
             #expect(editor.view.string == edited)
             #expect(editor.view.selectedRange() == NSRange(location: after, length: 0), "\(edited)")
@@ -272,10 +251,9 @@ struct HideSyntaxTests {
         }
     }
 
-    @Test(arguments: TextKitVariant.allCases)
-    func longTextStylesTheTopFirstAndTheRestBetweenEvents(_ variant: TextKitVariant) {
+    @Test func longTextStylesTheTopFirstAndTheRestBetweenEvents() {
         let line = "\(Self.soft)\n"
-        let editor = Editor(variant, String(repeating: line, count: 4000), caret: 0)
+        let editor = Editor(String(repeating: line, count: 4000), caret: 0)
         let color = { (line: Int) in editor.view.textStorage!.attribute(.foregroundColor, at: line * 17 + 4, effectiveRange: nil) as? NSColor }
         #expect(color(0) == .clear && color(3999) != .clear)
         // Typing in unstyled text styles its paragraph at once.

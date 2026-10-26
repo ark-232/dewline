@@ -2,7 +2,7 @@ import AppKit
 import Testing
 @testable import Dewline
 
-/// What the Live/Source switch costs each TextKit stack. Runs only with `DEWLINE_PERF` set (`TEST_RUNNER_DEWLINE_PERF=1` in
+/// What the Live/Source switch costs. Runs only with `DEWLINE_PERF` set (`TEST_RUNNER_DEWLINE_PERF=1` in
 /// xcodebuild's environment), in a Release build with `ENABLE_TESTABILITY=YES`. The test host cannot become the active app, so
 /// timing starts where Option-Command-U lands: the menu's action.
 @MainActor
@@ -35,9 +35,9 @@ struct SourceModeMeasurements {
         return sorted[min(sorted.count - 1, Int((Double(sorted.count - 1) * fraction).rounded()))]
     }
 
-    /// A front window on the corpus with the caret mid-document and on screen, after TextKit 1 finishes its background layout.
-    static func editor(_ variant: TextKitVariant, bytes: Int, lineHeight: CGFloat = 22) throws -> (NSWindow, EditorTextView, caret: Int) {
-        let scrollView = EditorTextView.scrollView(variant: variant)
+    /// A front window on the corpus with the caret mid-document and on screen.
+    static func editor(bytes: Int, lineHeight: CGFloat = 22) throws -> (NSWindow, EditorTextView, caret: Int) {
+        let scrollView = EditorTextView.scrollView()
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 760, height: 640), styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false
@@ -52,10 +52,7 @@ struct SourceModeMeasurements {
         let storage = try #require(view.textStorage)
         let caret = storage.mutableString.range(of: " ", range: NSRange(location: storage.length / 2, length: 2000)).location
         view.setSelectedRange(NSRange(location: caret, length: 0))
-        repeat {
-            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.5))
-        } while view.textLayoutManager == nil && (view.layoutManager?.firstUnlaidCharacterIndex() ?? 0) < storage.length
-        // TextKit 1 sizes the view only as far as it has laid out, so a scroll made during its background layout can stop short.
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.5))
         view.scrollRangeToVisible(NSRange(location: caret, length: 0))
         frame(window)
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.5))
@@ -67,8 +64,6 @@ struct SourceModeMeasurements {
     static func layOutEverything(_ view: EditorTextView) {
         if let layout = view.textLayoutManager {
             layout.ensureLayout(for: layout.documentRange)
-        } else if let layout = view.layoutManager, let container = view.textContainer {
-            layout.ensureLayout(for: container)
         }
     }
 
@@ -103,11 +98,10 @@ struct SourceModeMeasurements {
         return (milliseconds(fade - start), milliseconds(done - start), try #require(first), drift)
     }
 
-    // TextKit 1 at 10 MB times the styler's whole-document restyle, which the hot-paths lane measures, not the toggle.
-    @Test(arguments: [(TextKitVariant.textKit1, 1_000_000, 20), (.textKit2, 1_000_000, 20), (.textKit2, 10_000_000, 10)])
-    func toggle(_ variant: TextKitVariant, bytes: Int, toggles: Int) throws {
+    @Test(arguments: [(1_000_000, 20), (10_000_000, 10)])
+    func toggle(bytes: Int, toggles: Int) throws {
         let unopened = Self.footprint()
-        let (window, view, caret) = try Self.editor(variant, bytes: bytes)
+        let (window, view, caret) = try Self.editor(bytes: bytes)
         defer { window.close() }
         let opened = Self.footprint()
         let offset = try #require(view.baseline(at: caret)) - view.visibleRect.minY
@@ -149,7 +143,7 @@ struct SourceModeMeasurements {
         }
         print(
             """
-            SOURCE-MODE \(variant) \(bytes / 1_000_000) MB
+            SOURCE-MODE \(bytes / 1_000_000) MB
               fade starts, Live to Source: \(format(fades[0])); Source to Live: \(format(fades[1]))
               toggle done, Live to Source: \(format(dones[0])); Source to Live: \(format(dones[1]))
               caret line per toggle, pt off: first frame \(points(first)); toggle done \(points(drift)); after 0.4 s \(points(settled))
@@ -161,41 +155,34 @@ struct SourceModeMeasurements {
 
     @Test(arguments: [22.0, 24.5])
     func pitch(_ lineHeight: Double) throws {
-        var report: [String] = []
-        for variant in TextKitVariant.allCases {
-            let (window, view, caret) = try Self.editor(variant, bytes: 1_000_000, lineHeight: lineHeight)
-            defer { window.close() }
-            let offset = try #require(view.baseline(at: caret)) - view.visibleRect.minY
-            var drift = 0.0
-            for _ in 0..<10 {
-                try autoreleasepool {
-                    drift = max(drift, abs(try Self.press(window, view, caret: caret, offset: offset).drift))
-                    RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.3))
-                }
-            }
-            report.append("\(variant) caret line drift max \(String(format: "%.2f", drift)) pt")
-            if variant == .textKit2 {
-                let live = Self.paragraphs(view)
-                _ = try Self.press(window, view, caret: caret, offset: offset)
-                let source = Self.paragraphs(view)
-                let pairs = zip(live, source)
-                report.append(
-                    "\(live.count) paragraphs, \(pairs.count { $0.lines != $1.lines }) rewrapped, \(pairs.count { abs($0.height - $1.height) > 0.5 }) change height; "
-                        + "lines Live \(live.reduce(0) { $0 + $1.lines }), Source \(source.reduce(0) { $0 + $1.lines })"
-                )
+        let (window, view, caret) = try Self.editor(bytes: 1_000_000, lineHeight: lineHeight)
+        defer { window.close() }
+        let offset = try #require(view.baseline(at: caret)) - view.visibleRect.minY
+        var drift = 0.0
+        for _ in 0..<10 {
+            try autoreleasepool {
+                drift = max(drift, abs(try Self.press(window, view, caret: caret, offset: offset).drift))
+                RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.3))
             }
         }
-        print("SOURCE-MODE \(lineHeight) pt Source lines, 1 MB: " + report.joined(separator: "; "))
+        let live = Self.paragraphs(view)
+        _ = try Self.press(window, view, caret: caret, offset: offset)
+        let source = Self.paragraphs(view)
+        let pairs = zip(live, source)
+        print(
+            "SOURCE-MODE \(lineHeight) pt Source lines, 1 MB: caret line drift max \(String(format: "%.2f", drift)) pt; "
+                + "\(live.count) paragraphs, \(pairs.count { $0.lines != $1.lines }) rewrapped, \(pairs.count { abs($0.height - $1.height) > 0.5 }) change height; "
+                + "lines Live \(live.reduce(0) { $0 + $1.lines }), Source \(source.reduce(0) { $0 + $1.lines })"
+        )
     }
 
-    @Test(arguments: TextKitVariant.allCases)
-    func fullLayoutWithoutAToggle(_ variant: TextKitVariant) throws {
-        let (window, view, caret) = try Self.editor(variant, bytes: 1_000_000)
+    @Test func fullLayoutWithoutAToggle() throws {
+        let (window, view, caret) = try Self.editor(bytes: 1_000_000)
         defer { window.close() }
         let offset = try #require(view.baseline(at: caret)) - view.visibleRect.minY
         Self.layOutEverything(view)
         Self.frame(window)
         let moved = try #require(view.baseline(at: caret)) - view.visibleRect.minY - offset
-        print("SOURCE-MODE \(variant) 1 MB control: full layout with no toggle moves the caret line \(String(format: "%.1f", moved)) pt")
+        print("SOURCE-MODE 1 MB control: full layout with no toggle moves the caret line \(String(format: "%.1f", moved)) pt")
     }
 }

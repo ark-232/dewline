@@ -85,7 +85,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         if self.document !== document {
             document.addWindowController(self)
         }
-        let scrollView = EditorTextView.scrollView(variant: .current)
+        let scrollView = EditorTextView.scrollView()
         setPage(scrollView)
         // Rendered blocks fit the column, so the text arrives once the view has its width.
         window?.layoutIfNeeded()

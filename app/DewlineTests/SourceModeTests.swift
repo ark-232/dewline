@@ -5,16 +5,14 @@ import Testing
 /// An editor in a window that is never ordered front.
 @MainActor
 private struct Editor {
-    let variant: TextKitVariant
     let window: NSWindow
     let view: EditorTextView
 
     /// The anchor can hold no closer than one device pixel: 0.5 pt on a Retina display, 1 pt at 1x.
     var pixel: CGFloat { 1 / window.backingScaleFactor }
 
-    init(_ variant: TextKitVariant, _ text: String, caret: Int) {
-        self.variant = variant
-        let scrollView = EditorTextView.scrollView(variant: variant)
+    init(_ text: String, caret: Int) {
+        let scrollView = EditorTextView.scrollView()
         // DEWLINE_TEST_SCALE=1 (TEST_RUNNER_DEWLINE_TEST_SCALE=1 through xcodebuild) puts the window on a 1x screen, as on
         // CI, when the Mac has one.
         let scale = ProcessInfo.processInfo.environment["DEWLINE_TEST_SCALE"].flatMap(Double.init)
@@ -33,7 +31,7 @@ private struct Editor {
     }
 
     func expectTextKitUnchanged() {
-        #expect((view.textLayoutManager != nil) == (variant == .textKit2))
+        #expect(view.textLayoutManager != nil)
     }
 
     /// One frame: the window's layout pass, then its display pass.
@@ -42,7 +40,7 @@ private struct Editor {
         window.displayIfNeeded()
     }
 
-    /// A frame and a pause: TextKit 1 finishes laying out in the background and then repeats an earlier `scrollRangeToVisible`.
+    /// A frame and a pause, in which the styler finishes the text it left for after the first display.
     func settle() {
         display()
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.5))
@@ -70,9 +68,8 @@ struct SourceModeTests {
         "## Part \($0)\n\nThe **soft** day began with *quiet* rain, and `code` sat ~~gone~~ beside a [link](https://example.com/\($0)) that waited long enough to wrap.\n"
     }.joined(separator: "\n")
 
-    @Test(arguments: TextKitVariant.allCases)
-    func togglingKeepsStringSelectionAndUndo(_ variant: TextKitVariant) {
-        let editor = Editor(variant, Self.sample, caret: 17)
+    @Test func togglingKeepsStringSelectionAndUndo() {
+        let editor = Editor(Self.sample, caret: 17)
         let view = editor.view
         view.insertText("x", replacementRange: view.selectedRange())
         view.styler.undoManager.endUndoGrouping()
@@ -95,9 +92,8 @@ struct SourceModeTests {
         editor.expectTextKitUnchanged()
     }
 
-    @Test(arguments: TextKitVariant.allCases)
-    func typingAndUndoWorkInSource(_ variant: TextKitVariant) {
-        let editor = Editor(variant, Self.sample, caret: 17)
+    @Test func typingAndUndoWorkInSource() {
+        let editor = Editor(Self.sample, caret: 17)
         let view = editor.view
         view.toggleSource(nil)
         view.insertText("x", replacementRange: view.selectedRange())
@@ -111,10 +107,9 @@ struct SourceModeTests {
         editor.expectTextKitUnchanged()
     }
 
-    @Test(arguments: TextKitVariant.allCases)
-    func sourceShowsEveryMarker(_ variant: TextKitVariant) {
+    @Test func sourceShowsEveryMarker() {
         let text = NSString(string: Self.sample)
-        let editor = Editor(variant, Self.sample, caret: text.length)
+        let editor = Editor(Self.sample, caret: text.length)
         editor.view.toggleSource(nil)
         let storage = editor.view.textStorage!
         let size = MarkdownStyler.code(matching: MarkdownStyler.bodyFont).pointSize
@@ -134,9 +129,8 @@ struct SourceModeTests {
         editor.expectTextKitUnchanged()
     }
 
-    @Test(arguments: TextKitVariant.allCases)
-    func toggleWaitsForTheComposition(_ variant: TextKitVariant) {
-        let editor = Editor(variant, "\(HideSyntaxTests.soft)\n", caret: 8)
+    @Test func toggleWaitsForTheComposition() {
+        let editor = Editor("\(HideSyntaxTests.soft)\n", caret: 8)
         let view = editor.view
         let storage = view.textStorage!
         let none = NSRange(location: NSNotFound, length: 0)
@@ -170,12 +164,12 @@ struct SourceModeTests {
         editor.expectTextKitUnchanged()
     }
 
-    @Test(arguments: TextKitVariant.allCases, [0.5, 0.97])
-    func theCaretLineStaysPut(_ variant: TextKitVariant, at fraction: Double) throws {
+    @Test(arguments: [0.5, 0.97])
+    func theCaretLineStaysPut(at fraction: Double) throws {
         let start = Int(Double(Self.long.utf16.count) * fraction)
         let caret = (Self.long as NSString).range(of: "rain", options: [], range: NSRange(location: start, length: 300)).location
         for lineHeight in [22.0, 24.5] {
-            let editor = Editor(variant, Self.long, caret: caret)
+            let editor = Editor(Self.long, caret: caret)
             let view = editor.view
             view.styler.sourceLineHeight = lineHeight
             view.scrollRangeToVisible(NSRange(location: caret, length: 0))
@@ -197,11 +191,11 @@ struct SourceModeTests {
         }
     }
 
-    @Test(arguments: TextKitVariant.allCases, [false, true])
-    func theFirstVisibleLineStaysPutWhenTheCaretIsAway(_ variant: TextKitVariant, below: Bool) throws {
+    @Test(arguments: [false, true])
+    func theFirstVisibleLineStaysPutWhenTheCaretIsAway(below: Bool) throws {
         let caret = below ? Self.long.utf16.count - 1 : 0
         for lineHeight in [22.0, 24.5] {
-            let editor = Editor(variant, Self.long, caret: caret)
+            let editor = Editor(Self.long, caret: caret)
             let view = editor.view
             view.styler.sourceLineHeight = lineHeight
             view.scrollRangeToVisible(NSRange(location: Self.long.utf16.count / 2, length: 0))
@@ -225,10 +219,9 @@ struct SourceModeTests {
         }
     }
 
-    @Test(arguments: TextKitVariant.allCases)
-    func atProsePitchSourceBaselinesSitWithinAPointOfProse(_ variant: TextKitVariant) throws {
+    @Test func atProsePitchSourceBaselinesSitWithinAPointOfProse() throws {
         let text = "Plain words here.\nMore plain words.\n"
-        let editor = Editor(variant, text, caret: text.utf16.count)
+        let editor = Editor(text, caret: text.utf16.count)
         editor.view.styler.sourceLineHeight = 24.5
         let lines = [0, 18]
         let live = try lines.map { try #require(editor.view.baseline(at: $0)) - editor.line($0).minY }
@@ -240,11 +233,10 @@ struct SourceModeTests {
         editor.expectTextKitUnchanged()
     }
 
-    @Test(arguments: TextKitVariant.allCases)
-    func aKeystrokeRightAfterAToggleLandsAndTheLineHolds(_ variant: TextKitVariant) throws {
+    @Test func aKeystrokeRightAfterAToggleLandsAndTheLineHolds() throws {
         let heading = (Self.long as NSString).range(of: "## Part 60\n")
         var caret = NSMaxRange(heading) - 1
-        let editor = Editor(variant, Self.long, caret: caret)
+        let editor = Editor(Self.long, caret: caret)
         let view = editor.view
         view.scrollRangeToVisible(NSRange(location: caret, length: 0))
         editor.settle()
@@ -265,10 +257,9 @@ struct SourceModeTests {
         editor.expectTextKitUnchanged()
     }
 
-    @Test(arguments: TextKitVariant.allCases)
-    func theFirstFrameShowsTheNewModeOnScreen(_ variant: TextKitVariant) throws {
+    @Test func theFirstFrameShowsTheNewModeOnScreen() throws {
         let caret = (Self.long as NSString).range(of: "rain", options: [], range: NSRange(location: Self.long.utf16.count / 2, length: 300)).location
-        let editor = Editor(variant, Self.long, caret: caret)
+        let editor = Editor(Self.long, caret: caret)
         let view = editor.view
         view.scrollRangeToVisible(NSRange(location: caret, length: 0))
         editor.settle()
@@ -294,9 +285,8 @@ struct SourceModeTests {
         editor.expectTextKitUnchanged()
     }
 
-    @Test(arguments: TextKitVariant.allCases)
-    func anEmptyDocumentTogglesAndTakesText(_ variant: TextKitVariant) {
-        let editor = Editor(variant, "", caret: 0)
+    @Test func anEmptyDocumentTogglesAndTakesText() {
+        let editor = Editor("", caret: 0)
         let view = editor.view
         view.toggleSource(nil)
         editor.display()
@@ -308,10 +298,9 @@ struct SourceModeTests {
         editor.expectTextKitUnchanged()
     }
 
-    @Test(arguments: TextKitVariant.allCases)
-    func findWorksAcrossToggles(_ variant: TextKitVariant) {
+    @Test func findWorksAcrossToggles() {
         let text = HideSyntaxTests.soft + "\n" + String(repeating: "Plain filler words.\n", count: 80) + "Another **soft** word\n"
-        let editor = Editor(variant, text, caret: 0)
+        let editor = Editor(text, caret: 0)
         let view = editor.view
         let pasteboard = NSPasteboard(name: .find)
         let saved = pasteboard.string(forType: .string)

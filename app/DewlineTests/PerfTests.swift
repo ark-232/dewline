@@ -6,13 +6,11 @@ import Testing
 /// draws no caret.
 @MainActor
 private struct Editor {
-    let variant: TextKitVariant
     let window: NSWindow
     let view: EditorTextView
 
-    init(_ variant: TextKitVariant) {
-        self.variant = variant
-        let scrollView = EditorTextView.scrollView(variant: variant)
+    init() {
+        let scrollView = EditorTextView.scrollView()
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 760, height: 640),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -29,7 +27,7 @@ private struct Editor {
     }
 
     /// Displays and commits, then runs pending run loop work and repeats until the view's frame holds and nothing
-    /// needs display. TextKit 1 lays out newly set text on the next pass; TextKit 2 corrects its height estimate.
+    /// needs display, as TextKit 2 corrects its height estimate.
     func display() {
         var frame: NSRect
         repeat {
@@ -90,15 +88,13 @@ private struct Editor {
         return (first / .milliseconds(1), settled / .milliseconds(1))
     }
 
-    /// Puts the caret on screen and lets deferred work finish, including TextKit 1's background layout of the
-    /// whole document, so measurements start from the state a reader reaches after a few seconds.
+    /// Puts the caret on screen and lets deferred work finish, so measurements start from the state a reader
+    /// reaches after a few seconds.
     func place(_ caret: Int) {
         view.setSelectedRange(NSRange(location: caret, length: 0))
         view.scrollRangeToVisible(view.selectedRange())
         display()
-        repeat {
-            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.5))
-        } while variant == .textKit1 && view.layoutManager!.firstUnlaidCharacterIndex() < view.textStorage!.length
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.5))
     }
 
     /// The first strong span in a paragraph past the middle of the document.
@@ -113,10 +109,9 @@ private struct Editor {
         return span!
     }
 
-    /// Empties the view first: a closed window's text system stays alive for a while, and TextKit 1 would go on laying
-    /// out its text in the next measurement's run loop passes.
+    /// Empties the view first: a closed window's text system stays alive for a while, still holding the text.
     func close() {
-        #expect((view.textLayoutManager != nil) == (variant == .textKit2))
+        #expect(view.textLayoutManager != nil)
         view.string = ""
         window.close()
     }
@@ -135,10 +130,9 @@ private func percentiles(_ samples: [Double]) -> [String: Double] {
 }
 
 /// Runs only with `DEWLINE_PERF` set (`TEST_RUNNER_DEWLINE_PERF=1` through xcodebuild) and merges its numbers
-/// into the JSON at `DEWLINE_PERF_OUT`, by variant. `scripts/perf.sh` runs it in a Release build. Key presses
-/// count to their first committed display; opening and select all, which TextKit 1 finishes on later run loop
-/// passes, count until the display settles. Opening also records when the styler has styled the text it left
-/// for after the first display.
+/// into the JSON at `DEWLINE_PERF_OUT`. `scripts/perf.sh` runs it in a Release build. Key presses count to their
+/// first committed display; opening and select all count until the display settles. Opening also records when
+/// the styler has styled the text it left for after the first display.
 @MainActor
 @Suite(.serialized, .enabled(if: ProcessInfo.processInfo.environment["DEWLINE_PERF"] != nil))
 struct PerfTests {
@@ -148,19 +142,18 @@ struct PerfTests {
         URL(fileURLWithPath: try #require(ProcessInfo.processInfo.environment["DEWLINE_PERF_OUT"]))
     }
 
-    func record(_ variant: TextKitVariant, _ metric: String, _ values: [String: Double]) throws {
+    func record(_ metric: String, _ values: [String: Double]) throws {
         let url = try Self.output()
-        var results = (try? JSONDecoder().decode([String: [String: [String: Double]]].self, from: Data(contentsOf: url))) ?? [:]
-        results["\(variant)", default: [:]][metric] = values.mapValues { ($0 * 100).rounded() / 100 }
+        var results = (try? JSONDecoder().decode([String: [String: Double]].self, from: Data(contentsOf: url))) ?? [:]
+        results[metric] = values.mapValues { ($0 * 100).rounded() / 100 }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(results).write(to: url)
     }
 
-    @Test(arguments: TextKitVariant.allCases)
-    func opening(_ variant: TextKitVariant) throws {
+    @Test func opening() throws {
         for (size, text) in Self.documents {
-            let editor = Editor(variant)
+            let editor = Editor()
             let setText = milliseconds { editor.view.string = text }
             let display = milliseconds { editor.display() }
             let hidden = { (span: SyntaxSpan) in
@@ -170,24 +163,17 @@ struct PerfTests {
             #expect(!shown.isEmpty && shown.allSatisfy(hidden), "the first display shows every span styled")
             let styling = milliseconds { editor.finishStyling() }
             #expect(hidden(editor.middleSpan))
-            switch variant {
-            case .textKit1:
-                let used = editor.view.layoutManager!.usedRect(for: editor.view.textContainer!)
-                #expect(used.maxY + editor.view.textContainerInset.height >= editor.view.visibleRect.maxY)
-            case .textKit2:
-                #expect(editor.view.textLayoutManager!.textViewportLayoutController.viewportRange?.isEmpty == false)
-            }
-            try record(variant, "open\(size)", ["ms": setText + display, "setTextMs": setText, "displayMs": display, "styledMs": setText + display + styling])
+            #expect(editor.view.textLayoutManager!.textViewportLayoutController.viewportRange?.isEmpty == false)
+            try record("open\(size)", ["ms": setText + display, "setTextMs": setText, "displayMs": display, "styledMs": setText + display + styling])
             editor.close()
             // scripts/perf.sh opens the same documents in the app.
             try text.write(to: Self.output().deletingLastPathComponent().appending(path: "\(size).md"), atomically: true, encoding: .utf8)
         }
     }
 
-    @Test(arguments: TextKitVariant.allCases)
-    func typing(_ variant: TextKitVariant) throws {
+    @Test func typing() throws {
         for (size, text) in Self.documents {
-            let editor = Editor(variant)
+            let editor = Editor()
             editor.open(text)
             editor.place(editor.middleSpan.content.location + 1)
             let storage = editor.view.textStorage!
@@ -199,14 +185,13 @@ struct PerfTests {
                 samples.append(editor.press(51, "\u{7F}").first)
             }
             #expect(editor.view.string == text)
-            try record(variant, "keystroke\(size)", percentiles(samples))
+            try record("keystroke\(size)", percentiles(samples))
             editor.close()
         }
     }
 
-    @Test(arguments: TextKitVariant.allCases)
-    func revealing(_ variant: TextKitVariant) throws {
-        let editor = Editor(variant)
+    @Test func revealing() throws {
+        let editor = Editor()
         editor.open(Self.documents[0].1)
         let span = editor.middleSpan
         let outside = span.range.location - 1
@@ -230,13 +215,12 @@ struct PerfTests {
             #expect(!revealed())
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
         }
-        try record(variant, "reveal", percentiles(moves).merging(["selectAll1MB": selectAll.sorted()[1], "deselect1MB": deselect.sorted()[1]]) { $1 })
+        try record("reveal", percentiles(moves).merging(["selectAll1MB": selectAll.sorted()[1], "deselect1MB": deselect.sorted()[1]]) { $1 })
         editor.close()
     }
 
-    @Test(arguments: TextKitVariant.allCases)
-    func scrolling(_ variant: TextKitVariant) throws {
-        let editor = Editor(variant)
+    @Test func scrolling() throws {
+        let editor = Editor()
         editor.open(Self.documents[0].1)
         var first: [Double] = []
         var settled: [Double] = []
@@ -248,8 +232,8 @@ struct PerfTests {
             #expect(editor.view.visibleRect.minY > top)
         }
         // TextKit 2 settles after correcting its height estimate for the newly laid out text.
-        try record(variant, "scroll", percentiles(first).merging(["over8_3ms": Double(first.count { $0 > 8.3 })]) { $1 })
-        try record(variant, "scrollSettled", percentiles(settled).merging(["over8_3ms": Double(settled.count { $0 > 8.3 })]) { $1 })
+        try record("scroll", percentiles(first).merging(["over8_3ms": Double(first.count { $0 > 8.3 })]) { $1 })
+        try record("scrollSettled", percentiles(settled).merging(["over8_3ms": Double(settled.count { $0 > 8.3 })]) { $1 })
         editor.close()
     }
 }

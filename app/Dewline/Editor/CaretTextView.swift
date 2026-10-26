@@ -213,7 +213,7 @@ class CaretTextView: NSTextView {
     }
 
     /// The landing mark stays on the caret's line while the layout above it settles, which on a document opened
-    /// moments earlier moves the line by thousands of points on TextKit 1 and by hundreds on TextKit 2.
+    /// moments earlier moves the line by hundreds of points.
     private func followMark() {
         guard effects.marking, let window else { return }
         let caret = caretRect(at: selectedRange().location, in: window)
