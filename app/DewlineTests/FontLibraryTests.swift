@@ -17,9 +17,9 @@ struct FontLibraryTests {
         try Data(contentsOf: try #require(Bundle.main.resourceURL).appending(path: "Fonts/JetBrainsMono-Regular.ttf"))
     }
 
-    private func entry(_ data: Data) -> FontCatalog.Family {
+    private func entry(_ data: Data, name: String = "JetBrains Mono") -> FontCatalog.Family {
         FontCatalog.Family(
-            name: "JetBrains Mono", role: .mono, folder: "jetbrainsmono", why: "", project: "https://github.com/JetBrains/JetBrainsMono",
+            name: name, role: .mono, folder: "jetbrainsmono", why: "", project: "https://github.com/JetBrains/JetBrainsMono",
             files: [FontCatalog.File(name: "JetBrainsMono-Regular.ttf", size: data.count, sha256: FontLibrary.sha256(data))]
         )
     }
@@ -49,6 +49,15 @@ struct FontLibraryTests {
         await #expect(throws: FontLibrary.Failure.mismatch) { try await library.install(entry(original)) }
         #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).isEmpty)
         #expect(library.installed.isEmpty && library.progress.isEmpty)
+        await library.startInstall(entry(original)).value
+        #expect(library.failures["JetBrains Mono"] == "The download didn't match the catalog, so nothing was installed.")
+
+        // Bytes that match but hold another family are refused too, after the hash.
+        let renamed = FontLibrary(folder: folder) { _, _, _ in original }
+        await #expect(throws: FontLibrary.Failure.wrongFamily("JetBrainsMono-Regular.ttf")) {
+            try await renamed.install(entry(original, name: "Mono Lisa"))
+        }
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).isEmpty)
 
         let file = entry(original).files[0]
         #expect(throws: FontLibrary.Failure.mismatch) { try FontLibrary.verify(original.dropLast(), against: file) }
@@ -66,6 +75,7 @@ struct FontLibraryTests {
             await progress(size)
             return data
         }
+        try await library.install(entry(data))
         try await library.install(entry(data))
         let font = folder.appending(path: "JetBrains Mono/JetBrainsMono-Regular.ttf")
         #expect(try Data(contentsOf: font) == data)
@@ -95,6 +105,36 @@ struct FontLibraryTests {
         #expect(NSFont(name: "JetBrainsMono-Regular", size: 12) != nil, "the bundled copy stays")
     }
 
+    @Test func stopEndsADownloadWithNothingInstalled() async throws {
+        let folder = try temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let data = try bundledFont()
+        let library = FontLibrary(folder: folder) { _, size, progress in
+            await progress(size / 2)
+            try await Task.sleep(for: .seconds(30))
+            return data
+        }
+        let task = library.startInstall(entry(data))
+        for _ in 0..<200 where library.progress["JetBrains Mono"] != data.count / 2 {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(library.progress["JetBrains Mono"] == data.count / 2)
+        library.stopInstall(entry(data))
+        await task.value
+        #expect(library.progress.isEmpty && library.failures.isEmpty && library.installed.isEmpty)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).isEmpty)
+    }
+
+    @Test func savedFacesKeepOnlyFamiliesThatExist() throws {
+        let suite = "DewlineFontTests-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set("JetBrains Mono", forKey: "DewlineBodyFace")
+        defaults.set("No Such Family", forKey: "DewlineHeadingFace")
+        let store = ThemeStore(defaults: defaults)
+        #expect(store.bodyFace == "JetBrains Mono" && store.headingFace == Faces.heading)
+    }
+
     @Test func dropInTakesFontsAndRefusesTheRest() throws {
         let folder = try temporaryFolder()
         let drops = try temporaryFolder()
@@ -110,10 +150,15 @@ struct FontLibraryTests {
         try Data("OTTO and nothing else a font needs".utf8).write(to: header)
         let font = drops.appending(path: "JetBrainsMono-Regular.ttf")
         try bundledFont().write(to: font)
+        let big = drops.appending(path: "big.ttf")
+        #expect(FileManager.default.createFile(atPath: big.path, contents: nil))
+        try FileHandle(forWritingTo: big).truncate(atOffset: 51 << 20)
 
         #expect(throws: FontLibrary.Failure.notFontFile("notes.txt")) { try FontLibrary.validate(text) }
         #expect(throws: FontLibrary.Failure.notFont("fake.ttf")) { try FontLibrary.validate(fake) }
         #expect(throws: FontLibrary.Failure.notFont("header.otf")) { try FontLibrary.validate(header) }
+        #expect(throws: FontLibrary.Failure.tooLarge("big.ttf")) { try FontLibrary.validate(big) }
+        #expect(throws: FontLibrary.Failure.notFontFile("x.ttf")) { try FontLibrary.validate(URL(string: "https://example.com/x.ttf")!) }
         #expect(try FontLibrary.validate(font) == ["JetBrains Mono"])
 
         let library = FontLibrary(folder: folder, fetch: offline())

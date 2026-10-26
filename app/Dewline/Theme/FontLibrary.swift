@@ -35,7 +35,7 @@ final class FontLibrary {
         case refused(String)
     }
 
-    struct Added: Hashable {
+    struct Added {
         let url: URL
         let family: String
         let monospaced: Bool
@@ -51,7 +51,6 @@ final class FontLibrary {
     let folder: URL
     @ObservationIgnored private let fetch: Fetch
     @ObservationIgnored private var tasks: [String: Task<Void, Never>] = [:]
-    /// Catalog families on disk.
     private(set) var installed: Set<String> = []
     private(set) var added: [Added] = []
     /// Bytes received so far, by family, while its download runs.
@@ -66,7 +65,12 @@ final class FontLibrary {
 
     /// Families on this Mac apart from those only Dewline has, all and fixed-pitch; read once, for the pickers.
     @ObservationIgnored private(set) lazy var macFamilies: (all: [String], monospaced: [String]) = {
-        let ours = Set(FontCatalog.families.map(\.name) + added.map(\.family)).filter { ownsEveryFace(of: $0) }
+        let root = folder.resolvingSymlinksInPath().path + "/"
+        let ours = Set(FontCatalog.families.map(\.name) + added.map(\.family)).filter { family in
+            Faces.faces(of: family).allSatisfy {
+                (CTFontDescriptorCopyAttribute($0, kCTFontURLAttribute) as? URL)?.resolvingSymlinksInPath().path.hasPrefix(root) == true
+            }
+        }
         return (Faces.installed(monospaced: false).filter { !ours.contains($0) }, Faces.installed(monospaced: true).filter { !ours.contains($0) })
     }()
 
@@ -80,8 +84,8 @@ final class FontLibrary {
     }
 
     func reload() {
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
-        installed = Set(names.filter { $0 != "Added" && !$0.hasPrefix(".") })
+        let entries = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isDirectoryKey], options: .skipsHiddenFiles)) ?? []
+        installed = Set(entries.filter { $0.lastPathComponent != "Added" && (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }.map(\.lastPathComponent))
         added = Self.fontFiles(in: folder.appending(path: "Added")).compactMap { url in
             guard let descriptor = (CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor])?.first,
                   let family = CTFontDescriptorCopyAttribute(descriptor, kCTFontFamilyNameAttribute) as? String
@@ -151,24 +155,38 @@ final class FontLibrary {
         }
         let destination = folder.appending(path: family.name)
         if manager.fileExists(atPath: destination.path) {
-            Self.unregister(Self.fontFiles(in: destination))
-            try manager.removeItem(at: destination)
+            let old = Self.fontFiles(in: destination)
+            Self.unregister(old)
+            do {
+                _ = try manager.replaceItemAt(destination, withItemAt: staged)
+            } catch {
+                Self.register(old)
+                throw error
+            }
+        } else {
+            try manager.moveItem(at: staged, to: destination)
         }
-        try manager.moveItem(at: staged, to: destination)
         Self.register(Self.fontFiles(in: destination))
         installed.insert(family.name)
+        guard Faces.exists(family.name) else { throw Failure.notFont(family.name) }
     }
 
     /// Unregisters and deletes every copy Dewline keeps of `family`: its catalog folder and any dropped files.
     func remove(_ family: String) throws {
-        Self.unregister(fonts(of: family))
-        if installed.contains(family) {
-            try FileManager.default.removeItem(at: folder.appending(path: family))
+        let fonts = fonts(of: family)
+        Self.unregister(fonts)
+        defer { reload() }
+        do {
+            if installed.contains(family) {
+                try FileManager.default.removeItem(at: folder.appending(path: family))
+            }
+            for font in added where font.family == family {
+                try FileManager.default.removeItem(at: font.url)
+            }
+        } catch {
+            Self.register(fonts.filter { FileManager.default.fileExists(atPath: $0.path) })
+            throw error
         }
-        for font in added where font.family == family {
-            try FileManager.default.removeItem(at: font.url)
-        }
-        reload()
     }
 
     /// Hands the files to Font Book, which shows them and asks before installing them for every app.
@@ -202,7 +220,7 @@ final class FontLibrary {
                     destination = destinationFolder.appending(path: "\(url.deletingPathExtension().lastPathComponent) \(copy).\(url.pathExtension)")
                     copy += 1
                 }
-                try data.write(to: destination)
+                try data.write(to: destination, options: .atomic)
                 Self.register([destination])
                 known[hash] = families[0]
                 outcomes.append(.added(families.joined(separator: ", ")))
@@ -218,20 +236,20 @@ final class FontLibrary {
     /// collection header, or nothing CoreText can read.
     nonisolated static func validate(_ url: URL) throws -> [String] {
         let name = url.lastPathComponent
-        guard isFontFile(url) else { throw Failure.notFontFile(name) }
+        guard url.isFileURL, isFontFile(url) else { throw Failure.notFontFile(name) }
         guard try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0 <= 50 << 20 else { throw Failure.tooLarge(name) }
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
         let magic = try handle.read(upToCount: 4).map { Array($0) } ?? []
         let headers: [[UInt8]] = [[0, 1, 0, 0], Array("OTTO".utf8), Array("true".utf8), Array("ttcf".utf8)]
+        guard headers.contains(magic) else { throw Failure.notFont(name) }
         let families = families(in: url)
-        guard headers.contains(magic), !families.isEmpty else { throw Failure.notFont(name) }
+        guard !families.isEmpty else { throw Failure.notFont(name) }
         return families
     }
 
     // MARK: Files and registration
 
-    /// Throws unless `data` is exactly the catalog's file.
     nonisolated static func verify(_ data: Data, against file: FontCatalog.File) throws {
         guard data.count == file.size, sha256(data) == file.sha256 else { throw Failure.mismatch }
     }
@@ -274,14 +292,6 @@ final class FontLibrary {
             }
         }
         return names
-    }
-
-    /// Whether every face CoreText has for `family` comes from this library's folder.
-    func ownsEveryFace(of family: String) -> Bool {
-        let root = folder.resolvingSymlinksInPath().path + "/"
-        return Faces.faces(of: family).allSatisfy {
-            (CTFontDescriptorCopyAttribute($0, kCTFontURLAttribute) as? URL)?.resolvingSymlinksInPath().path.hasPrefix(root) == true
-        }
     }
 
     nonisolated static func register(_ fonts: [URL]) {

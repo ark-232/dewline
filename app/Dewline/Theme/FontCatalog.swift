@@ -7,7 +7,7 @@ enum FontCatalog {
     static let commit = "e7db6ca603fd4862010383ff17ffd6cc4ffac1c0"
 
     struct Family: Identifiable, Sendable {
-        enum Role: String, CaseIterable, Sendable {
+        enum Role: String, Sendable {
             case serif = "Serif", sans = "Sans", mono = "Mono", display = "Display"
         }
 
