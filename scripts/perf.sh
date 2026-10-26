@@ -76,6 +76,8 @@ jq -e '.textKit1.scroll and .textKit2.scroll' "$work/tests.json" > /dev/null
 xcodebuild build "${xcode[@]}"
 load="$load $(sysctl -n vm.loadavg | awk '{ print $2 }')"
 
+# The first launch after a build pays a one-time cost the later fresh copies do not; it runs once, on the default variant.
+cold 2 0 > "$work/first"
 outside='{}'
 for variant in 1 2; do
     for n in 1 2 3; do cold "$variant" "$n" >> "$work/cold$variant"; done
@@ -101,9 +103,10 @@ jq -n --slurpfile tests "$work/tests.json" --argjson outside "$outside" \
     --arg xcode "$(xcodebuild -version | head -1)" --argjson load "[${load// /, }]" \
     --argjson corpus1 "$(stat -f %z "$work/1MB.md")" --argjson corpus10 "$(stat -f %z "$work/10MB.md")" \
     --argjson app "$(find "$app" -type f -exec stat -f %z {} + | awk '{ s += $1 } END { print s }')" \
-    --argjson dmg "$(stat -f %z "$work/Dewline.dmg")" \
+    --argjson dmg "$(stat -f %z "$work/Dewline.dmg")" --slurpfile first "$work/first" \
     '{date: $date, commit: $commit, mac: $mac, xcode: $xcode, build: "Release, arm64, unsigned", load: $load,
-      corpusBytes: {"1MB": $corpus1, "10MB": $corpus10}, appBytes: $app, dmgBytes: $dmg, variants: ($tests[0] * $outside)}' \
+      corpusBytes: {"1MB": $corpus1, "10MB": $corpus10}, appBytes: $app, dmgBytes: $dmg, firstLaunchMs: $first[0],
+      variants: ($tests[0] * $outside)}' \
     > "$result"
 
 jq -r '
@@ -120,6 +123,7 @@ jq -r '
     row("Scroll step p50 / p99, ms"; "\(.scroll.p50 | f) / \(.scroll.p99 | f)"; "-"),
     row("Scroll steps over 8.3 ms, of 200"; .scroll.over8_3ms | f; "-"),
     row("Scroll step settled p50 / p99, ms"; "\(.scrollSettled.p50 | f) / \(.scrollSettled.p99 | f)"; "-"),
+    (["First launch after the build, 1 MB, ms", "-", (.firstLaunchMs | f), "-"] | @tsv),
     row("Launch 1 MB cold (slowest of 3) / warm (median of 5), ms"; "\(.launch1MB.coldMs | max | f) / \(.launch1MB.warmMs | median | f)"; "300 / 150"),
     row("Memory 1 MB / 10 MB, MB"; "\(.idle1MB.footprintMB | f) / \(.idle10MB.footprintMB | f)"; "80 / 150"),
     row("Idle 1 MB CPU %, idle wakeups, context switches in 30 s"; "\(.idle1MB.cpuPercent | f), \(.idle1MB.idleWakeups | f), \(.idle1MB.contextSwitches | f)"; "0, 0, -"),
