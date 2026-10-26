@@ -53,15 +53,18 @@ unmodified. Its source is at https://github.com/mozilla/uniffi-rs and on crates.
 | fdeflate | 0.3.7 | MIT OR Apache-2.0 | https://github.com/image-rs/fdeflate |
 | flate2 | 1.1.10 | MIT OR Apache-2.0 | https://github.com/rust-lang/flate2-rs |
 | float-cmp | 0.9.0 | MIT | https://github.com/mikedilger/float-cmp |
+| foldhash | 0.1.5 | Zlib | https://github.com/orlp/foldhash |
 | font-types | 0.12.7 | MIT OR Apache-2.0 | https://github.com/googlefonts/fontations |
 | fontdb | 0.23.0 | MIT | https://github.com/RazrFalcon/fontdb |
 | fontdb | 0.24.0 | MIT | https://github.com/RazrFalcon/fontdb |
 | getrandom | 0.4.3 | MIT OR Apache-2.0 | https://github.com/rust-random/getrandom |
 | harfrust | 0.12.0 | MIT | https://github.com/harfbuzz/harfrust |
+| hashbrown | 0.15.5 | MIT OR Apache-2.0 | https://github.com/rust-lang/hashbrown |
 | hashbrown | 0.17.1 | MIT OR Apache-2.0 | https://github.com/rust-lang/hashbrown |
 | heck | 0.5.0 | MIT OR Apache-2.0 | https://github.com/withoutboats/heck |
 | hybrid-array | 0.4.15 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hybrid-array |
 | imagesize | 0.15.0 | MIT | https://github.com/Roughsketch/imagesize |
+| imara-diff | 0.2.0 | Apache-2.0 | https://github.com/pascalkuthe/imara-diff |
 | indexmap | 2.14.2 | Apache-2.0 OR MIT | https://github.com/indexmap-rs/indexmap |
 | is_terminal_polyfill | 1.70.2 | MIT OR Apache-2.0 | https://github.com/polyfill-rs/is_terminal_polyfill |
 | itoa | 1.0.18 | MIT OR Apache-2.0 | https://github.com/dtolnay/itoa |
@@ -1093,7 +1096,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-### arrayvec 0.7.8 (LICENSE-APACHE), base64 0.23.1 (LICENSE-APACHE), bitflags 1.3.2 (LICENSE-APACHE), bitflags 2.13.2 (LICENSE-APACHE), cfg-if 1.0.5 (LICENSE-APACHE), data-url 0.3.2 (LICENSE-APACHE), equivalent 1.0.3 (LICENSE-APACHE), errno 0.3.14 (LICENSE-APACHE), euclid 0.22.14 (LICENSE-APACHE), fastrand 2.5.0 (LICENSE-APACHE), flate2 1.1.10 (LICENSE-APACHE), hashbrown 0.17.1 (LICENSE-APACHE), heck 0.5.0 (LICENSE-APACHE), indexmap 2.14.2 (LICENSE-APACHE), log 0.4.34 (LICENSE-APACHE), num-traits 0.2.19 (LICENSE-APACHE), once_cell 1.21.4 (LICENSE-APACHE), png 0.17.16 (LICENSE-APACHE), png 0.18.1 (LICENSE-APACHE), regex 1.13.1 (LICENSE-APACHE), regex-automata 0.4.18 (LICENSE-APACHE), regex-lite 0.1.9 (LICENSE-APACHE), regex-syntax 0.8.11 (LICENSE-APACHE), roxmltree 0.21.2 (LICENSE-APACHE), rustix 1.1.5 (LICENSE-APACHE), simplecss 0.2.2 (LICENSE-APACHE), smallvec 1.16.4 (LICENSE-APACHE), svgtypes 0.16.1 (LICENSE-APACHE), tempfile 3.27.0 (LICENSE-APACHE), ttf-parser 0.25.1 (LICENSE-APACHE), ucd-trie 0.1.7 (LICENSE-APACHE), unicase 2.10.0 (LICENSE-APACHE), unicode-bidi 0.3.18 (LICENSE-APACHE), unicode-normalization 0.1.26 (LICENSE-APACHE), unicode-vo 0.1.0 (LICENSE-APACHE)
+### arrayvec 0.7.8 (LICENSE-APACHE), base64 0.23.1 (LICENSE-APACHE), bitflags 1.3.2 (LICENSE-APACHE), bitflags 2.13.2 (LICENSE-APACHE), cfg-if 1.0.5 (LICENSE-APACHE), data-url 0.3.2 (LICENSE-APACHE), equivalent 1.0.3 (LICENSE-APACHE), errno 0.3.14 (LICENSE-APACHE), euclid 0.22.14 (LICENSE-APACHE), fastrand 2.5.0 (LICENSE-APACHE), flate2 1.1.10 (LICENSE-APACHE), hashbrown 0.15.5 (LICENSE-APACHE), hashbrown 0.17.1 (LICENSE-APACHE), heck 0.5.0 (LICENSE-APACHE), imara-diff 0.2.0 (LICENSE), indexmap 2.14.2 (LICENSE-APACHE), log 0.4.34 (LICENSE-APACHE), num-traits 0.2.19 (LICENSE-APACHE), once_cell 1.21.4 (LICENSE-APACHE), png 0.17.16 (LICENSE-APACHE), png 0.18.1 (LICENSE-APACHE), regex 1.13.1 (LICENSE-APACHE), regex-automata 0.4.18 (LICENSE-APACHE), regex-lite 0.1.9 (LICENSE-APACHE), regex-syntax 0.8.11 (LICENSE-APACHE), roxmltree 0.21.2 (LICENSE-APACHE), rustix 1.1.5 (LICENSE-APACHE), simplecss 0.2.2 (LICENSE-APACHE), smallvec 1.16.4 (LICENSE-APACHE), svgtypes 0.16.1 (LICENSE-APACHE), tempfile 3.27.0 (LICENSE-APACHE), ttf-parser 0.25.1 (LICENSE-APACHE), ucd-trie 0.1.7 (LICENSE-APACHE), unicase 2.10.0 (LICENSE-APACHE), unicode-bidi 0.3.18 (LICENSE-APACHE), unicode-normalization 0.1.26 (LICENSE-APACHE), unicode-vo 0.1.0 (LICENSE-APACHE)
 
 ```text
 Apache License
@@ -3166,6 +3169,30 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 IN THE SOFTWARE.
 ```
 
+### foldhash 0.1.5 (LICENSE)
+
+```text
+Copyright (c) 2024 Orson Peters
+
+This software is provided 'as-is', without any express or implied warranty. In
+no event will the authors be held liable for any damages arising from the use of
+this software.
+
+Permission is granted to anyone to use this software for any purpose, including
+commercial applications, and to alter it and redistribute it freely, subject to
+the following restrictions:
+
+1. The origin of this software must not be misrepresented; you must not claim
+    that you wrote the original software. If you use this software in a product,
+    an acknowledgment in the product documentation would be appreciated but is
+    not required.
+
+2. Altered source versions must be plainly marked as such, and must not be
+    misrepresented as being the original software.
+
+3. This notice may not be removed or altered from any source distribution.
+```
+
 ### font-types 0.12.7 (LICENSE-APACHE), read-fonts 0.41.0 (LICENSE-APACHE), skrifa 0.44.0 (LICENSE-APACHE)
 
 ```text
@@ -3558,7 +3585,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### hashbrown 0.17.1 (LICENSE-MIT)
+### hashbrown 0.15.5 (LICENSE-MIT), hashbrown 0.17.1 (LICENSE-MIT)
 
 ```text
 Copyright (c) 2016 Amanieu d'Antras
