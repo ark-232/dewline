@@ -419,3 +419,21 @@ extension CaretTests {
         }
     }
 }
+
+extension CaretTests {
+    /// `dewline open plan.md:LINE:COLUMN` lands through this jump.
+    @Test func jumpToALineAndColumnCountsCharactersAndStopsAtTheLineEnd() throws {
+        let view = try #require(EditorTextView.scrollView().documentView as? EditorTextView)
+        view.string = "# Plan\nShip 👩🏽‍💻 béta\r\nlast"
+        view.jump(toLine: 2, column: 7)
+        #expect(view.selectedRange() == NSRange(location: 19, length: 0))
+        view.jump(toLine: 2, column: 99)
+        #expect(view.selectedRange() == NSRange(location: 24, length: 0))
+        view.jump(toLine: 3, column: 2)
+        #expect(view.selectedRange() == NSRange(location: 27, length: 0))
+        view.jump(toLine: 9, column: 3)
+        #expect(view.selectedRange() == NSRange(location: 30, length: 0))
+        view.jump(toLine: 1)
+        #expect(view.selectedRange() == NSRange(location: 0, length: 0))
+    }
+}

@@ -141,7 +141,8 @@ class CaretTextView: NSTextView {
         }
     }
 
-    func jump(toLine line: Int) {
+    /// Lines and columns count from 1. A column counts characters as the reader sees them and stops at the line's end.
+    func jump(toLine line: Int, column: Int = 1) {
         let text = textStorage!.mutableString
         var start = 0
         var remaining = line
@@ -149,7 +150,15 @@ class CaretTextView: NSTextView {
             start = NSMaxRange(text.lineRange(for: NSRange(location: start, length: 0)))
             remaining -= 1
         }
-        jump(to: NSRange(location: start, length: 0))
+        var end = 0
+        text.getLineStart(nil, end: nil, contentsEnd: &end, for: NSRange(location: start, length: 0))
+        var location = start
+        remaining = column
+        while remaining > 1, location < end {
+            location = NSMaxRange(text.rangeOfComposedCharacterSequence(at: location))
+            remaining -= 1
+        }
+        jump(to: NSRange(location: location, length: 0))
     }
 
     @objc func goToLine(_ sender: Any?) {

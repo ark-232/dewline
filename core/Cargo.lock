@@ -476,6 +476,10 @@ name = "dewline-cli"
 version = "0.0.1"
 dependencies = [
  "clap",
+ "libc",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

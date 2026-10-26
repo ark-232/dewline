@@ -10,9 +10,24 @@ final class MarkdownDocument: NSDocument {
     /// The hash of the file's bytes as opened or last saved.
     private var baseHash = contentHash(Data())
     private var hasBOM = false
+    /// `dewline open --wait` connections, answered when this document closes.
+    private var waiters: [ControlSocket.Connection] = []
 
     override class var autosavesInPlace: Bool {
         false
+    }
+
+    func answerWhenClosed(_ connection: ControlSocket.Connection) {
+        waiters.removeAll { !$0.isOpen }
+        waiters.append(connection)
+    }
+
+    override func close() {
+        super.close()
+        for waiter in waiters {
+            waiter.reply(.closed)
+        }
+        waiters = []
     }
 
     override func read(from data: Data, ofType typeName: String) throws {

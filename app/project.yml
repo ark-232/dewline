@@ -48,6 +48,10 @@ targets:
     dependencies:
       - package: MdCore
       - package: Sparkle
+    postBuildScripts:
+      - name: Embed the dewline command
+        script: exec "$SRCROOT/../scripts/embed-cli.sh"
+        basedOnDependencyAnalysis: false
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.arkwerx.dewline
