@@ -197,7 +197,7 @@ struct PerfTests {
         let outside = span.range.location - 1
         editor.place(outside)
         let storage = editor.view.textStorage!
-        let revealed = { storage.attribute(.foregroundColor, at: span.range.location, effectiveRange: nil) as? NSColor == .tertiaryLabelColor }
+        let revealed = { storage.attribute(.foregroundColor, at: span.range.location, effectiveRange: nil) as? NSColor == ThemeStore.shared.color(.syntax) }
         var moves: [Double] = []
         for _ in 0..<100 {
             moves.append(editor.press(124, "\u{F703}").first)
