@@ -81,6 +81,7 @@ struct MarkdownDocumentTests {
         let url = folder.appending(path: "launch-plan.md")
         try bytes.write(to: url)
         let document = MarkdownDocument()
+        document.snapshots = folder.appending(path: "snapshots")
         try document.read(from: url, ofType: Self.type)
         // Without a fileURL the window leaves the recent files in user defaults alone.
         document.makeWindowControllers()

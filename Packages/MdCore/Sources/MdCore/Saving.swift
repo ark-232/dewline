@@ -14,10 +14,11 @@ public func contentHash(_ bytes: Data) -> Data {
 }
 
 /// Writes `bytes` to the file at `url` if it still holds the bytes `base` hashes, and returns
-/// their hash. Bytes that hash to `base` write nothing.
-public func saveFile(_ bytes: Data, to url: URL, base: Data) throws(SaveFailure) -> Data {
+/// their hash. Bytes that hash to `base` write nothing. Another app's version that the save
+/// takes off the disk goes into the snapshot store at `snapshots`.
+public func saveFile(_ bytes: Data, to url: URL, base: Data, snapshots: URL) throws(SaveFailure) -> Data {
     do {
-        return try save(path: url.path, base: base, bytes: bytes)
+        return try save(path: url.path, base: base, bytes: bytes, snapshots: snapshots.path)
     } catch SaveError.Conflict {
         throw .conflict
     } catch SaveError.Io(let message) {

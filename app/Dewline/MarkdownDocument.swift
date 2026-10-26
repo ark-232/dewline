@@ -12,6 +12,9 @@ final class MarkdownDocument: NSDocument {
     private var hasBOM = false
     /// `dewline open --wait` connections, answered when this document closes.
     private var waiters: [ControlSocket.Connection] = []
+    /// The snapshot store that keeps another app's version when a save takes it off the disk.
+    var snapshots = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appending(path: "dev.arkwerx.dewline/snapshots")
 
     /// Posted when a document closes.
     static let didCloseNotification = Notification.Name("MarkdownDocumentDidClose")
@@ -102,7 +105,7 @@ final class MarkdownDocument: NSDocument {
                 return
             }
             do throws(SaveFailure) {
-                baseHash = try saveFile(bytes, to: url, base: baseHash)
+                baseHash = try saveFile(bytes, to: url, base: baseHash, snapshots: snapshots)
                 text = shown
             } catch .conflict {
                 throw SaveConflict(document: self, name: url.lastPathComponent)
