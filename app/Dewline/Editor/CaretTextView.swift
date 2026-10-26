@@ -103,11 +103,13 @@ class CaretTextView: NSTextView {
     override func updateInsertionPointStateAndRestartTimer(_ restartFlag: Bool) {
         super.updateInsertionPointStateAndRestartTimer(restartFlag)
         holdSolid()
+        followMark()
     }
 
     override func layout() {
         super.layout()
         holdSolid()
+        followMark()
     }
 
     /// NSTextView sets its indicator back to automatic whenever it updates it, and TextKit 2 does so on every
@@ -184,32 +186,45 @@ class CaretTextView: NSTextView {
     private func move(_ cause: Cause, _ body: () -> Void) {
         let level = Motion.current
         let jumps = cause == .jump || cause == .find
-        guard jumps || level == .lively, !hasMarkedText() else { return body() }
+        guard let window, jumps || level == .lively, !hasMarkedText() else { return body() }
         let from = selectedRange().location
-        let old = caretRect(at: from)
+        let old = caretRect(at: from, in: window)
         let visible = visibleRect
         body()
+        // TextKit 2 corrects its estimated layout around the new selection now instead of at the next display.
+        layoutSubtreeIfNeeded()
         effects.removeStreak()
         let selection = selectedRange()
-        let new = caretRect(at: selection.location)
+        let new = caretRect(at: selection.location, in: window)
         let streaks = level != .off && new != old && visibleRect.origin == visible.origin && visible.contains(old) && visibleRect.contains(new)
         if jumps {
             if streaks {
                 effects.streak(from: old, to: new, color: accentColor)
             } else if cause == .jump {
-                let line = NSRect(x: textContainerOrigin.x, y: new.minY, width: textContainer?.size.width ?? bounds.width, height: new.height)
-                effects.mark(line, color: accentColor, fades: level != .off)
+                effects.mark(line(around: new), color: accentColor, fades: level != .off)
             }
         } else if streaks, selection.length == 0, abs(new.midY - old.midY) >= 1.5 * old.height || abs(selection.location - from) >= 12 {
             effects.streak(from: old, to: new, color: accentColor)
         }
     }
 
-    /// The caret at a character index in view coordinates, 2 pt wide like the system bar.
-    private func caretRect(at location: Int) -> NSRect {
-        guard let window else { return .zero }
+    /// The landing mark stays on the caret's line while the layout above it settles, which on a document opened
+    /// moments earlier moves the line by thousands of points on TextKit 1 and by hundreds on TextKit 2.
+    private func followMark() {
+        guard effects.marking, let window else { return }
+        let caret = caretRect(at: selectedRange().location, in: window)
+        if visibleRect.intersects(caret) { effects.moveMark(to: line(around: caret)) }
+    }
+
+    /// The caret at a character index in view coordinates, 2 pt wide like the system bar; `firstRect` is empty for
+    /// a caret outside the visible rect.
+    private func caretRect(at location: Int, in window: NSWindow) -> NSRect {
         let rect = convert(window.convertFromScreen(firstRect(forCharacterRange: NSRange(location: location, length: 0), actualRange: nil)), from: nil)
         return NSRect(x: rect.minX - 1, y: rect.minY, width: 2, height: rect.height)
+    }
+
+    private func line(around caret: NSRect) -> NSRect {
+        NSRect(x: textContainerOrigin.x, y: caret.minY, width: textContainer!.size.width, height: caret.height)
     }
 
     private var accentColor: CGColor {

@@ -325,3 +325,33 @@ extension CaretTests {
         }
     }
 }
+
+extension CaretTests {
+    /// The landing mark ends on the caret's line on wrapped paragraphs, both on a document opened just before the
+    /// jump, while the layout above the target still moves, and on one already laid out.
+    @Test(.enabled(if: systemAllowsMotion), arguments: TextKitVariant.allCases)
+    func landingMarkSettlesOnTheCaretLine(_ variant: TextKitVariant) throws {
+        let caret = try Caret(variant)
+        defer { caret.close() }
+        let view = caret.view
+        view.string = (1...3000).map { "Line \($0) " + String(repeating: "wrapping words ", count: 20) }.joined(separator: "\n")
+        let settledCaret = {
+            for _ in 0..<20 {
+                caret.window.displayIfNeeded()
+                RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+            }
+            return view.convert(caret.window.convertFromScreen(view.firstRect(forCharacterRange: view.selectedRange(), actualRange: nil)), from: nil)
+        }
+        try motion(.calm) {
+            for (line, phase) in [(2000, "cold"), (300, "warm")] {
+                view.jump(toLine: line)
+                let placed = try #require(view.effects.mark.path).boundingBox
+                let target = settledCaret()
+                let mark = try #require(view.effects.mark.path).boundingBox
+                #expect(target.height > 0 && view.visibleRect.contains(target), "\(phase): caret \(target) in \(view.visibleRect)")
+                #expect(abs(mark.minY - 0.5 - target.minY) <= 1 && abs(mark.height + 1 - target.height) <= 1, "\(phase): mark \(mark) on caret \(target)")
+                if phase == "warm" { #expect(placed == mark, "warm: placed at \(placed), settled at \(mark)") }
+            }
+        }
+    }
+}

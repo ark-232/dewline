@@ -45,7 +45,7 @@ final class CaretEffectsView: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         mark.strokeColor = color
-        mark.path = CGPath(roundedRect: line.insetBy(dx: 0.5, dy: 0.5), cornerWidth: 2, cornerHeight: 2, transform: nil)
+        mark.path = Self.outline(line)
         mark.opacity = fades ? 0 : 1
         mark.removeAnimation(forKey: "mark")
         if fades {
@@ -56,6 +56,19 @@ final class CaretEffectsView: NSView {
             fade.duration = 0.8
             mark.add(fade, forKey: "mark")
         }
+        CATransaction.commit()
+    }
+
+    var marking: Bool {
+        mark.opacity != 0 || mark.animation(forKey: "mark") != nil
+    }
+
+    func moveMark(to line: NSRect) {
+        let outline = Self.outline(line)
+        guard outline != mark.path else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        mark.path = outline
         CATransaction.commit()
     }
 
@@ -86,6 +99,10 @@ final class CaretEffectsView: NSView {
         group.duration = 0.3
         group.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
         return group
+    }
+
+    private static func outline(_ line: NSRect) -> CGPath {
+        CGPath(roundedRect: line.insetBy(dx: 0.5, dy: 0.5), cornerWidth: 2, cornerHeight: 2, transform: nil)
     }
 
     private static func corners(of rect: NSRect) -> [CGPoint] {
