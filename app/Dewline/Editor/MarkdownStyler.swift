@@ -138,16 +138,15 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
 }
 
 extension MarkdownStyler {
-    /// Restyles `range` if it is short. A longer one, such as a document being opened, styles the part in view now
-    /// and leaves the rest to `styleSome`.
+    /// Restyles `range`, unless it is long and the view is at the top of the text, as when a document opens: then its
+    /// first chunk, which covers the view, is styled now and the rest by `styleSome`.
     private func restyleSoon(_ range: NSRange, in storage: NSTextStorage, selection: [NSRange]) {
         let paragraphs = storage.mutableString.paragraphRange(for: range)
-        guard paragraphs.length > Self.chunk else { return restyle(paragraphs, in: storage, selection: selection) }
+        guard paragraphs.length > Self.chunk, textView!.visibleRect.minY <= 0 else {
+            return restyle(paragraphs, in: storage, selection: selection)
+        }
         unstyled.insert(integersIn: Range(paragraphs)!)
-        // The view stays at the top of a document set as a whole, and scrolls to the caret after any other edit.
-        let focus = textView!.visibleRect.minY <= 0 ? 0 : selection[0].location - Self.chunk / 2
-        let start = min(max(focus, paragraphs.location), NSMaxRange(paragraphs) - Self.chunk)
-        restyle(NSRange(location: start, length: Self.chunk), in: storage, selection: selection)
+        restyle(NSRange(location: paragraphs.location, length: Self.chunk), in: storage, selection: selection)
         schedule()
     }
 
@@ -163,20 +162,32 @@ extension MarkdownStyler {
         CFRunLoopWakeUp(CFRunLoopGetMain())
     }
 
-    /// Styles one chunk of the unstyled text, starting from the top of the view, and schedules the next.
+    /// Styles the next chunk of unstyled text in text order and schedules the next. Once the view is past the first
+    /// unstyled character, the rest is styled in one pass: each chunk styled above the view would make TextKit 1 lay
+    /// out again all the text down to the view, and TextKit 2 place the view again.
     private func styleSome() {
         scheduled = false
         guard let textView, !textView.defersStyling, let first = unstyled.first else { return }
-        let visible = textView.visibleRect
-        // TextKit 2 answers a point in the top inset with an index near the end of the text.
-        let top = textView.characterIndexForInsertion(at: NSPoint(x: visible.minX, y: max(visible.minY, textView.textContainerOrigin.y)))
-        let start = unstyled.integerGreaterThanOrEqualTo(top) ?? first
-        let run = unstyled.rangeView.first { $0.contains(start) }!
         let storage = textView.textStorage!
+        let length = isPast(first) ? storage.length - first : min(unstyled.rangeView.first!.count, Self.chunk)
         storage.beginEditing()
-        restyle(NSRange(location: start, length: min(run.upperBound - start, Self.chunk)), in: storage, selection: textView.selectedRanges.map(\.rangeValue))
+        restyle(NSRange(location: first, length: length), in: storage, selection: textView.selectedRanges.map(\.rangeValue))
         storage.endEditing()
         if !unstyled.isEmpty { schedule() }
+    }
+
+    /// Whether the top of the view is past the line holding `index`, found without laying out any text. TextKit 1 has
+    /// not laid out text past its first unlaid character, so styling it costs no second layout.
+    private func isPast(_ index: Int) -> Bool {
+        let textView = textView!
+        let visible = textView.visibleRect
+        guard textView.textLayoutManager == nil else {
+            // TextKit 2 answers a point in the top inset with an index near the end of the text.
+            return index < textView.characterIndexForInsertion(at: NSPoint(x: visible.minX, y: max(visible.minY, textView.textContainerOrigin.y)))
+        }
+        let layout = textView.layoutManager!
+        guard index < layout.firstUnlaidCharacterIndex() else { return false }
+        return textView.textContainerOrigin.y + layout.lineFragmentRect(forGlyphAt: layout.glyphIndexForCharacter(at: index), effectiveRange: nil).maxY < visible.minY
     }
 
     private func restyle(_ range: NSRange, in storage: NSTextStorage, selection: [NSRange]) {
