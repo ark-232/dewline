@@ -190,29 +190,32 @@ struct SourceModeTests {
         }
     }
 
-    @Test(arguments: TextKitVariant.allCases, [22.0, 24.5])
-    func theFirstVisibleLineStaysPutWhenTheCaretIsAway(_ variant: TextKitVariant, lineHeight: Double) throws {
-        let editor = Editor(variant, Self.long, caret: 0)
-        let view = editor.view
-        view.styler.sourceLineHeight = lineHeight
-        view.scrollRangeToVisible(NSRange(location: Self.long.utf16.count / 2, length: 0))
-        editor.settle()
-        let top = try #require(view.baseline(at: view.characterIndexForInsertion(at: view.visibleRect.origin)))
-        view.scroll(NSPoint(x: 0, y: top - 5.3))
-        editor.display()
-        for _ in 1...4 {
-            let anchor = view.characterIndexForInsertion(at: view.visibleRect.origin)
-            let before = try editor.position(of: anchor)
-            view.toggleSource(nil)
+    @Test(arguments: TextKitVariant.allCases, [false, true])
+    func theFirstVisibleLineStaysPutWhenTheCaretIsAway(_ variant: TextKitVariant, below: Bool) throws {
+        let caret = below ? Self.long.utf16.count - 1 : 0
+        for lineHeight in [22.0, 24.5] {
+            let editor = Editor(variant, Self.long, caret: caret)
+            let view = editor.view
+            view.styler.sourceLineHeight = lineHeight
+            view.scrollRangeToVisible(NSRange(location: Self.long.utf16.count / 2, length: 0))
+            editor.settle()
+            let top = try #require(view.baseline(at: view.characterIndexForInsertion(at: view.visibleRect.origin)))
+            view.scroll(NSPoint(x: 0, y: top - 5.3))
             editor.display()
-            let after = try editor.position(of: anchor)
-            #expect(abs(after - before) <= 0.5, "line at \(anchor) moved from \(before) to \(after)")
-            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.25))
-            let settled = try editor.position(of: anchor)
-            #expect(abs(settled - after) <= 0.01, "settled from \(after) to \(settled)")
+            for _ in 1...4 {
+                let anchor = view.characterIndexForInsertion(at: view.visibleRect.origin)
+                let before = try editor.position(of: anchor)
+                view.toggleSource(nil)
+                editor.display()
+                let after = try editor.position(of: anchor)
+                #expect(abs(after - before) <= 0.5, "\(lineHeight) pt lines: line at \(anchor) moved from \(before) to \(after)")
+                RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.25))
+                let settled = try editor.position(of: anchor)
+                #expect(abs(settled - after) <= 0.01, "\(lineHeight) pt lines: settled from \(after) to \(settled)")
+            }
+            #expect(view.selectedRange() == NSRange(location: caret, length: 0))
+            editor.expectTextKitUnchanged()
         }
-        #expect(view.selectedRange() == NSRange(location: 0, length: 0))
-        editor.expectTextKitUnchanged()
     }
 
     @Test(arguments: TextKitVariant.allCases)
@@ -242,6 +245,7 @@ struct SourceModeTests {
         for delay in stride(from: 0.0, through: 0.1, by: 0.02) {
             let before = try editor.position(of: caret)
             view.toggleSource(nil)
+            #expect(view.subviews.count == subviews + 1, "no snapshot over the viewport")
             RunLoop.main.run(until: Date(timeIntervalSinceNow: delay))
             view.insertText("x", replacementRange: view.selectedRange())
             caret += 1
@@ -284,6 +288,20 @@ struct SourceModeTests {
     }
 
     @Test(arguments: TextKitVariant.allCases)
+    func anEmptyDocumentTogglesAndTakesText(_ variant: TextKitVariant) {
+        let editor = Editor(variant, "", caret: 0)
+        let view = editor.view
+        view.toggleSource(nil)
+        editor.display()
+        view.insertText("# a", replacementRange: view.selectedRange())
+        let font = view.textStorage!.attribute(.font, at: 0, effectiveRange: nil) as! NSFont
+        #expect(view.styler.showsSource && font.isFixedPitch)
+        view.toggleSource(nil)
+        #expect(!view.styler.showsSource && view.string == "# a")
+        editor.expectTextKitUnchanged()
+    }
+
+    @Test(arguments: TextKitVariant.allCases)
     func findWorksAcrossToggles(_ variant: TextKitVariant) {
         let text = HideSyntaxTests.soft + "\n" + String(repeating: "Plain filler words.\n", count: 80) + "Another **soft** word\n"
         let editor = Editor(variant, text, caret: 0)
@@ -317,7 +335,7 @@ struct SourceModeTests {
 }
 
 /// Runs `drawn` when the window draws it, to see what the window shows in that frame.
-private final class Witness: NSView {
+final class Witness: NSView {
     var drawn: () -> Void = {}
 
     override func draw(_ dirtyRect: NSRect) {
