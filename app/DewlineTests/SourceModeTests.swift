@@ -51,6 +51,22 @@ struct SourceModeTests {
     }
 
     @Test(arguments: TextKitVariant.allCases)
+    func typingAndUndoWorkInSource(_ variant: TextKitVariant) {
+        let editor = Editor(variant, Self.sample, caret: 17)
+        let view = editor.view
+        view.toggleSource(nil)
+        view.insertText("x", replacementRange: view.selectedRange())
+        #expect(view.string == Self.sample.replacingOccurrences(of: "soft", with: "soxft"))
+        let font = view.textStorage!.attribute(.font, at: 17, effectiveRange: nil) as! NSFont
+        #expect(font.isFixedPitch && font.fontDescriptor.symbolicTraits.contains(.bold))
+        view.styler.undoManager.endUndoGrouping()
+        editor.window.tryToPerform(Selector(("undo:")), with: nil)
+        #expect(view.string == Self.sample)
+        #expect(editor.rect(13, 2).width > 2)
+        editor.expectTextKitUnchanged()
+    }
+
+    @Test(arguments: TextKitVariant.allCases)
     func sourceShowsEveryMarker(_ variant: TextKitVariant) {
         let text = NSString(string: Self.sample)
         let editor = Editor(variant, Self.sample, caret: text.length)
