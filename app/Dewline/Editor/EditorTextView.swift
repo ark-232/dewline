@@ -248,6 +248,17 @@ final class EditorTextView: CaretTextView {
         }
     }
 
+    /// The one-range form calls this one, and Find's replace calls only this one.
+    override func shouldChangeText(inRanges affectedRanges: [NSValue], replacementStrings: [String]?) -> Bool {
+        let changes = super.shouldChangeText(inRanges: affectedRanges, replacementStrings: replacementStrings)
+        if changes, affectedRanges.count == 1, let string = replacementStrings?.first {
+            styler.landing = affectedRanges[0].rangeValue.location + string.utf16.count
+        } else {
+            styler.landing = nil
+        }
+        return changes
+    }
+
     override func didChangeText() {
         snapshot?.removeFromSuperview()
         super.didChangeText()

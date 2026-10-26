@@ -373,10 +373,8 @@ struct KeystrokeLatency {
         #expect(editor.view.selectedRange() == NSRange(location: caret, length: 0))
         #expect(keystrokes.map(\.wellFormed) == Array(repeating: true, count: 8))
         #expect(keystrokes.map(\.restyles) == Array(repeating: 1, count: 8))
-        withKnownIssue("A1: AppKit widens the edited range to the paragraph, the restyle takes its end for the caret and hides the span under the caret, and the reveal shows it again in a second storage edit") {
-            #expect(keystrokes.map(\.storageEdits) == Array(repeating: 1, count: 8))
-            #expect(keystrokes.map(\.revealWrites) == Array(repeating: 0, count: 8))
-        }
+        #expect(keystrokes.map(\.storageEdits) == Array(repeating: 1, count: 8))
+        #expect(keystrokes.map(\.revealWrites) == Array(repeating: 0, count: 8))
         #expect(keystrokes.map(\.fonts) == Array(repeating: 0, count: 8))
         print("KeystrokeLatency counts: storage edits \(keystrokes.map(\.storageEdits)), restyles \(keystrokes.map(\.restyles)), fonts \(keystrokes.map(\.fonts)), reveal writes \(keystrokes.map(\.revealWrites))")
     }
