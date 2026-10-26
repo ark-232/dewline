@@ -1,0 +1,25 @@
+[package]
+name = "dewline-ffi"
+description = "The Dewline engine as the Mac app sees it, through UniFFI."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+name = "dewline_ffi"
+crate-type = ["staticlib", "cdylib"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/uniffi-bindgen.rs"
+required-features = ["bindgen"]
+
+[dependencies]
+dewline-core = { path = "../core" }
+uniffi = "=0.32.2"
+
+[features]
+bindgen = ["uniffi/cli"]
