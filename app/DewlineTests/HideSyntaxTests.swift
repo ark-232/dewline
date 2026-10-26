@@ -4,7 +4,7 @@ import Testing
 
 /// An editor in a window that is never ordered front.
 @MainActor
-struct Editor {
+private struct Editor {
     let variant: TextKitVariant
     let window: NSWindow
     let view: EditorTextView

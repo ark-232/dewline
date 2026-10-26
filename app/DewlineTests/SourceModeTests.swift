@@ -2,7 +2,33 @@ import AppKit
 import Testing
 @testable import Dewline
 
-extension Editor {
+/// An editor in a window that is never ordered front.
+@MainActor
+private struct Editor {
+    let variant: TextKitVariant
+    let window: NSWindow
+    let view: EditorTextView
+
+    init(_ variant: TextKitVariant, _ text: String, caret: Int) {
+        self.variant = variant
+        let scrollView = EditorTextView.scrollView(variant: variant)
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 640), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = scrollView
+        view = scrollView.documentView as! EditorTextView
+        view.string = text
+        window.makeFirstResponder(view)
+        view.setSelectedRange(NSRange(location: caret, length: 0))
+    }
+
+    func rect(_ location: Int, _ length: Int) -> NSRect {
+        view.firstRect(forCharacterRange: NSRange(location: location, length: length), actualRange: nil)
+    }
+
+    func expectTextKitUnchanged() {
+        #expect((view.textLayoutManager != nil) == (variant == .textKit2))
+    }
+
     /// One frame: the window's layout pass, then its display pass.
     func display() {
         window.layoutIfNeeded()
