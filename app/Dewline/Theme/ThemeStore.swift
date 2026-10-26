@@ -10,9 +10,8 @@ final class ThemeStore {
         var id: Self { self }
     }
 
-    enum HeadingStyle: String, CaseIterable, Identifiable {
+    enum HeadingStyle: String {
         case standard, editorial
-        var id: Self { self }
     }
 
     static let shared: ThemeStore = {
@@ -103,11 +102,6 @@ final class ThemeStore {
         return color
     }
 
-    /// The theme a window with `appearance` shows.
-    func theme(for appearance: NSAppearance) -> Theme {
-        appearance.isDark ? darkTheme : lightTheme
-    }
-
     var bodyFont: NSFont {
         Faces.font(bodyFace, size: bodySize)
     }
@@ -140,12 +134,18 @@ final class ThemeStore {
     func heading(_ level: Int) -> Heading {
         if let heading = headings[level] { return heading }
         let scale = bodySize / 17
+        func smallCaps(_ font: NSFont) -> NSFont {
+            let features: [[NSFontDescriptor.FeatureKey: Int]] = [
+                [.typeIdentifier: kLowerCaseType, .selectorIdentifier: kLowerCaseSmallCapsSelector],
+                [.typeIdentifier: kUpperCaseType, .selectorIdentifier: kUpperCaseSmallCapsSelector],
+            ]
+            return NSFont(descriptor: font.fontDescriptor.addingAttributes([.featureSettings: features]), size: font.pointSize)!
+        }
         let heading = switch (level, headingStyle) {
         case (1, .editorial):
             Heading(font: Faces.font(headingFace, size: 44 * scale), lineHeight: 50 * scale, kern: 0)
         case (2, .editorial):
-            Heading(font: Faces.smallCaps(Faces.font(headingFace, size: 15 * scale, weight: .medium)),
-                    lineHeight: 25 * scale, kern: 0.75 * scale)
+            Heading(font: smallCaps(Faces.font(headingFace, size: 15 * scale, weight: .medium)), lineHeight: 25 * scale, kern: 0.75 * scale)
         case (1, _):
             Heading(font: Faces.font(headingFace, size: 32 * scale, weight: .medium), lineHeight: 38 * scale, kern: 0)
         case (2, _):
@@ -204,13 +204,5 @@ enum Faces {
         }
         let descriptor = NSFontDescriptor(fontAttributes: [.family: family, .traits: [NSFontDescriptor.TraitKey.weight: weight.rawValue]])
         return NSFont(descriptor: descriptor, size: size)!
-    }
-
-    static func smallCaps(_ font: NSFont) -> NSFont {
-        let features: [[NSFontDescriptor.FeatureKey: Int]] = [
-            [.typeIdentifier: kLowerCaseType, .selectorIdentifier: kLowerCaseSmallCapsSelector],
-            [.typeIdentifier: kUpperCaseType, .selectorIdentifier: kUpperCaseSmallCapsSelector],
-        ]
-        return NSFont(descriptor: font.fontDescriptor.addingAttributes([.featureSettings: features]), size: font.pointSize)!
     }
 }
