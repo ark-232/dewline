@@ -6,6 +6,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     private static var all: Set<MainWindowController> = []
 
     let folder: Folder?
+    /// The folder's Markdown files for Quick Open, shared with the folder's other tabs.
+    let index: FolderIndex?
     private let sidebar: SidebarViewController
     private let page = BackdropView()
     private(set) var textView: EditorTextView?
@@ -14,6 +16,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
 
     init(folder: Folder?) {
         self.folder = folder
+        index = folder.map(FolderIndex.of)
         sidebar = SidebarViewController(folder: folder)
         let split = NSSplitViewController()
         let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebar)
@@ -124,7 +127,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     }
 
     /// Opens `url` here, in a new tab when asked or when this tab's text has edits, or selects its tab.
-    private func open(_ url: URL, newTab: Bool) {
+    func open(_ url: URL, newTab: Bool) {
         let controller = NSDocumentController.shared
         if let open = controller.document(for: url) {
             open.windowControllers.first?.window?.makeKeyAndOrderFront(nil)
