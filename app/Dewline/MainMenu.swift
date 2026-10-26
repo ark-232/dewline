@@ -17,6 +17,8 @@ enum MainMenu {
     private static func appMenu() -> NSMenu {
         let menu = NSMenu(title: "Dewline")
         menu.addItem(withTitle: "About Dewline", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        let updates = menu.addItem(withTitle: "Check for Updates…", action: #selector(Updates.checkForUpdates(_:)), keyEquivalent: "")
+        updates.target = Updates.shared
         menu.addItem(.separator())
         let settings = menu.addItem(withTitle: "Settings…", action: #selector(SettingsWindowController.showSettings(_:)), keyEquivalent: ",")
         settings.target = SettingsWindowController.self

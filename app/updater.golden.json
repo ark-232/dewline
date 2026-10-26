@@ -1,0 +1,11 @@
+{
+  "SUAutomaticallyUpdate": true,
+  "SUEnableAutomaticChecks": true,
+  "SUEnableJavaScript": false,
+  "SUEnableSystemProfiling": false,
+  "SUFeedURL": "https://updates.dewline.dev/appcast.xml",
+  "SUPublicEDKey": "",
+  "SURequireSignedFeed": true,
+  "SUScheduledCheckInterval": 86400,
+  "SUVerifyUpdateBeforeExtraction": true
+}
