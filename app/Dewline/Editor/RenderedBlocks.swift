@@ -14,7 +14,6 @@ final class RenderedBlocks {
     private var pending: Set<PictureRequest> = []
     private let queue = DispatchQueue(label: "dev.arkwerx.dewline.pictures", qos: .utility)
 
-    private static let font = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
     private static let sourceLines = lines(20)
     private static let collapsedLines = lines(0.01)
 
@@ -89,12 +88,15 @@ final class RenderedBlocks {
                 }
                 continue
             }
-            styled.addAttributes([.font: Self.font, .foregroundColor: NSColor.labelColor, .paragraphStyle: Self.sourceLines], range: local)
+            let source: [NSAttributedString.Key: Any] = [
+                .font: MarkdownStyler.code(matching: MarkdownStyler.bodyFont), .foregroundColor: ThemeStore.shared.color(.ink), .paragraphStyle: Self.sourceLines,
+            ]
+            styled.addAttributes(source, range: local)
             for marker in [NSRange(location: block.range.location, length: block.content.location - block.range.location),
                            NSRange(location: NSMaxRange(block.content), length: NSMaxRange(block.range) - NSMaxRange(block.content))] {
                 let part = NSIntersectionRange(marker, paragraphs)
                 guard part.length > 0 else { continue }
-                styled.addAttribute(.foregroundColor, value: NSColor.tertiaryLabelColor, range: NSRange(location: part.location - offset, length: part.length))
+                styled.addAttribute(.foregroundColor, value: ThemeStore.shared.color(.syntax), range: NSRange(location: part.location - offset, length: part.length))
             }
             if case .failure(let failure) = picture, NSMaxRange(range) <= styled.length {
                 let last = NSIntersectionRange(text.paragraphRange(for: NSRange(location: NSMaxRange(range), length: 0)), whole)
@@ -118,9 +120,9 @@ final class RenderedBlocks {
         case .mermaid:
             break
         case .math:
-            // The label color as sRGB 0xRRGGBBAA in the view's appearance.
+            // The ink as sRGB 0xRRGGBBAA in the view's appearance.
             textView.effectiveAppearance.performAsCurrentDrawingAppearance {
-                guard let color = NSColor.labelColor.usingColorSpace(.sRGB) else { return }
+                guard let color = ThemeStore.shared.color(.ink).usingColorSpace(.sRGB) else { return }
                 ink = [color.redComponent, color.greenComponent, color.blueComponent, color.alphaComponent]
                     .reduce(0) { $0 << 8 | UInt32(($1 * 255).rounded()) }
             }

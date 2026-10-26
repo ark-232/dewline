@@ -54,8 +54,8 @@ final class EditorTextView: CaretTextView {
         isAutomaticTextReplacementEnabled = false
         isContinuousSpellCheckingEnabled = true
         usesFindBar = true
-        textContainerInset = NSSize(width: 24, height: 24)
-        typingAttributes = [.font: MarkdownStyler.bodyFont, .foregroundColor: NSColor.labelColor]
+        applyTheme()
+        NotificationCenter.default.addObserver(self, selector: #selector(themeDidChange(_:)), name: ThemeStore.didChange, object: nil)
     }
 
     required init?(coder: NSCoder) {
@@ -66,6 +66,7 @@ final class EditorTextView: CaretTextView {
         let textView = EditorTextView(variant: variant)
         let scrollView = NSScrollView()
         scrollView.hasVerticalScroller = true
+        scrollView.backgroundColor = textView.backgroundColor
         scrollView.documentView = textView
         textView.minSize = .zero
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
@@ -73,6 +74,62 @@ final class EditorTextView: CaretTextView {
         textView.autoresizingMask = .width
         textView.textContainer?.widthTracksTextView = true
         return scrollView
+    }
+
+    /// Paper, caret, selection and typing attributes from the theme, and the column at its measure.
+    private func applyTheme() {
+        let store = ThemeStore.shared
+        backgroundColor = store.color(.paper)
+        enclosingScrollView?.backgroundColor = backgroundColor
+        insertionPointColor = store.color(.accent)
+        selectedTextAttributes = [.backgroundColor: store.color(.selection)]
+        typingAttributes = styler.baseAttributes
+        fitColumn(to: frame.width)
+    }
+
+    @objc private func themeDidChange(_ notification: Notification) {
+        applyTheme()
+        styler.themeDidChange()
+    }
+
+    /// Rendered math takes the ink of the appearance it was drawn in.
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        styler.restyleDocument()
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        fitColumn(to: newSize.width)
+        super.setFrameSize(newSize)
+    }
+
+    /// Centers the column at the measure, with margins of at least 32 pt; a narrower view fills.
+    private func fitColumn(to width: CGFloat) {
+        let padding = textContainer?.lineFragmentPadding ?? 0
+        let margin = max(32, ((width - ThemeStore.shared.measure) / 2 - padding).rounded(.down))
+        if textContainerInset.width != margin {
+            textContainerInset = NSSize(width: margin, height: 24)
+        }
+    }
+
+    /// Draws each quote's rule at the column's left edge.
+    override func drawBackground(in rect: NSRect) {
+        super.drawBackground(in: rect)
+        let storage = textStorage!
+        guard !styler.showsSource, storage.length > 0, let window else { return }
+        let first = characterIndexForInsertion(at: NSPoint(x: rect.minX, y: max(rect.minY, textContainerOrigin.y)))
+        let last = characterIndexForInsertion(at: NSPoint(x: rect.maxX, y: rect.maxY))
+        let visible = storage.mutableString.paragraphRange(for: NSRange(location: min(first, last), length: abs(last - first)))
+        func line(at index: Int) -> NSRect {
+            convert(window.convertFromScreen(firstRect(forCharacterRange: NSRange(location: index, length: 0), actualRange: nil)), from: nil)
+        }
+        ThemeStore.shared.color(.quoteRule).setFill()
+        storage.enumerateAttribute(.dewlineQuote, in: visible) { value, range, _ in
+            guard value != nil else { return }
+            let top = line(at: range.location)
+            let bottom = line(at: max(NSMaxRange(range) - 1, range.location))
+            NSRect(x: textContainerOrigin.x + (textContainer?.lineFragmentPadding ?? 0), y: top.minY, width: 2, height: bottom.maxY - top.minY).fill()
+        }
     }
 
     /// The text's children plus one image per rendered block, labeled with its source.
@@ -243,4 +300,9 @@ private final class Snapshot: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? {
         nil
     }
+}
+
+extension NSAttributedString.Key {
+    /// Marks a block quote's paragraph, which draws a rule at the column's left edge.
+    static let dewlineQuote = NSAttributedString.Key("DewlineQuote")
 }

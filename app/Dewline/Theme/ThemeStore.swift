@@ -121,7 +121,6 @@ final class ThemeStore {
         let font: NSFont
         let lineHeight: CGFloat
         let kern: CGFloat
-        let spaceBefore: CGFloat
     }
 
     /// Heading levels 1 to 6 (synthesis 2.3), scaled with the body size. Editorial sets the title large and section
@@ -131,18 +130,18 @@ final class ThemeStore {
         let scale = bodySize / 17
         let heading = switch (level, headingStyle) {
         case (1, .editorial):
-            Heading(font: Faces.font(headingFace, size: 44 * scale), lineHeight: 50 * scale, kern: 0, spaceBefore: 8 * scale)
+            Heading(font: Faces.font(headingFace, size: 44 * scale), lineHeight: 50 * scale, kern: 0)
         case (2, .editorial):
             Heading(font: Faces.smallCaps(Faces.font(headingFace, size: 15 * scale, weight: .medium)),
-                    lineHeight: 25 * scale, kern: 0.75 * scale, spaceBefore: 28 * scale)
+                    lineHeight: 25 * scale, kern: 0.75 * scale)
         case (1, _):
-            Heading(font: Faces.font(headingFace, size: 32 * scale, weight: .medium), lineHeight: 38 * scale, kern: 0, spaceBefore: 8 * scale)
+            Heading(font: Faces.font(headingFace, size: 32 * scale, weight: .medium), lineHeight: 38 * scale, kern: 0)
         case (2, _):
-            Heading(font: Faces.font(headingFace, size: 24 * scale, weight: .medium), lineHeight: 30 * scale, kern: 0, spaceBefore: 28 * scale)
+            Heading(font: Faces.font(headingFace, size: 24 * scale, weight: .medium), lineHeight: 30 * scale, kern: 0)
         case (3, _):
-            Heading(font: Faces.font(headingFace, size: 19 * scale, weight: .semibold), lineHeight: 26 * scale, kern: 0, spaceBefore: 12 * scale)
+            Heading(font: Faces.font(headingFace, size: 19 * scale, weight: .semibold), lineHeight: 26 * scale, kern: 0)
         default:
-            Heading(font: Faces.font(bodyFace, size: bodySize, weight: .semibold), lineHeight: bodyLineHeight, kern: 0, spaceBefore: 8 * scale)
+            Heading(font: Faces.font(bodyFace, size: bodySize, weight: .semibold), lineHeight: bodyLineHeight, kern: 0)
         }
         headings[level] = heading
         return heading

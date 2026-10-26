@@ -249,7 +249,7 @@ struct HideSyntaxTests {
         // Typing in unstyled text styles its paragraph at once.
         editor.place(3999 * 17 + 8)
         editor.view.insertText("x", replacementRange: editor.view.selectedRange())
-        #expect(color(3999) == .tertiaryLabelColor)
+        #expect(color(3999) == ThemeStore.shared.color(.syntax))
         let deadline = Date(timeIntervalSinceNow: 10)
         while editor.view.styler.hasUnstyledText && Date() < deadline {
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01))
