@@ -19,7 +19,7 @@ required-features = ["bindgen"]
 
 [dependencies]
 dewline-core = { path = "../core" }
-uniffi = "=0.32.2"
+uniffi = { version = "=0.32.2", default-features = false }
 
 [features]
-bindgen = ["uniffi/cli"]
+bindgen = ["uniffi/cli", "uniffi/cargo-metadata"]
