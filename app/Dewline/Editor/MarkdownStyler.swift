@@ -18,6 +18,11 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
 
     static let bodyFont = serif(size: 17, traits: [])
     static let hiddenFont = NSFont.systemFont(ofSize: 0.01)
+    /// The attributes styling owns; restyling leaves every other attribute in the storage as it is.
+    private static let keys = [NSAttributedString.Key.font, .foregroundColor, .paragraphStyle, .underlineStyle, .strikethroughStyle, .dewlineHidden, .dewlineMarkerFont, .dewlineBlock]
+        .map { $0.rawValue as NSString }
+    /// Fonts with added traits by font and traits, since matching a font descriptor costs more than styling a run.
+    private static var traited: [NSFont: [UInt32: NSFont]] = [:]
     private static let base: [NSAttributedString.Key: Any] = [
         .font: bodyFont,
         .foregroundColor: NSColor.labelColor,
@@ -124,13 +129,11 @@ extension MarkdownStyler {
     private func restyle(_ range: NSRange, in storage: NSTextStorage, selection: [NSRange]) {
         restyles += 1
         let paragraphs = storage.mutableString.paragraphRange(for: range)
-        let styled = NSMutableAttributedString(attributedString: storage.attributedSubstring(from: paragraphs))
+        let styled = NSMutableAttributedString(string: storage.mutableString.substring(with: paragraphs))
         let text = styled.mutableString
         let whole = NSRange(location: 0, length: styled.length)
         let source = showsSource
         styled.addAttributes(baseAttributes, range: whole)
-        styled.removeAttribute(.dewlineHidden, range: whole)
-        styled.removeAttribute(.dewlineMarkerFont, range: whole)
         revealed = revealed.filter { !NSLocationInRange($0.range.location, paragraphs) }
         let selection = selection.map { NSRange(location: $0.location - paragraphs.location, length: $0.length) }
         text.enumerateSubstrings(in: whole, options: [.byParagraphs, .substringNotRequired]) { _, line, paragraph, _ in
@@ -169,18 +172,32 @@ extension MarkdownStyler {
             }
         }
         blocks.style(styled, at: paragraphs.location, selection: source ? [whole] : selection)
-        // Only attributes that differ are written, so layout invalidates only what changed.
-        let keys: [NSAttributedString.Key] = [.font, .foregroundColor, .paragraphStyle, .underlineStyle, .strikethroughStyle, .dewlineHidden, .dewlineMarkerFont, .dewlineBlock]
-        styled.enumerateAttributes(in: whole) { wanted, run, _ in
-            storage.enumerateAttributes(in: NSRange(location: run.location + paragraphs.location, length: run.length)) { current, part, _ in
-                for key in keys where wanted[key] as? NSObject != current[key] as? NSObject {
-                    if let value = wanted[key] {
-                        storage.addAttribute(key, value: value, range: part)
-                    } else {
-                        storage.removeAttribute(key, range: part)
+        // Only runs whose styling differs are written, once each, so layout invalidates only what changed. The CF
+        // accessors return a run's dictionary without bridging it to Swift, which costs more than the comparison.
+        var offset = 0
+        while offset < whole.length {
+            var run = CFRange()
+            let wanted = CFAttributedStringGetAttributes(styled, offset, &run) as NSDictionary
+            let end = paragraphs.location + run.location + run.length
+            var location = paragraphs.location + offset
+            while location < end {
+                var part = CFRange()
+                let current = CFAttributedStringGetAttributes(storage, location, &part) as NSDictionary
+                let length = min(part.location + part.length, end) - location
+                if Self.keys.contains(where: { wanted.object(forKey: $0) as? NSObject != current.object(forKey: $0) as? NSObject }) {
+                    let merged = current.mutableCopy() as! NSMutableDictionary
+                    for key in Self.keys {
+                        if let value = wanted.object(forKey: key) {
+                            merged.setObject(value, forKey: key)
+                        } else {
+                            merged.removeObject(forKey: key)
+                        }
                     }
+                    CFAttributedStringSetAttributes(storage, CFRange(location: location, length: length), merged, true)
                 }
+                location += length
             }
+            offset = run.location + run.length
         }
     }
 
@@ -231,8 +248,12 @@ extension MarkdownStyler {
     private static func add(_ traits: NSFontDescriptor.SymbolicTraits, in range: NSRange, of storage: NSMutableAttributedString) {
         storage.enumerateAttribute(.font, in: range) { value, run, _ in
             let font = value as! NSFont
-            let descriptor = font.fontDescriptor.withSymbolicTraits(font.fontDescriptor.symbolicTraits.union(traits))
-            storage.addAttribute(.font, value: NSFont(descriptor: descriptor, size: font.pointSize)!, range: run)
+            let derived = traited[font]?[traits.rawValue] ?? {
+                let descriptor = font.fontDescriptor.withSymbolicTraits(font.fontDescriptor.symbolicTraits.union(traits))
+                return NSFont(descriptor: descriptor, size: font.pointSize)!
+            }()
+            traited[font, default: [:]][traits.rawValue] = derived
+            storage.addAttribute(.font, value: derived, range: run)
         }
     }
 
