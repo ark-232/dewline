@@ -97,7 +97,7 @@ rm ~/dewline-keys/*.pem
 </rss>
 ```
 
-Beside it, `firebase.json` serves only the feed, uncached:
+Beside it, `firebase.json` publishes the repository root, which holds only `appcast.xml`, `pulled.txt` and `firebase.json`, with the feed uncached:
 
 ```json
 {"hosting": {"public": ".", "ignore": ["firebase.json", "pulled.txt", "**/.*"],
