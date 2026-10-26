@@ -8,7 +8,7 @@ package="$root/Packages/MdCore"
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$HOME/Library/Caches/dev.arkwerx.dewline/target}"
 
 case "${1:-}" in
-  "") targets=("$(rustc -vV | sed -n 's/^host: //p')") ;;
+  "") targets=("$(rustc --print host-tuple)") ;;
   --universal) targets=(aarch64-apple-darwin x86_64-apple-darwin) ;;
   *) echo "usage: $0 [--universal]" >&2; exit 64 ;;
 esac
