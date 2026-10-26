@@ -5,7 +5,9 @@ import Testing
 /// A window that reports itself key without being ordered front, so a text view in it builds and drives the system
 /// insertion indicator.
 final class KeyWindow: NSWindow {
-    override var isKeyWindow: Bool { true }
+    var key = true
+
+    override var isKeyWindow: Bool { key }
 }
 
 /// A stock text view with its caret placed in a key window on the given screen.

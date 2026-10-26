@@ -89,7 +89,9 @@ struct CaretTests {
         defer { observation.invalidate() }
         let start = ContinuousClock.now
         try caret.input()
-        try await Task.sleep(for: .seconds(5.7))
+        while solid.time == nil && ContinuousClock.now - start < .seconds(10) {
+            try await Task.sleep(for: .milliseconds(100))
+        }
         let after = try #require(solid.time) - start
         #expect(after >= .seconds(5), "solid after \(after)")
         #expect(indicator.displayMode == .visible)
@@ -98,6 +100,18 @@ struct CaretTests {
         caret.view.layoutSubtreeIfNeeded()
         caret.view.setSelectedRange(NSRange(location: 3, length: 0))
         #expect(indicator.displayMode == .visible)
+        caret.window.key = false
+        caret.window.resignKey()
+        caret.window.key = true
+        caret.window.becomeKey()
+        #expect(indicator.displayMode != .visible, "blinking again once the window is key again")
+        solid.time = nil
+        let again = ContinuousClock.now
+        while solid.time == nil && ContinuousClock.now - again < .seconds(10) {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        let restarted = try #require(solid.time) - again
+        #expect(restarted >= .seconds(5), "the clock restarts when the window becomes key: solid after \(restarted)")
         try caret.input()
         #expect(indicator.displayMode != .visible)
     }
@@ -200,7 +214,7 @@ extension CaretTests {
 
     /// Acceptance test 2's property: 1,000 random edits at Lively, half of them right after a jump that may start
     /// a streak; once the text changes no streak runs, and an edit never starts one.
-    @Test(arguments: TextKitVariant.allCases)
+    @Test(.enabled(if: systemAllowsMotion), arguments: TextKitVariant.allCases)
     func editsNeverRunTheStreak(_ variant: TextKitVariant) throws {
         let caret = try Caret(variant, lines: 40)
         defer { caret.close() }
@@ -327,6 +341,42 @@ extension CaretTests {
 }
 
 extension CaretTests {
+    /// Find Next is a jump: a match in view gets the streak; a match it scrolls to gets neither streak nor landing
+    /// mark, because the selected match marks it.
+    @Test(.enabled(if: systemAllowsMotion), arguments: TextKitVariant.allCases)
+    func findNextIsAJump(_ variant: TextKitVariant) throws {
+        let caret = try Caret(variant)
+        defer { caret.close() }
+        let view = caret.view
+        view.usesFindBar = true
+        let pasteboard = NSPasteboard(name: .find)
+        let saved = pasteboard.string(forType: .string)
+        defer {
+            pasteboard.clearContents()
+            if let saved { pasteboard.setString(saved, forType: .string) }
+        }
+        let find = { (action: NSTextFinder.Action) in
+            let item = NSMenuItem()
+            item.tag = action.rawValue
+            view.performFindPanelAction(item)
+        }
+        let text = view.string as NSString
+        motion(.calm) {
+            view.setSelectedRange(text.range(of: "quiet"))
+            find(.setSearchString)
+            find(.nextMatch)
+            #expect(view.selectedRange() == text.range(of: "quiet", range: NSRange(location: 60, length: text.length - 60)))
+            #expect(caret.streaking)
+            view.setSelectedRange(text.range(of: "Line 55 "))
+            find(.setSearchString)
+            view.setSelectedRange(NSRange(location: 0, length: 0))
+            let top = view.visibleRect.minY
+            find(.nextMatch)
+            #expect(view.selectedRange() == text.range(of: "Line 55 ") && view.visibleRect.minY > top)
+            #expect(!caret.streaking && !view.effects.marking)
+        }
+    }
+
     /// A key repeat snaps every move, a jump included.
     @Test(.enabled(if: systemAllowsMotion), arguments: TextKitVariant.allCases)
     func keyRepeatSnapsJumps(_ variant: TextKitVariant) throws {

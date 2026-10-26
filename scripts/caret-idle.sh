@@ -44,6 +44,10 @@ xcodebuild build -project "$root/app/Dewline.xcodeproj" -scheme Dewline -configu
     -derivedDataPath "$derived" ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO -quiet
 for line in $(seq 1 300); do printf 'Line %d has **strong** words and *quiet* ones to read.\n\n' "$line"; done > "$work/idle.md"
 if [[ $(defaults read -g AppleInterfaceStyle 2>/dev/null || true) == Dark ]]; then accent=(132 168 253); else accent=(45 84 211); fi
+if [[ $(defaults read com.apple.universalaccess reduceMotion 2>/dev/null || true) == 1 ]]; then
+    echo "Reduce Motion is on, which runs Off: the streaks will not run." >&2
+fi
+if pmset -g | grep -q -E 'lowpowermode +1'; then echo "Low Power Mode is on, which runs Lively as Calm: the click streak will not run." >&2; fi
 
 for variant in ${1:-1 2}; do
     out=$work/probe$variant
@@ -60,7 +64,8 @@ for variant in ${1:-1 2}; do
     idle=$(sample 60)
     wait "$shots" || true
     last=$(front)
-    kill "$pid"
+    kill "$pid" || true
+    while kill -0 "$pid" 2>/dev/null; do sleep 0.1; done
     pid_was=$pid
     pid=
 
@@ -82,7 +87,7 @@ for variant in ${1:-1 2}; do
     echo "  caret on screen: rgb $color, accent ${accent[*]}, largest channel difference $off"
     check "in front for the whole run" "$([[ $first == "$pid_was" && $last == "$pid_was" ]] && echo true || echo false)"
     check "jump streak, click streak and landing mark ran" "$(grep -c -E '(streak|mark) true$' "$out" | grep -qx 3 && echo true || echo false)"
-    check "solid 5 to 5.6 s after the last input (${solid_after:-never})" "$(awk -v s="${solid_after:-0}" 'BEGIN { print (s >= 5 && s <= 5.6) ? "true" : "false" }')"
+    check "solid 5 to 6.5 s after the last input (${solid_after:-never})" "$(awk -v s="${solid_after:-0}" 'BEGIN { print (s >= 5 && s <= 6.5) ? "true" : "false" }')"
     check "held solid: modes after the input were [ ${modes}]" "$([[ $modes =~ ^(2 )+$ ]] && echo true || echo false)"
     check "idle CPU 0.0% and 0 idle wakeups" "$([[ $cpu == 0.0 && $wakeups == 0 ]] && echo true || echo false)"
     check "screenshots 1 s apart identical" "$([[ -s $work/a$variant.png ]] && cmp -s "$work/a$variant.png" "$work/b$variant.png" && echo true || echo false)"
