@@ -52,8 +52,7 @@ targets:
         ATSApplicationFontsPath: Fonts
         CFBundleDocumentTypes:
           - CFBundleTypeName: Markdown
-            # Viewer until saving goes through the engine; then Editor.
-            CFBundleTypeRole: Viewer
+            CFBundleTypeRole: Editor
             LSHandlerRank: Alternate
             LSItemContentTypes: [net.daringfireball.markdown]
             NSDocumentClass: $(PRODUCT_MODULE_NAME).MarkdownDocument

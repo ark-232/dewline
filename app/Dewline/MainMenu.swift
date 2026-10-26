@@ -40,6 +40,7 @@ enum MainMenu {
         menu.addItem(withTitle: "Quick Open…", action: #selector(AppDelegate.quickOpen(_:)), keyEquivalent: "O")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        menu.addItem(withTitle: "Save", action: #selector(NSDocument.save(_:)), keyEquivalent: "s")
         return menu
     }
 
