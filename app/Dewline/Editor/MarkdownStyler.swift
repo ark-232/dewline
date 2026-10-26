@@ -164,15 +164,29 @@ extension MarkdownStyler {
 
     /// Styles the next chunk of unstyled text in text order and schedules the next. Once the view is past the first
     /// unstyled character, the rest is styled in one pass: each chunk styled above the view would make TextKit 1 lay
-    /// out again all the text down to the view, and TextKit 2 place the view again.
+    /// out again all the text down to the view, and TextKit 2 place the view again. That pass holds the caret's line,
+    /// or the first visible line, in place, as switching to the source does.
     private func styleSome() {
         scheduled = false
         guard let textView, !textView.defersStyling, let first = unstyled.first else { return }
         let storage = textView.textStorage!
-        let length = isPast(first) ? storage.length - first : min(unstyled.rangeView.first!.count, Self.chunk)
+        let past = isPast(first)
+        var held: (anchor: Int, offset: CGFloat)?
+        if past {
+            let visible = textView.visibleRect
+            func index(_ x: CGFloat, _ y: CGFloat) -> Int {
+                textView.characterIndexForInsertion(at: NSPoint(x: x, y: max(y, textView.textContainerOrigin.y)))
+            }
+            let top = index(visible.minX, visible.minY)
+            let caret = textView.selectedRange().location
+            let anchor = min(top <= caret && caret <= index(visible.maxX, visible.maxY) ? caret : top, storage.length - 1)
+            held = textView.baseline(at: anchor).map { (anchor, $0 - visible.minY) }
+        }
+        let length = past ? storage.length - first : min(unstyled.rangeView.first!.count, Self.chunk)
         storage.beginEditing()
         restyle(NSRange(location: first, length: length), in: storage, selection: textView.selectedRanges.map(\.rangeValue))
         storage.endEditing()
+        if let held { textView.hold(held.anchor, at: held.offset) }
         if !unstyled.isEmpty { schedule() }
     }
 

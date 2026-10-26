@@ -190,7 +190,7 @@ final class EditorTextView: NSTextView {
     }
 
     /// Scrolls so the baseline of the line holding `anchor` sits `offset` below the top of the visible rect.
-    private func hold(_ anchor: Int, at offset: CGFloat) {
+    func hold(_ anchor: Int, at offset: CGFloat) {
         let visible = visibleRect
         if let layout = textLayoutManager {
             // TextKit 2 sizes the view and stacks the viewport from estimates it refreshes as it lays the viewport out:
