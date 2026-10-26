@@ -1,6 +1,7 @@
 // Draws each catalog family's name (20 pt) over its sample line (14 pt) as glyph outlines in a small PDF, which the
 // Fonts pane shows until the family is installed (synthesis 2.9). It reads verified downloads laid out as
-// <google/fonts folder>/<file>, registers nothing, and writes <family>.pdf.
+// <google/fonts folder>/<file>, registers them for its own process only, and picks the face the way Faces.font does,
+// so the specimen shows the face the family gets once installed. It writes <family>.pdf.
 // Usage: swift scripts/font-specimens.swift <downloads> app/Dewline/Specimens
 import AppKit
 import CoreText
@@ -9,18 +10,6 @@ let downloads = URL(filePath: CommandLine.arguments[1])
 let output = URL(filePath: CommandLine.arguments[2])
 let sample = "Public beta opens on 2 December."
 let spacing: CGFloat = 3
-
-func regular(in folder: URL) -> CTFontDescriptor? {
-    let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
-    let descriptors = files.filter { $0.pathExtension == "ttf" }.sorted { $0.path < $1.path }.flatMap {
-        CTFontManagerCreateFontDescriptorsFromURL($0 as CFURL) as? [CTFontDescriptor] ?? []
-    }
-    func style(_ descriptor: CTFontDescriptor) -> String {
-        CTFontDescriptorCopyAttribute(descriptor, kCTFontStyleNameAttribute) as? String ?? ""
-    }
-    // Recursive names its upright default "Sans Linear".
-    return descriptors.first { style($0) == "Regular" } ?? descriptors.first { style($0) == "Sans Linear" }
-}
 
 /// The line's outlines with its origin on the baseline, and its width.
 func outlines(_ text: String, _ font: CTFont) -> (CGPath, CGFloat) {
@@ -47,9 +36,15 @@ func lineHeight(_ font: CTFont) -> CGFloat {
 
 try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
 for folder in try FileManager.default.contentsOfDirectory(at: downloads, includingPropertiesForKeys: nil).sorted(by: { $0.path < $1.path }) {
-    guard let descriptor = regular(in: folder), let family = CTFontDescriptorCopyAttribute(descriptor, kCTFontFamilyNameAttribute) as? String else { continue }
-    let nameFont = CTFontCreateWithFontDescriptor(descriptor, 20, nil)
-    let sampleFont = CTFontCreateWithFontDescriptor(descriptor, 14, nil)
+    let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil))?.filter { $0.pathExtension == "ttf" } ?? []
+    guard let first = files.first,
+          let descriptor = (CTFontManagerCreateFontDescriptorsFromURL(first as CFURL) as? [CTFontDescriptor])?.first,
+          let family = CTFontDescriptorCopyAttribute(descriptor, kCTFontFamilyNameAttribute) as? String
+    else { continue }
+    CTFontManagerRegisterFontURLs(files as CFArray, .process, true) { _, _ in true }
+    let regular = NSFontDescriptor(fontAttributes: [.family: family, .traits: [NSFontDescriptor.TraitKey.weight: NSFont.Weight.regular.rawValue]])
+    let nameFont = NSFont(descriptor: regular, size: 20)! as CTFont
+    let sampleFont = NSFont(descriptor: regular, size: 14)! as CTFont
     let (name, nameWidth) = outlines(family, nameFont)
     let (line, lineWidth) = outlines(sample, sampleFont)
     var box = CGRect(x: 0, y: 0, width: max(nameWidth, lineWidth).rounded(.up), height: (lineHeight(nameFont) + spacing + lineHeight(sampleFont)).rounded(.up))
