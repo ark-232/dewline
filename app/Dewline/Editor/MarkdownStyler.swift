@@ -15,6 +15,13 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
     }()
     private var revealed: Set<SyntaxSpan> = []
     private var pending: NSRange?
+    /// Text not styled yet, whole paragraphs, which `styleSome` works through from the top of the view.
+    private var unstyled = IndexSet()
+    private var scheduled = false
+
+    var hasUnstyledText: Bool {
+        !unstyled.isEmpty
+    }
 
     static let bodyFont = serif(size: 17, traits: [])
     static let hiddenFont = NSFont.systemFont(ofSize: 0.01)
@@ -23,6 +30,8 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
         .map { $0.rawValue as NSString }
     /// Fonts with added traits by font and traits, since matching a font descriptor costs more than styling a run.
     private static var traited: [NSFont: [UInt32: NSFont]] = [:]
+    /// The most text one pass styles while more waits: several screens, a few milliseconds of work.
+    private static let chunk = 1 << 14
     private static let base: [NSAttributedString.Key: Any] = [
         .font: bodyFont,
         .foregroundColor: NSColor.labelColor,
@@ -68,6 +77,8 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
                 guard span.range.location > oldEnd else { return nil }
                 return span.shifted(by: delta)
             })
+            unstyled.remove(integersIn: editedRange.location..<oldEnd)
+            unstyled.shift(startingAt: oldEnd, by: delta)
             var range = editedRange
             if let waiting = pending {
                 func moved(_ offset: Int) -> Int {
@@ -82,7 +93,7 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
             } else {
                 pending = nil
                 let selection = [NSRange(location: NSMaxRange(editedRange), length: 0)]
-                restyle(range, in: textView!.textStorage!, selection: selection)
+                restyleSoon(range, in: textView!.textStorage!, selection: selection)
                 for block in changed where NSUnionRange(block, range) != range {
                     restyle(block, in: textView!.textStorage!, selection: selection)
                 }
@@ -96,6 +107,7 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
             restyle(range)
         }
         updateReveal()
+        if !unstyled.isEmpty { schedule() }
     }
 
     /// Switches mode and restyles the paragraphs around `range`; `restyleDocument()` brings the rest along.
@@ -126,9 +138,51 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
 }
 
 extension MarkdownStyler {
+    /// Restyles `range` if it is short. A longer one, such as a document being opened, styles the part in view now
+    /// and leaves the rest to `styleSome`.
+    private func restyleSoon(_ range: NSRange, in storage: NSTextStorage, selection: [NSRange]) {
+        let paragraphs = storage.mutableString.paragraphRange(for: range)
+        guard paragraphs.length > Self.chunk else { return restyle(paragraphs, in: storage, selection: selection) }
+        unstyled.insert(integersIn: Range(paragraphs)!)
+        // The view stays at the top of a document set as a whole, and scrolls to the caret after any other edit.
+        let focus = textView!.visibleRect.minY <= 0 ? 0 : selection[0].location - Self.chunk / 2
+        let start = min(max(focus, paragraphs.location), NSMaxRange(paragraphs) - Self.chunk)
+        restyle(NSRange(location: start, length: Self.chunk), in: storage, selection: selection)
+        schedule()
+    }
+
+    /// Runs `styleSome` on the main run loop's next pass, which comes after any event in hand and before the view
+    /// displays. A block, unlike a timer, runs before the display that follows an event; unlike the main queue, it
+    /// also runs in a run loop nested inside a main-queue job.
+    private func schedule() {
+        guard !scheduled else { return }
+        scheduled = true
+        RunLoop.main.perform(inModes: [.common]) { [weak self] in
+            MainActor.assumeIsolated { self?.styleSome() }
+        }
+        CFRunLoopWakeUp(CFRunLoopGetMain())
+    }
+
+    /// Styles one chunk of the unstyled text, starting from the top of the view, and schedules the next.
+    private func styleSome() {
+        scheduled = false
+        guard let textView, !textView.defersStyling, let first = unstyled.first else { return }
+        let visible = textView.visibleRect
+        // TextKit 2 answers a point in the top inset with an index near the end of the text.
+        let top = textView.characterIndexForInsertion(at: NSPoint(x: visible.minX, y: max(visible.minY, textView.textContainerOrigin.y)))
+        let start = unstyled.integerGreaterThanOrEqualTo(top) ?? first
+        let run = unstyled.rangeView.first { $0.contains(start) }!
+        let storage = textView.textStorage!
+        storage.beginEditing()
+        restyle(NSRange(location: start, length: min(run.upperBound - start, Self.chunk)), in: storage, selection: textView.selectedRanges.map(\.rangeValue))
+        storage.endEditing()
+        if !unstyled.isEmpty { schedule() }
+    }
+
     private func restyle(_ range: NSRange, in storage: NSTextStorage, selection: [NSRange]) {
         restyles += 1
         let paragraphs = storage.mutableString.paragraphRange(for: range)
+        unstyled.remove(integersIn: Range(paragraphs)!)
         let styled = NSMutableAttributedString(string: storage.mutableString.substring(with: paragraphs))
         let text = styled.mutableString
         let whole = NSRange(location: 0, length: styled.length)
@@ -225,6 +279,8 @@ extension MarkdownStyler {
         for range in selection {
             text.enumerateSubstrings(in: text.paragraphRange(for: range), options: [.byParagraphs, .substringNotRequired]) { _, line, _, _ in
                 guard !self.blocks.contains(line) else { return }
+                // Unstyled text takes the selection's reveal state when it is styled.
+                guard !self.unstyled.intersects(integersIn: Range(line)!) else { return }
                 now.formUnion(SpikeTokenizer.spans(in: text, line: line).filter { Self.touches($0, selection) })
             }
         }
