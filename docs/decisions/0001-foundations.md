@@ -17,4 +17,4 @@ Date: 2026-10-25. Each line is the owner's decision unless marked as recommended
 | Pricing promise | free core writing forever; own-Mac sync free; any paid tier covers hosted services only (recommended) | not planned |
 
 [0002](0002-1.0-scope.md) replaced the release order and 1.0 scope rows on 2026-10-26.
-[0003](0003-full-app.md) replaced the design row on 2026-10-26.
+[0003](0003-full-app.md) replaced the design row on 2026-10-25.

@@ -1,6 +1,6 @@
 # 0003: The full app
 
-Date: 2026-10-26. The owner's decisions.
+Date: 2026-10-25. The owner's decisions.
 
 | Decision | Choice | Reopens if |
 |---|---|---|
