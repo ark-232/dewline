@@ -1,0 +1,22 @@
+[package]
+name = "dewline-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+dewline-core = { path = "../crates/core" }
+libfuzzer-sys = "=0.4.13"
+
+[[bin]]
+name = "merge"
+path = "fuzz_targets/merge.rs"
+test = false
+doc = false
+bench = false
+
+# Built by cargo-fuzz on nightly, apart from the core workspace.
+[workspace]

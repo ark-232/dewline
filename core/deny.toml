@@ -23,6 +23,7 @@ exceptions = [
     { allow = ["MPL-2.0"], crate = "uniffi_pipeline" },
     { allow = ["MPL-2.0"], crate = "uniffi_udl" },
     { allow = ["Zlib"], crate = "slotmap" },
+    { allow = ["Zlib"], crate = "foldhash" },
     { allow = ["OFL-1.1"], crate = "ratex-katex-fonts" },
 ]
 
