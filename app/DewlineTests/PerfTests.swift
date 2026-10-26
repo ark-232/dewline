@@ -91,8 +91,11 @@ private struct Editor {
         return span!
     }
 
+    /// Empties the view first: a closed window's text system stays alive for a while, and TextKit 1 would go on laying
+    /// out its text in the next measurement's run loop passes.
     func close() {
         #expect((view.textLayoutManager != nil) == (variant == .textKit2))
+        view.string = ""
         window.close()
     }
 }
