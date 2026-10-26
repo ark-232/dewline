@@ -23,11 +23,26 @@ public final class MarkdownParser: Sendable {
         _ = try markdown.panicForTest()
     }
 
-    /// Text from a text storage is UTF-16, which UniFFI would read into UTF-8 a character at a time.
+    /// Text from a text storage is UTF-16, which Swift reads into UTF-8 a character at a time: 18 ms for 1 MB, where
+    /// Foundation's conversion takes 1. Foundation's stops at a lone surrogate, which Swift's makes one U+FFFD, so
+    /// UTF-16 offsets still match.
     private func utf8(_ text: String) -> String {
-        var text = text
-        text.makeContiguousUTF8()
-        return text
+        if text.isContiguousUTF8 { return text }
+        let string = text as NSString
+        let capacity = string.maximumLengthOfBytes(using: String.Encoding.utf8.rawValue)
+        var remaining = NSRange()
+        let converted = String(unsafeUninitializedCapacity: capacity) { buffer in
+            var used = 0
+            string.getBytes(
+                buffer.baseAddress, maxLength: capacity, usedLength: &used, encoding: String.Encoding.utf8.rawValue,
+                options: [], range: NSRange(location: 0, length: string.length), remaining: &remaining
+            )
+            return used
+        }
+        if remaining.length == 0 { return converted }
+        var repaired = text
+        repaired.makeContiguousUTF8()
+        return repaired
     }
 }
 

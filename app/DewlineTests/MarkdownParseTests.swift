@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import MdCore
 import Testing
 
@@ -26,6 +26,14 @@ struct MarkdownParseTests {
         #expect(try window().tokens.map(\.kind) == [.link])
         #expect(try window().holds)
         #expect(try parser.parse(window: String(repeating: "a", count: 4096), next: "\n", atStart: false, row: false) == nil)
+    }
+
+    @Test func textStorageTextKeepsItsUTF16Offsets() throws {
+        let storage = NSTextStorage(string: "Café 🙂 **bold**\n")
+        storage.replaceCharacters(in: NSRange(location: 0, length: 0), with: NSString(characters: [0xD800], length: 1) as String)
+        let parse = try MarkdownParser().parse(storage.string)
+        #expect(parse.tokens.map(\.kind) == [.strong])
+        #expect(parse.tokens.map { (storage.string as NSString).substring(with: $0.range) } == ["**bold**"])
     }
 
     @Test func aPanicInTheParserThrows() throws {
