@@ -1,20 +1,20 @@
 #!/bin/bash
 # Xcode build phase (app/project.yml): builds the dewline command from core/crates/cli for each architecture in ARCHS
 # and puts one binary at Dewline.app/Contents/Helpers/dewline, signed with the app's identity when Xcode signs.
-# Release builds use cargo's release profile. MACOSX_DEPLOYMENT_TARGET comes from Xcode, so the command needs the
-# same macOS as the app.
+# Every configuration but Debug uses cargo's release profile. MACOSX_DEPLOYMENT_TARGET comes from Xcode, so the
+# command needs the same macOS as the app.
 set -euo pipefail
 
 # Xcode opened from the Dock has launchd's PATH, which holds neither rustup's nor Homebrew's cargo.
 export PATH="$PATH:$HOME/.cargo/bin:/opt/homebrew/bin"
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$HOME/Library/Caches/dev.arkwerx.dewline/target}"
 
-if [[ $CONFIGURATION == Release ]]; then
-    set -- --release
-    profile=release
-else
+if [[ $CONFIGURATION == Debug ]]; then
     set --
     profile=debug
+else
+    set -- --release
+    profile=release
 fi
 
 # rustup takes the toolchain from core/rust-toolchain.toml when cargo runs there.

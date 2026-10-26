@@ -41,7 +41,9 @@ fn main() -> ExitCode {
     match open(&files, wait) {
         Ok(()) => ExitCode::SUCCESS,
         Err(message) => {
-            eprintln!("dewline: {message}");
+            for line in message.lines() {
+                eprintln!("dewline: {}", printable(line));
+            }
             ExitCode::FAILURE
         }
     }
@@ -60,7 +62,7 @@ fn open(files: &[OsString], wait: bool) -> Result<(), String> {
         }
     }
     if !errors.is_empty() {
-        return Err(errors.join("\ndewline: "));
+        return Err(errors.join("\n"));
     }
     let socket = Socket::find()?;
     let connections = targets
@@ -74,6 +76,14 @@ fn open(files: &[OsString], wait: bool) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// Paths and the app's messages with control characters replaced, so a
+/// hostile name can't drive the terminal.
+fn printable(text: &str) -> String {
+    text.chars()
+        .map(|c| if c.is_control() { '\u{FFFD}' } else { c })
+        .collect()
 }
 
 #[cfg(test)]
@@ -106,6 +116,14 @@ mod tests {
         assert_eq!(
             parse(&["dewline", "open", "--", "--wait"]).unwrap(),
             (files(&["--wait"]), false)
+        );
+    }
+
+    #[test]
+    fn printable_keeps_text_and_drops_escapes() {
+        assert_eq!(
+            printable("café \u{1b}]0;title\u{7}\r"),
+            "café \u{FFFD}]0;title\u{FFFD}\u{FFFD}"
         );
     }
 

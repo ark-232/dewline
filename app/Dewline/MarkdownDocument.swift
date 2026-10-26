@@ -24,10 +24,31 @@ final class MarkdownDocument: NSDocument {
 
     override func close() {
         super.close()
-        for waiter in waiters {
-            waiter.reply(.closed)
+        let waiters = waiters
+        self.waiters = []
+        // Quitting closes edited documents through their save sheets, then exits in the same pass. Answering on the
+        // next pass leaves a quit unanswered, so the command reports it.
+        DispatchQueue.main.async {
+            for waiter in waiters {
+                waiter.reply(.closed)
+            }
         }
-        waiters = []
+    }
+
+    /// Reads through a descriptor that must be a regular file, so a path that became a FIFO or a device after it
+    /// was checked fails at once instead of blocking the main thread.
+    override func read(from url: URL, ofType typeName: String) throws {
+        let fd = Darwin.open(url.path, O_RDONLY | O_NONBLOCK | O_CLOEXEC)
+        guard fd >= 0 else {
+            let code: CocoaError.Code = errno == ENOENT ? .fileReadNoSuchFile : errno == EACCES ? .fileReadNoPermission : .fileReadUnknown
+            throw CocoaError(code, userInfo: [NSURLErrorKey: url])
+        }
+        let file = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        var info = stat()
+        guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG else {
+            throw CocoaError(.fileReadUnknown, userInfo: [NSURLErrorKey: url])
+        }
+        try read(from: file.readToEnd() ?? Data(), ofType: typeName)
     }
 
     override func read(from data: Data, ofType typeName: String) throws {

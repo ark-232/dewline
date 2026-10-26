@@ -228,6 +228,19 @@ fn bad_names_open_nothing() {
 }
 
 #[test]
+fn a_hostile_name_cannot_drive_the_terminal() {
+    let fixture = Fixture::new();
+    let output = fixture.run(&["open", "\u{1b}]0;owned\u{7}/plan.md:3"]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        !output.stderr.contains(&0x1b) && !output.stderr.contains(&0x07),
+        "{:?}",
+        stderr(&output)
+    );
+    assert!(stderr(&output).contains("]0;owned"), "{}", stderr(&output));
+}
+
+#[test]
 fn nothing_listening_fails_without_starting_the_app() {
     let fixture = Fixture::new();
     let start = Instant::now();

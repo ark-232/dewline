@@ -44,7 +44,7 @@ final class ControlSocket: @unchecked Sendable {
     static let version = 1
     /// The longest request, newline included.
     static let maxRequest = 16 * 1024
-    static let maxConnections = 64
+    static let maxConnections = 16
     /// How long a connection has to send its request.
     static let requestDeadline = DispatchTimeInterval.seconds(2)
 
@@ -121,7 +121,7 @@ final class ControlSocket: @unchecked Sendable {
         }
     }
 
-    /// The request in `line`, without its newline, when it names an existing regular file by an absolute path.
+    /// The request in `line`, without its newline, when it is well formed and names an absolute path.
     static func parse(_ line: Data) -> Result<Open, Failure> {
         struct Wire: Decodable {
             let v: Int
@@ -138,10 +138,14 @@ final class ControlSocket: @unchecked Sendable {
             wire.line ?? 1 >= 1, wire.col ?? 1 >= 1, wire.line != nil || wire.col == nil
         else { return .failure(.malformed) }
         guard path.hasPrefix("/") else { return .failure(.notAbsolute) }
-        var info = stat()
-        guard stat(path, &info) == 0 else { return .failure(.notFound) }
-        guard info.st_mode & S_IFMT == S_IFREG else { return .failure(.notAFile) }
         return .success(Open(path: path, line: wire.line, column: wire.col, wait: wire.wait ?? false))
+    }
+
+    /// Why `path` can't be opened, or nil when it names an existing regular file.
+    static func refusal(of path: String) -> Failure? {
+        var info = stat()
+        guard stat(path, &info) == 0 else { return .notFound }
+        return info.st_mode & S_IFMT == S_IFREG ? nil : .notAFile
     }
 
     static func address(of path: String) -> sockaddr_un? {
@@ -217,7 +221,18 @@ final class ControlSocket: @unchecked Sendable {
             connection.request = open
             connection.buffer = []
             let handler = handler
-            Task { @MainActor in handler(open, connection) }
+            // stat can hang on a dead network volume, and this queue has to stay free for other clients and stop().
+            DispatchQueue.global().async { [weak self] in
+                let refusal = Self.refusal(of: open.path)
+                guard let self else { return }
+                self.queue.async {
+                    if let refusal {
+                        self.send(.refused(refusal), to: connection)
+                    } else if connection.isOpen {
+                        Task { @MainActor in handler(open, connection) }
+                    }
+                }
+            }
         }
     }
 

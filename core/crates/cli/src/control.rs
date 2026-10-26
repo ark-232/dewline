@@ -4,6 +4,7 @@
 //! once the document closes when the request waits.
 
 use std::env;
+use std::fs;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::os::fd::AsRawFd;
 use std::os::unix::net::UnixStream;
@@ -67,7 +68,7 @@ impl Socket {
             Some(Reply::Error { error, message }) => Err(format!(
                 "{}: Dewline didn't open it: {}",
                 target.path,
-                printable(message.as_deref().unwrap_or(&error))
+                message.as_deref().unwrap_or(&error)
             )),
             Some(Reply::Closed) | None => Err(format!("{}: Dewline didn't open it", target.path)),
         }
@@ -129,17 +130,36 @@ impl Connection {
     }
 }
 
-/// Starts the app behind the current window, so the launch window it shows
-/// with nothing open stays out of sight until `activate` brings the file.
+/// Starts the app this command ships in, or else the one Launch Services
+/// has for the bundle id. It starts behind the current window, so the launch
+/// window it shows with nothing open stays out of sight until `activate`
+/// brings the file forward.
 fn launch() -> Result<(), String> {
-    let status = Command::new("/usr/bin/open")
-        .args(["-g", "-b", BUNDLE_ID])
+    let exe = env::current_exe().and_then(fs::canonicalize);
+    let mut open = Command::new("/usr/bin/open");
+    open.arg("-g");
+    match exe.as_deref().ok().and_then(enclosing_app) {
+        Some(app) => open.arg("-a").arg(app),
+        None => open.args(["-b", BUNDLE_ID]),
+    };
+    let status = open
         .status()
         .map_err(|error| format!("couldn't run /usr/bin/open: {error}"))?;
     if !status.success() {
         return Err("couldn't start Dewline; is it installed?".into());
     }
     Ok(())
+}
+
+/// `Dewline.app` for `Dewline.app/Contents/Helpers/dewline`.
+fn enclosing_app(exe: &Path) -> Option<&Path> {
+    let helpers = exe.parent()?;
+    let contents = helpers.parent()?;
+    let app = contents.parent()?;
+    (helpers.file_name()? == "Helpers"
+        && contents.file_name()? == "Contents"
+        && app.extension()? == "app")
+        .then_some(app)
 }
 
 /// Connects within CONNECT_TIMEOUT to a socket whose server runs as `uid`.
@@ -259,10 +279,7 @@ fn decode_reply(line: &[u8]) -> Result<Reply, String> {
             error,
             message: line.message,
         }),
-        (reply, _) => Err(format!(
-            "Dewline sent an unknown reply: {}",
-            printable(reply)
-        )),
+        (reply, _) => Err(format!("Dewline sent an unknown reply: {reply}")),
     }
 }
 
@@ -300,13 +317,6 @@ fn read_line(reader: &mut impl BufRead) -> io::Result<Option<Vec<u8>>> {
             "the connection ended inside a line",
         )),
     }
-}
-
-/// Text from the app with control characters replaced, so it can't drive the terminal.
-fn printable(text: &str) -> String {
-    text.chars()
-        .map(|c| if c.is_control() { '\u{FFFD}' } else { c })
-        .collect()
 }
 
 #[cfg(test)]
@@ -416,19 +426,37 @@ mod tests {
     }
 
     #[test]
+    fn the_command_finds_the_app_it_ships_in() {
+        let app = Path::new("/Applications/Dewline.app");
+        assert_eq!(
+            enclosing_app(Path::new(
+                "/Applications/Dewline.app/Contents/Helpers/dewline"
+            )),
+            Some(app)
+        );
+        for exe in [
+            "/opt/homebrew/bin/dewline",
+            "/Users/me/target/release/dewline",
+            "/Applications/Dewline/Contents/Helpers/dewline",
+            "/Applications/Dewline.app/Contents/MacOS/Dewline",
+        ] {
+            assert_eq!(enclosing_app(Path::new(exe)), None, "{exe}");
+        }
+    }
+
+    #[test]
+    fn a_socket_path_too_long_fails_at_once() {
+        let path = PathBuf::from(format!("/tmp/{}/control.sock", "d".repeat(120)));
+        let error = connect(&path, euid()).unwrap_err();
+        assert!(!nobody_listens(&error), "{error}");
+    }
+
+    #[test]
     fn nothing_listening_fails_fast() {
         let dir = tempfile::tempdir().unwrap();
         let start = Instant::now();
         let error = connect(&dir.path().join("control.sock"), euid()).unwrap_err();
         assert!(nobody_listens(&error), "{error}");
         assert!(start.elapsed() < Duration::from_secs(1));
-    }
-
-    #[test]
-    fn printable_keeps_text_and_drops_escapes() {
-        assert_eq!(
-            printable("café \u{1b}[2Jgone\n"),
-            "café \u{FFFD}[2Jgone\u{FFFD}"
-        );
     }
 }

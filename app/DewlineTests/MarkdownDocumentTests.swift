@@ -62,6 +62,18 @@ struct MarkdownDocumentTests {
         }
     }
 
+    /// A FIFO would block the main thread until a writer came, and /dev/zero would never end.
+    @Test func readsOnlyRegularFilesAndNeverWaitsOnAPipe() throws {
+        let folder = FileManager.default.temporaryDirectory.appending(path: "dewline-read-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let pipe = folder.appending(path: "plan.md")
+        #expect(mkfifo(pipe.path, 0o600) == 0)
+        for url in [pipe, URL(fileURLWithPath: "/dev/zero"), folder, folder.appending(path: "missing.md")] {
+            #expect(throws: CocoaError.self, "\(url.path)") { try MarkdownDocument().read(from: url, ofType: Self.type) }
+        }
+    }
+
     /// A document for `bytes` in a new temporary folder, in a window that is never shown.
     private func open(_ bytes: Data) throws -> (URL, MarkdownDocument, EditorTextView) {
         let folder = FileManager.default.temporaryDirectory.appending(path: "dewline-save-\(UUID().uuidString)")
