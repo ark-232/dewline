@@ -175,18 +175,18 @@ class CaretTextView: NSTextView {
     }
 
     override func doCommand(by selector: Selector) {
-        let repeating = NSApp.currentEvent.map { $0.type == .keyDown && $0.isARepeat } ?? false
-        guard Self.longMoves.contains(selector), !repeating else { return super.doCommand(by: selector) }
+        guard Self.longMoves.contains(selector) else { return super.doCommand(by: selector) }
         move(.longMove) { super.doCommand(by: selector) }
     }
 
     /// Runs a move the user asked for, then shows what the Motion level allows: the streak when the view did not
-    /// scroll and both caret rects are visible, otherwise the landing mark after a jump. Find has no landing mark
-    /// because its selected match marks the target.
+    /// scroll and both caret rects are visible, otherwise the landing mark after a jump. A key repeat snaps. Find
+    /// has no landing mark because its selected match marks the target.
     private func move(_ cause: Cause, _ body: () -> Void) {
         let level = Motion.current
         let jumps = cause == .jump || cause == .find
-        guard let window, jumps || level == .lively, !hasMarkedText() else { return body() }
+        let repeating = NSApp.currentEvent.map { $0.type == .keyDown && $0.isARepeat } ?? false
+        guard let window, jumps || level == .lively, !repeating, !hasMarkedText() else { return body() }
         let from = selectedRange().location
         let old = caretRect(at: from, in: window)
         let visible = visibleRect

@@ -327,6 +327,26 @@ extension CaretTests {
 }
 
 extension CaretTests {
+    /// A key repeat snaps every move, a jump included.
+    @Test(.enabled(if: systemAllowsMotion), arguments: TextKitVariant.allCases)
+    func keyRepeatSnapsJumps(_ variant: TextKitVariant) throws {
+        let caret = try Caret(variant)
+        defer { caret.close() }
+        try motion(.calm) {
+            for (repeating, line) in [(true, 8), (false, 12)] {
+                let key = try #require(NSEvent.keyEvent(
+                    with: .keyDown, location: .zero, modifierFlags: .command, timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: caret.window.windowNumber, context: nil, characters: "g", charactersIgnoringModifiers: "g", isARepeat: repeating, keyCode: 5
+                ))
+                NSApp.postEvent(key, atStart: true)
+                let current = NSApp.nextEvent(matching: .keyDown, until: .distantPast, inMode: .default, dequeue: true)
+                try #require(current === NSApp.currentEvent && current?.isARepeat == repeating)
+                caret.view.jump(toLine: line)
+                #expect(caret.streaking == !repeating, "repeat \(repeating)")
+            }
+        }
+    }
+
     /// The landing mark ends on the caret's line on wrapped paragraphs, both on a document opened just before the
     /// jump, while the layout above the target still moves, and on one already laid out.
     @Test(.enabled(if: systemAllowsMotion), arguments: TextKitVariant.allCases)
