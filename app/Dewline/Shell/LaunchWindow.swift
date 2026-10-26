@@ -16,9 +16,14 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
     private let list = LaunchList()
     private let segments = NSSegmentedControl(labels: ["Recent", "Pinned", "Folders"], trackingMode: .selectOne, target: nil, action: nil)
     private let filter = NSSearchField()
+    private let empty = NSTextField(labelWithString: "")
+    private let underline = Stroke(LaunchWindowController.cobalt)
+    private let horizon = Stroke(.tertiaryLabelColor)
     private var rows: [Row] = []
+    /// First lines of files and paths of folders, empty for a file or folder that no longer exists.
     private var previews: [URL: String] = [:]
     private var branches: [URL: String] = [:]
+    private static var entered = false
 
     init() {
         let window = NSWindow(
@@ -47,6 +52,28 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
         fatalError("LaunchWindowController is built in code")
     }
 
+    /// The first time per launch, the window rises 10 pt as it fades in and the rules draw in; under
+    /// Reduce Motion it only fades.
+    override func showWindow(_ sender: Any?) {
+        guard let window, !window.isVisible, !Self.entered else { return super.showWindow(sender) }
+        Self.entered = true
+        let still = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let frame = window.frame
+        window.alphaValue = 0
+        if !still { window.setFrameOrigin(NSPoint(x: frame.minX, y: frame.minY - 10)) }
+        super.showWindow(sender)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = still ? 0.15 : 0.26
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            window.animator().alphaValue = 1
+            window.animator().setFrame(frame, display: true)
+        }
+        if !still {
+            underline.drawIn(after: 0.08, over: 0.24)
+            horizon.drawIn(after: 0.16, over: 0.3)
+        }
+    }
+
     private func content() -> NSView {
         let left = NSVisualEffectView()
         left.material = .sidebar
@@ -55,10 +82,9 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
         let right = FillView(.textBackgroundColor)
 
         let icon = NSImageView(image: Self.icon)
-        let wordmark = NSTextField(labelWithAttributedString: Self.wordmark)
+        let wordmark = NSTextField(labelWithAttributedString: NSAttributedString(string: "dewline", attributes: Self.wordmark))
         let tagline = NSTextField(labelWithString: "Nothing changes behind your back.")
         tagline.textColor = .secondaryLabelColor
-        let horizon = FillView(.tertiaryLabelColor)
         let actions = NSStackView(views: [
             LaunchAction("New Document", symbol: "square.and.pencil", shortcut: "⌘N", action: #selector(AppDelegate.newDocument(_:))),
             LaunchAction("Open…", symbol: "folder", shortcut: "⌘O", action: #selector(NSDocumentController.openDocument(_:))),
@@ -94,6 +120,8 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
+        empty.textColor = .tertiaryLabelColor
+        empty.alignment = .center
         let shows = NSButton(checkboxWithTitle: "Show this window when nothing is open", target: self, action: #selector(toggleShows(_:)))
         shows.controlSize = .small
         shows.font = .systemFont(ofSize: 11)
@@ -104,11 +132,11 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
             view.translatesAutoresizingMaskIntoConstraints = false
             root.addSubview(view)
         }
-        for view in [icon, wordmark, tagline, horizon, actions, version] as [NSView] {
+        for view in [icon, wordmark, underline, tagline, horizon, actions, version] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             left.addSubview(view)
         }
-        for view in [segments, filter, scroll, shows] as [NSView] {
+        for view in [segments, filter, scroll, empty, shows] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             right.addSubview(view)
         }
@@ -130,6 +158,11 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
             icon.heightAnchor.constraint(equalToConstant: 96),
             wordmark.topAnchor.constraint(equalTo: icon.bottomAnchor, constant: 14),
             wordmark.centerXAnchor.constraint(equalTo: left.centerXAnchor),
+            // The underline sits under "line"; a label's text starts 2 pt in.
+            underline.leadingAnchor.constraint(equalTo: wordmark.leadingAnchor, constant: 2 + Self.width("dew")),
+            underline.widthAnchor.constraint(equalToConstant: Self.width("line") - 0.4),
+            underline.topAnchor.constraint(equalTo: wordmark.firstBaselineAnchor, constant: 5),
+            underline.heightAnchor.constraint(equalToConstant: 2.5),
             tagline.topAnchor.constraint(equalTo: wordmark.bottomAnchor, constant: 6),
             tagline.centerXAnchor.constraint(equalTo: left.centerXAnchor),
             horizon.topAnchor.constraint(equalTo: tagline.bottomAnchor, constant: 20),
@@ -151,6 +184,8 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
             scroll.leadingAnchor.constraint(equalTo: right.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: right.trailingAnchor),
             scroll.bottomAnchor.constraint(equalTo: shows.topAnchor, constant: -10),
+            empty.centerXAnchor.constraint(equalTo: scroll.centerXAnchor),
+            empty.centerYAnchor.constraint(equalTo: scroll.centerYAnchor, constant: -12),
             shows.leadingAnchor.constraint(equalTo: right.leadingAnchor, constant: 20),
             shows.bottomAnchor.constraint(equalTo: right.bottomAnchor, constant: -14),
         ])
@@ -188,28 +223,39 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
         if let first = rows.firstIndex(where: { if case .item = $0 { true } else { false } }) {
             list.selectRowIndexes([first], byExtendingSelection: false)
         }
+        empty.stringValue = !query.isEmpty ? "Nothing matches \u{201C}\(query)\u{201D}."
+            : ["Files you open appear here.", "Right-click a file in the sidebar to pin it.", "Folders you open appear here."][segments.selectedSegment]
+        empty.isHidden = !rows.isEmpty
         loadDetails()
     }
 
     /// Reads each file's first line and each folder's branch off the main thread, after the first frame.
     private func loadDetails() {
-        let files = rows.compactMap { row -> URL? in
-            guard case .item(let url, false, _) = row, previews[url] == nil else { return nil }
-            return url
+        let items = rows.compactMap { row -> (URL, Bool)? in
+            guard case .item(let url, let isFolder, _) = row, previews[url] == nil else { return nil }
+            return (url, isFolder)
         }
         let folders = rows.compactMap { row -> URL? in
             guard case .group(let url) = row, branches[url] == nil else { return nil }
             return url
         }
-        guard !files.isEmpty || !folders.isEmpty else { return }
+        guard !items.isEmpty || !folders.isEmpty else { return }
         Task {
             let found = await Task.detached(priority: .userInitiated) {
                 var previews: [URL: String] = [:]
-                for url in files {
+                for (url, isFolder) in items {
+                    guard FileManager.default.fileExists(atPath: url.path) else {
+                        previews[url] = ""
+                        continue
+                    }
+                    if isFolder {
+                        previews[url] = abbreviatedPath(url)
+                        continue
+                    }
                     let handle = try? FileHandle(forReadingFrom: url)
                     let data = (try? handle?.read(upToCount: 4096)) ?? nil
                     try? handle?.close()
-                    previews[url] = data.flatMap { firstProseLine(of: String(decoding: $0, as: UTF8.self)) } ?? ""
+                    previews[url] = data.flatMap { firstProseLine(of: String(decoding: $0, as: UTF8.self)) } ?? " "
                 }
                 var branches: [URL: String] = [:]
                 for url in folders {
@@ -288,7 +334,7 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
             return cell
         case .item(let url, let isFolder, let date):
             let cell = tableView.makeView(withIdentifier: FileCell.identifier, owner: nil) as? FileCell ?? FileCell()
-            cell.show(url, isFolder: isFolder, preview: isFolder ? abbreviatedPath(url) : previews[url], date: date)
+            cell.show(url, isFolder: isFolder, preview: previews[url], date: date)
             return cell
         }
     }
@@ -301,15 +347,14 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
             : NSColor(srgbRed: 0.191, green: 0.374, blue: 0.81, alpha: 1)
     }
 
-    private static var wordmark: NSAttributedString {
-        let serif = NSFont.systemFont(ofSize: 30, weight: .medium).fontDescriptor.withDesign(.serif)!
-        let text = NSMutableAttributedString(string: "dewline", attributes: [
-            .font: NSFont(descriptor: serif, size: 30)!,
-            .foregroundColor: NSColor.labelColor,
-            .kern: -0.4,
-        ])
-        text.addAttributes([.underlineStyle: NSUnderlineStyle.thick.rawValue, .underlineColor: cobalt], range: NSRange(location: 3, length: 4))
-        return text
+    private static let wordmark: [NSAttributedString.Key: Any] = [
+        .font: NSFont(descriptor: NSFont.systemFont(ofSize: 30, weight: .medium).fontDescriptor.withDesign(.serif)!, size: 30)!,
+        .foregroundColor: NSColor.labelColor,
+        .kern: -0.4,
+    ]
+
+    private static func width(_ text: String) -> CGFloat {
+        NSAttributedString(string: text, attributes: wordmark).size().width
     }
 
     /// The app icon as the spec draws it: a cobalt tile with a glass pane rising from its bottom edge,
@@ -532,10 +577,60 @@ private final class FileCell: NSTableCellView {
     }
 
     func show(_ url: URL, isFolder: Bool, preview text: String?, date: Date?) {
+        let gone = text?.isEmpty == true
         imageView?.image = NSImage(systemSymbolName: isFolder ? "folder.fill" : "doc.text", accessibilityDescription: nil)
-        imageView?.contentTintColor = isFolder ? .controlAccentColor : .secondaryLabelColor
+        imageView?.contentTintColor = gone ? .tertiaryLabelColor : isFolder ? .controlAccentColor : .secondaryLabelColor
         textField?.stringValue = url.lastPathComponent
-        preview.stringValue = text ?? " "
+        textField?.textColor = gone ? .secondaryLabelColor : .labelColor
+        preview.stringValue = gone ? "Moved or deleted" : text ?? " "
+        preview.textColor = gone ? .tertiaryLabelColor : .secondaryLabelColor
         time.stringValue = date.map { shortDate($0) } ?? ""
+    }
+}
+
+/// A horizontal rule that can draw itself in from the left.
+private final class Stroke: NSView {
+    private let color: NSColor
+    private let shape = CAShapeLayer()
+
+    init(_ color: NSColor) {
+        self.color = color
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.addSublayer(shape)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("Stroke is built in code")
+    }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        shape.strokeColor = color.cgColor
+    }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: 0, y: bounds.midY))
+        path.addLine(to: CGPoint(x: bounds.maxX, y: bounds.midY))
+        shape.frame = bounds
+        shape.path = path
+        shape.lineWidth = bounds.height
+        CATransaction.commit()
+    }
+
+    func drawIn(after delay: CFTimeInterval, over duration: CFTimeInterval) {
+        let draw = CABasicAnimation(keyPath: "strokeEnd")
+        draw.fromValue = 0
+        draw.toValue = 1
+        draw.beginTime = CACurrentMediaTime() + delay
+        draw.duration = duration
+        draw.fillMode = .backwards
+        draw.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        shape.add(draw, forKey: "draw")
     }
 }

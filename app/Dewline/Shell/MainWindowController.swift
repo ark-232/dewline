@@ -10,6 +10,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     private let page = NSBackgroundExtensionView()
     private(set) var textView: EditorTextView?
     private var outlineUpdate: Task<Void, Never>?
+    private var sectionUpdate: Task<Void, Never>?
 
     init(folder: Folder?) {
         self.folder = folder
@@ -89,8 +90,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         textView.string = document.text
         if let old = self.textView {
             NotificationCenter.default.removeObserver(self, name: NSText.didChangeNotification, object: old)
+            NotificationCenter.default.removeObserver(self, name: NSView.boundsDidChangeNotification, object: old.enclosingScrollView?.contentView)
         }
         NotificationCenter.default.addObserver(self, selector: #selector(textChanged), name: NSText.didChangeNotification, object: textView)
+        NotificationCenter.default.addObserver(self, selector: #selector(scrolled), name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
         self.textView = textView
         sidebar.show(document.fileURL, text: document.text)
         if let url = document.fileURL {
@@ -171,6 +174,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled, let self, let textView = self.textView else { return }
             self.sidebar.updateOutline(textView.string)
+        }
+    }
+
+    /// Marks the section at the top of the page 160 ms after scrolling stops.
+    @objc private func scrolled() {
+        sectionUpdate?.cancel()
+        sectionUpdate = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(160))
+            guard !Task.isCancelled, let self, let textView = self.textView, let scrollView = textView.enclosingScrollView else { return }
+            let top = NSPoint(x: textView.textContainerOrigin.x + 4, y: textView.visibleRect.minY + scrollView.contentInsets.top + 8)
+            self.sidebar.markSection(at: textView.characterIndexForInsertion(at: top))
         }
     }
 

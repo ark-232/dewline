@@ -14,6 +14,8 @@ final class SidebarNode {
         case heading(Heading)
         /// The last row of a folder: what its .gitignore hid.
         case ignored([String])
+        /// The row after the first 12 headings that shows the rest.
+        case more(Int)
     }
 
     let kind: Kind
@@ -33,7 +35,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     var jump: (Heading) -> Void = { _ in }
 
     private let folder: Folder?
-    private let outlineView = NSOutlineView()
+    private let outlineView = SidebarOutlineView()
     private let pinned = SidebarNode(.section("Pinned"))
     private let recents = SidebarNode(.section("Recents"))
     private let outlineSection = SidebarNode(.section("Outline"), children: [])
@@ -41,6 +43,10 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     private var expandedOnce: Set<ObjectIdentifier> = []
     /// The open file's row in the tree.
     private var fileNode: SidebarNode?
+    private var headings: [Heading] = []
+    private var showsAllHeadings = false
+    /// The location of the heading whose section is at the top of the page.
+    private var section: Int?
 
     init(folder: Folder?) {
         self.folder = folder
@@ -77,6 +83,18 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         outlineView.doubleAction = #selector(doubleClicked(_:))
         outlineView.menu = NSMenu()
         outlineView.menu?.delegate = self
+        outlineView.clickedWithoutSelecting = { [weak self] node in
+            switch node.kind {
+            case .heading(let heading):
+                self?.jump(heading)
+            case .more:
+                self?.showsAllHeadings = true
+                self?.listHeadings()
+            default:
+                return false
+            }
+            return true
+        }
         let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 240, height: 600))
         scrollView.documentView = outlineView
         scrollView.drawsBackground = false
@@ -96,6 +114,8 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     func show(_ url: URL?, text: String) {
         fileNode?.children = nil
         fileNode = url.flatMap(treeNode(for:))
+        showsAllHeadings = false
+        section = nil
         updateOutline(text)
         if let fileNode {
             outlineView.expandItem(fileNode)
@@ -108,13 +128,34 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     }
 
     func updateOutline(_ text: String) {
-        let headings = outline(of: text).map { SidebarNode(.heading($0)) }
+        headings = outline(of: text)
+        listHeadings()
+    }
+
+    private func listHeadings() {
+        var rows = headings.map { SidebarNode(.heading($0)) }
+        if rows.count > 12, !showsAllHeadings {
+            rows = rows.prefix(12) + [SidebarNode(.more(rows.count))]
+        }
         if let fileNode {
-            fileNode.children = headings
+            fileNode.children = rows
         } else {
-            outlineSection.children = headings
+            outlineSection.children = rows
         }
         reload()
+    }
+
+    /// Sets in italic the heading whose section holds `location`.
+    func markSection(at location: Int) {
+        let current = headings.last { $0.location <= location }?.location
+        guard current != section else { return }
+        section = current
+        outlineView.enumerateAvailableRowViews { rowView, row in
+            guard let cell = rowView.view(atColumn: 0) as? SidebarCell,
+                case .heading(let heading) = (outlineView.item(atRow: row) as? SidebarNode)?.kind
+            else { return }
+            cell.show(heading, current: heading.location == current)
+        }
     }
 
     private var sections: [SidebarNode] {
@@ -182,8 +223,6 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             } else {
                 open(entry.url, false)
             }
-        case .heading(let heading):
-            jump(heading)
         default:
             break
         }
@@ -295,23 +334,45 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             return cell
         case .heading(let heading):
             let cell = cell(SidebarCell.heading)
-            cell.show(heading)
+            cell.show(heading, current: heading.location == section)
             return cell
         case .ignored(let names):
             let cell = cell(SidebarCell.note)
-            let shown = names.prefix(2).joined(separator: ", ") + (names.count > 2 ? " and \(names.count - 2) more" : "")
-            cell.textField?.stringValue = "\(shown) hidden by .gitignore"
+            cell.textField?.stringValue = names.count > 2
+                ? "\(names.count) items hidden by .gitignore"
+                : names.joined(separator: ", ") + " hidden by .gitignore"
+            cell.textField?.textColor = .tertiaryLabelColor
+            cell.toolTip = names.joined(separator: "\n")
+            return cell
+        case .more(let count):
+            let cell = cell(SidebarCell.note)
+            cell.textField?.stringValue = "Show all \(count)"
+            cell.textField?.textColor = .controlAccentColor
+            cell.toolTip = nil
             return cell
         }
     }
 
     func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
-        if case .heading = (item as! SidebarNode).kind { return 22 }
-        return 26
+        switch (item as! SidebarNode).kind {
+        case .heading, .more: 22
+        default: 26
+        }
     }
 
     private func cell(_ identifier: NSUserInterfaceItemIdentifier) -> SidebarCell {
         outlineView.makeView(withIdentifier: identifier, owner: nil) as? SidebarCell ?? SidebarCell(identifier)
+    }
+}
+
+/// Headings and Show All act on mouse down and never take the selection, which stays on the open file.
+private final class SidebarOutlineView: NSOutlineView {
+    var clickedWithoutSelecting: (SidebarNode) -> Bool = { _ in false }
+
+    override func mouseDown(with event: NSEvent) {
+        let row = row(at: convert(event.locationInWindow, from: nil))
+        if let node = item(atRow: row) as? SidebarNode, clickedWithoutSelecting(node) { return }
+        super.mouseDown(with: event)
     }
 }
 
@@ -428,7 +489,10 @@ private final class SidebarCell: NSTableCellView {
         detail.stringValue = branch ?? ""
     }
 
-    func show(_ heading: Heading) {
+    func show(_ heading: Heading, current: Bool) {
+        textField?.font = current
+            ? NSFont(descriptor: NSFont.systemFont(ofSize: 12).fontDescriptor.withSymbolicTraits(.italic), size: 12)
+            : .systemFont(ofSize: 12)
         textField?.stringValue = heading.title
         detail.stringValue = String(heading.line)
         indent?.constant = CGFloat(heading.level - 1) * 10
