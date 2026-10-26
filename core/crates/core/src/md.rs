@@ -396,11 +396,31 @@ mod tests {
         );
     }
 
+    // Mostly single syntax characters: at the default case count, a uniform
+    // mix with longer tokens rarely builds a span.
+    fn markdown() -> impl Strategy<Value = String> {
+        let piece = prop_oneof![
+            12 => prop::sample::select(vec![
+                "-", "*", "_", "~", "`", "#", "!", "[", "]", "(", ")", "<", ">", "=", ":", " ",
+                "\\", "\t", "\x0b", "\n", "é", "🙂", "a",
+            ]),
+            2 => Just("```"),
+            2 => Just("**"),
+            1 => Just("\r\n"),
+            1 => Just("\n> "),
+            1 => Just("\n- "),
+            1 => Just("  "),
+            1 => Just("](u)"),
+            1 => Just("][]"),
+            1 => Just("[a]: u\n"),
+        ];
+        let text = prop::collection::vec(piece, 0..48).prop_map(|pieces| pieces.concat());
+        prop_oneof!["\\PC*", text]
+    }
+
     proptest! {
         #[test]
-        fn offsets_nest_and_never_split_a_surrogate_pair(
-            text in prop_oneof!["\\PC*", "[-*_~`#!\\[\\]()<> \\né🙂a]*"]
-        ) {
+        fn offsets_nest_and_never_split_a_surrogate_pair(text in markdown()) {
             let units: Vec<u16> = text.encode_utf16().collect();
             let found = spans(&text);
             for s in &found {
@@ -414,6 +434,44 @@ mod tests {
             }
             for pair in found.windows(2) {
                 prop_assert!((pair[0].start, pair[1].end) <= (pair[1].start, pair[0].end));
+            }
+            let mut parents: Vec<&Span> = Vec::new();
+            for s in &found {
+                while parents.last().is_some_and(|p| p.end <= s.start) {
+                    parents.pop();
+                }
+                if let Some(p) = parents.last() {
+                    prop_assert!(p.content_start <= s.start && s.end <= p.content_end, "{s:?} in {p:?}");
+                }
+                parents.push(s);
+            }
+        }
+
+        #[test]
+        fn markers_hold_only_syntax(text in markdown()) {
+            for (kind, [open, content, close]) in split(&text) {
+                let syntax = match kind {
+                    SpanKind::Emphasis => matches!(open, "*" | "_") && close == open,
+                    SpanKind::Strong => matches!(open, "**" | "__") && close == open,
+                    SpanKind::Strikethrough => matches!(open, "~" | "~~") && close == open,
+                    SpanKind::InlineCode => {
+                        open.starts_with('`') && open.trim_start_matches('`').is_empty() && close == open
+                    }
+                    SpanKind::Link => {
+                        (open == "[" && close.starts_with(']')) || (open == "<" && close == ">")
+                    }
+                    SpanKind::Image => open == "![" && close.starts_with(']'),
+                    SpanKind::Heading { level } => {
+                        let atx = open.trim_end_matches(BLANK) == "#".repeat(level.into());
+                        let setext = open.is_empty() && close.contains(['\n', '\r']);
+                        ((atx && !content.starts_with(BLANK)) || setext) && !content.ends_with(BLANK)
+                    }
+                    SpanKind::FencedCode => {
+                        (open.starts_with("```") || open.starts_with("~~~"))
+                            && open.find('\n').is_none_or(|at| at + 1 == open.len())
+                    }
+                };
+                prop_assert!(syntax, "{kind:?} {open:?} {content:?} {close:?} in {text:?}");
             }
         }
     }
