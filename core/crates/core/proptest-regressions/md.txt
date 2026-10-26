@@ -31,3 +31,4 @@ cc b63d5ea62308132b359295002d941e0343f76b67b4275d639fdcb5e44d9cbdfe # shrinks to
 cc 8183893f5085ca0084610446ec2cbe66d5342514a19fb691a2d9e5561502096d # shrinks to text = "[a]: /u\n\t-|-\n|---|---|\n$"
 cc 3e72d8a2df2e87e11406e28af75ae0306a84943eb0ec01b584ae4e05bf91a2eb # shrinks to text = "-\n- ```\n\n---------", pick = 3459380549304037796, offset = 4011738817603970210, delete = 0, insert = "\r\n"
 cc b52d3b0426698563536a96efffe9aacd748f7415ec24fddca6ccbcdd20af2af2 # shrinks to text = "[^(-\n(```]:-<\n------*\n\n-", pick = 7320256739516652194, offset = 9973492643941528602, delete = 0, insert = "~~~"
+cc 191cd3e539724d2893f5ae65a25db0c116413d26444815f41e0f0607e1685cb2 # shrinks to text = ">_\n| a | b |\n>|---|---|\n\t", pick = 11816470729901543282, offset = 0, delete = 0, insert = "\n"
