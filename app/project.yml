@@ -23,10 +23,6 @@ settings:
 packages:
   MdCore:
     path: ../Packages/MdCore
-  # The M0 math engine trial; the decision record keeps SwiftMath or RaTeX.
-  SwiftMath:
-    url: https://github.com/mgriebling/SwiftMath
-    revision: 1d2c90827e9c3908269d810d055fb03b7da5fd53
   # Moves only by hand, with the tarball SHA-256 in .github/workflows/release.yml (docs/release.md).
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
@@ -51,7 +47,6 @@ targets:
         buildPhase: resources
     dependencies:
       - package: MdCore
-      - package: SwiftMath
       - package: Sparkle
     settings:
       base:

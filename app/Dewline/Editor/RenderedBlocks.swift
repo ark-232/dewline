@@ -127,9 +127,7 @@ final class RenderedBlocks {
         case .image:
             source = textView.documentFolder.map { $0.appending(path: block.source).standardizedFileURL.path } ?? ""
         }
-        return PictureRequest(
-            kind: block.kind, source: source, scale: textView.window?.backingScaleFactor ?? 2, colors: colors, engine: MathEngine.current
-        )
+        return PictureRequest(kind: block.kind, source: source, scale: textView.window?.backingScaleFactor ?? 2, colors: colors)
     }
 
     private static func touches(_ range: NSRange, _ selection: [NSRange]) -> Bool {

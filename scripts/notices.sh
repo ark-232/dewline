@@ -58,13 +58,7 @@ for pin in resolved["pins"]:
     version = pin["state"].get("version") or pin["state"]["revision"][:12]
     if not folder.is_dir():
         sys.exit(f"notices.sh: no checkout at {folder}; run scripts/build-release.sh first")
-    if pin["identity"] == "swiftmath":
-        fonts = folder / "Sources/SwiftMath/mathFonts.bundle"
-        add("SwiftMath", version, "MIT", pin["location"], license_files(folder))
-        add("SwiftMath math fonts (Latin Modern, TeX Gyre Termes, XITS, KpMath and others)", version,
-            "GUST Font License, OFL-1.1", pin["location"], license_files(fonts) + [fonts / "GUST-FONT-LICENSE.txt", fonts / "OFL.txt"])
-    else:
-        add(folder.name, version, "MIT and the notices in its LICENSE", pin["location"], license_files(folder))
+    add(folder.name, version, "MIT and the notices in its LICENSE", pin["location"], license_files(folder))
 add("JetBrains Mono", "2.304", "OFL-1.1", "https://github.com/JetBrains/JetBrainsMono", [root / "app/Dewline/Fonts/JetBrainsMono-OFL.txt"])
 
 uniffi = sorted({f"{p['name']} {p['version']}" for p in crates if p["name"].startswith("uniffi")})
