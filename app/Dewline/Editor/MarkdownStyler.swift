@@ -67,6 +67,15 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
         updateReveal()
     }
 
+    /// Spelling and grammar marks skip code, math, front matter, addresses, wikilink targets and HTML tags.
+    func textView(_ textView: NSTextView, shouldSetSpellingState value: Int, range affectedCharRange: NSRange) -> Int {
+        guard value != 0 else { return value }
+        let text = textView.textStorage!.mutableString
+        let literal = blocks.index.isCode(affectedCharRange, in: text)
+            || SpikeTokenizer.literals(in: text, line: text.lineRange(for: affectedCharRange)).contains { NSIntersectionRange($0, affectedCharRange).length > 0 }
+        return literal ? 0 : value
+    }
+
     nonisolated func textStorage(
         _ textStorage: NSTextStorage,
         didProcessEditing editedMask: NSTextStorageEditActions,

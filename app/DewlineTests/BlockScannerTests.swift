@@ -45,6 +45,19 @@ struct BlockScannerTests {
         #expect(index.blocks.isEmpty)
     }
 
+    @Test func frontMatterAndIndentedCodeAreCode() {
+        let text = NSMutableString(string: "---\ntitle: x\n\nPara\n\n    code\n- item\n\n    more\n")
+        var index = BlockIndex()
+        _ = index.update(text, edited: NSRange(location: 0, length: text.length), delta: text.length)
+        func code(_ word: String) -> Bool {
+            index.isCode(text.range(of: word), in: text)
+        }
+        #expect(!code("title") && code("code") && !code("more"))
+        text.insert("---\n", at: 13)
+        _ = index.update(text, edited: NSRange(location: 13, length: 4), delta: 4)
+        #expect(code("title") && !code("Para"))
+    }
+
     @Test func textBesideAnImageEndsItsBlock() {
         let text = NSMutableString(string: "Text\n\n![a](b.png)\n\nMore")
         var index = BlockIndex()

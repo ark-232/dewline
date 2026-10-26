@@ -37,6 +37,15 @@ enum SpikeTokenizer {
         (.emphasis, "(?<![*\\w])(\\*)(?=[^\\s*])(.+?)(?<=[^\\s*])\\*(?![*\\w])"),
         (.emphasis, "(?<![_\\w])(_)(?=\\S)(.+?)(?<=\\S)_(?![_\\w])"),
     ].map { ($0, try! NSRegularExpression(pattern: $1)) }
+    /// Code, a link's or image's destination, a link reference definition, an autolink or HTML tag, and a wikilink's
+    /// target.
+    private static let literal = try! NSRegularExpression(pattern: [
+        "(?<!`)(`+)(?!`).+?(?<!`)\\1(?!`)",
+        "\\]\\([^)\\s]*",
+        "^ {0,3}\\[(?!\\^)[^\\]]+\\]:[ \\t]*\\S+",
+        "</?[A-Za-z][^<>]*>",
+        "\\[\\[[^\\]|]*",
+    ].joined(separator: "|"))
 
     /// Spans in one line (a paragraph without its terminator), outer before inner.
     static func spans(in text: NSString, line: NSRange) -> [SyntaxSpan] {
@@ -68,5 +77,12 @@ enum SpikeTokenizer {
             }
         }
         return spans.sorted { ($0.range.location, -$0.range.length) < ($1.range.location, -$1.range.length) }
+    }
+
+    /// Ranges in one line that hold code or addresses rather than prose.
+    static func literals(in text: NSString, line: NSRange) -> [NSRange] {
+        literal.matches(in: text.substring(with: line), range: NSRange(location: 0, length: line.length)).map {
+            NSRange(location: $0.range.location + line.location, length: $0.range.length)
+        }
     }
 }
