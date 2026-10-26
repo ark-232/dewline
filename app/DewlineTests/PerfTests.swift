@@ -2,7 +2,8 @@ import AppKit
 import Testing
 @testable import Dewline
 
-/// An editor in a window ordered front, so every measurement draws what the window server composites.
+/// An editor in a window ordered front. The test host is not the active app, so the window is not key and
+/// draws no caret.
 @MainActor
 private struct Editor {
     let variant: TextKitVariant
@@ -44,8 +45,9 @@ private struct Editor {
         display()
     }
 
-    /// Milliseconds from a key down sent through the window to the committed display. A typing pause follows.
-    func press(_ keyCode: UInt16, _ characters: String) -> Double {
+    /// Milliseconds from a key down sent through the window to the first committed display, and to the display
+    /// settling. A typing pause follows.
+    func press(_ keyCode: UInt16, _ characters: String) -> (first: Double, settled: Double) {
         let event = { (type: NSEvent.EventType) in
             NSEvent.keyEvent(
                 with: type, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
@@ -54,13 +56,16 @@ private struct Editor {
             )!
         }
         let down = event(.keyDown)
-        let elapsed = milliseconds {
-            window.sendEvent(down)
-            display()
-        }
+        let start = ContinuousClock.now
+        window.sendEvent(down)
+        window.displayIfNeeded()
+        CATransaction.flush()
+        let first = ContinuousClock.now - start
+        display()
+        let settled = ContinuousClock.now - start
         window.sendEvent(event(.keyUp))
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
-        return elapsed
+        return (first / .milliseconds(1), settled / .milliseconds(1))
     }
 
     /// Puts the caret on screen and lets deferred work finish, including TextKit 1's background layout of the
@@ -105,7 +110,9 @@ private func percentiles(_ samples: [Double]) -> [String: Double] {
 }
 
 /// Runs only with `DEWLINE_PERF` set (`TEST_RUNNER_DEWLINE_PERF=1` through xcodebuild) and merges its numbers
-/// into the JSON at `DEWLINE_PERF_OUT`, by variant. `scripts/perf.sh` runs it in a Release build.
+/// into the JSON at `DEWLINE_PERF_OUT`, by variant. `scripts/perf.sh` runs it in a Release build. Key presses
+/// count to their first committed display; opening and select all, which TextKit 1 finishes on later run loop
+/// passes, count until the display settles.
 @MainActor
 @Suite(.serialized, .enabled(if: ProcessInfo.processInfo.environment["DEWLINE_PERF"] != nil))
 struct PerfTests {
@@ -130,9 +137,13 @@ struct PerfTests {
             let editor = Editor(variant)
             let setText = milliseconds { editor.view.string = text }
             let display = milliseconds { editor.display() }
+            #expect(editor.view.textStorage!.attribute(.foregroundColor, at: editor.middleSpan.range.location, effectiveRange: nil) as? NSColor == .clear)
             switch variant {
-            case .textKit1: #expect(editor.view.layoutManager!.firstUnlaidCharacterIndex() > 0)
-            case .textKit2: #expect(editor.view.textLayoutManager!.textViewportLayoutController.viewportRange?.isEmpty == false)
+            case .textKit1:
+                let used = editor.view.layoutManager!.usedRect(for: editor.view.textContainer!)
+                #expect(used.maxY + editor.view.textContainerInset.height >= editor.view.visibleRect.maxY)
+            case .textKit2:
+                #expect(editor.view.textLayoutManager!.textViewportLayoutController.viewportRange?.isEmpty == false)
             }
             try record(variant, "open\(size)", ["ms": setText + display, "setTextMs": setText, "displayMs": display])
             editor.close()
@@ -151,9 +162,9 @@ struct PerfTests {
             let length = storage.length
             var samples: [Double] = []
             for _ in 0..<150 {
-                samples.append(editor.press(0, "a"))
-                #expect(storage.length == length + 1)
-                samples.append(editor.press(51, "\u{7F}"))
+                samples.append(editor.press(0, "a").first)
+                #expect(storage.length == length + 1 && !editor.view.hasMarkedText())
+                samples.append(editor.press(51, "\u{7F}").first)
             }
             #expect(editor.view.string == text)
             try record(variant, "keystroke\(size)", percentiles(samples))
@@ -172,9 +183,9 @@ struct PerfTests {
         let revealed = { storage.attribute(.foregroundColor, at: span.range.location, effectiveRange: nil) as? NSColor == .tertiaryLabelColor }
         var moves: [Double] = []
         for _ in 0..<100 {
-            moves.append(editor.press(124, "\u{F703}"))
+            moves.append(editor.press(124, "\u{F703}").first)
             #expect(revealed())
-            moves.append(editor.press(123, "\u{F702}"))
+            moves.append(editor.press(123, "\u{F702}").first)
             #expect(!revealed())
         }
         var selectAll: [Double] = []
@@ -195,13 +206,18 @@ struct PerfTests {
     func scrolling(_ variant: TextKitVariant) throws {
         let editor = Editor(variant)
         editor.open(Self.documents[0].1)
-        var steps: [Double] = []
+        var first: [Double] = []
+        var settled: [Double] = []
         for _ in 0..<200 {
             let top = editor.view.visibleRect.minY
-            steps.append(editor.press(121, "\u{F72D}"))
+            let step = editor.press(121, "\u{F72D}")
+            first.append(step.first)
+            settled.append(step.settled)
             #expect(editor.view.visibleRect.minY > top)
         }
-        try record(variant, "scroll", percentiles(steps).merging(["over8_3ms": Double(steps.count { $0 > 8.3 })]) { $1 })
+        // TextKit 2 settles after correcting its height estimate for the newly laid out text.
+        try record(variant, "scroll", percentiles(first).merging(["over8_3ms": Double(first.count { $0 > 8.3 })]) { $1 })
+        try record(variant, "scrollSettled", percentiles(settled).merging(["over8_3ms": Double(settled.count { $0 > 8.3 })]) { $1 })
         editor.close()
     }
 }
