@@ -10,6 +10,9 @@ use std::time::{Duration, Instant};
 /// A change seen this soon after git releases the index lock counts as seen
 /// under it.
 pub const RELEASE_GRACE: Duration = Duration::from_millis(150);
+/// A lock held longer covers no more changes: git crashed or someone else
+/// made it.
+pub const LOCK_WAIT: Duration = Duration::from_secs(10);
 /// Larger index files are not read.
 const MAX_INDEX: u64 = 256 << 20;
 /// HEAD, ORIG_HEAD and a worktree's `.git` file are one short line.
@@ -91,11 +94,13 @@ pub enum Entry {
     Unknown,
 }
 
-/// When the engine saw git hold the index lock. An open span is still held.
+/// When the engine saw git hold the index lock, and the index file it saw
+/// when the span opened. An open span is still held.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Span {
     from: Instant,
     to: Option<Instant>,
+    index: Option<Stamp>,
 }
 
 type Stamp = (u64, u64, i64, i64);
@@ -112,7 +117,8 @@ pub struct Repo {
 impl Repo {
     /// The repository whose working tree holds `path`, a realpath: the
     /// nearest folder above it with a `.git` folder, or a `.git` file that
-    /// names the gitdir, as linked worktrees and submodules have.
+    /// names the gitdir, as linked worktrees and submodules have. As for git,
+    /// a gitdir without HEAD is no repository.
     pub fn find(path: &Path) -> Option<Repo> {
         for top in path.ancestors().skip(1) {
             let dot = top.join(".git");
@@ -124,6 +130,12 @@ impl Repo {
             } else {
                 linked_gitdir(&dot, top)?
             };
+            if !gitdir.join("HEAD").is_file() {
+                if metadata.is_dir() {
+                    continue;
+                }
+                return None;
+            }
             return Some(Repo {
                 gitdir,
                 top: top.to_path_buf(),
@@ -169,8 +181,10 @@ impl Repo {
 
     /// Notes whether git holds the index lock at `now`. The engine calls this
     /// on every event in the gitdir, and when it sees a change in the working
-    /// tree. A lock taken and released between two calls leaves a new index
-    /// file, and counts as held from the earlier call to this one.
+    /// tree, before it asks `wrote` about that change. A lock taken and
+    /// released between two calls leaves a new index file, and counts as held
+    /// from the earlier call to this one. A lock released without a new index
+    /// file wrote nothing, and counts for nothing.
     pub fn sample(&mut self, now: Instant) {
         let locked = self.gitdir.join("index.lock").exists();
         let index = fs::metadata(self.gitdir.join("index"))
@@ -183,21 +197,36 @@ impl Repo {
         let previous = self.sampled.replace((now, index));
         let replaced = previous.is_some_and(|(_, before)| before != index);
         let since = previous.map_or(now, |(at, _)| at);
-        match self.spans.last_mut() {
-            Some(span) if span.to.is_none() => {
-                if !locked {
+        if let Some(span) = self.spans.last_mut()
+            && span.to.is_none()
+        {
+            if !locked {
+                if span.index == index {
+                    self.spans.pop();
+                } else {
                     span.to = Some(now);
                 }
             }
-            _ if locked => self.spans.push(Span {
-                from: if replaced { since } else { now },
-                to: None,
-            }),
-            _ if replaced => self.spans.push(Span {
-                from: since,
+            return;
+        }
+        if replaced {
+            // Git takes the lock for no longer than `LOCK_WAIT` without the
+            // engine seeing it in between.
+            let from = now
+                .checked_sub(LOCK_WAIT)
+                .map_or(since, |floor| since.max(floor));
+            self.spans.push(Span {
+                from,
                 to: Some(now),
-            }),
-            _ => {}
+                index: None,
+            });
+        }
+        if locked {
+            self.spans.push(Span {
+                from: now,
+                to: None,
+                index,
+            });
         }
         if self.spans.len() > SPANS {
             self.spans.remove(0);
@@ -205,17 +234,23 @@ impl Repo {
     }
 
     fn covers(&self, seen: Instant) -> bool {
-        self.spans
-            .iter()
-            .any(|span| span.from <= seen && span.to.is_none_or(|to| seen <= to + RELEASE_GRACE))
+        self.spans.iter().any(|span| {
+            let end = span
+                .to
+                .map_or(span.from + LOCK_WAIT, |to| to + RELEASE_GRACE);
+            span.from <= seen && seen <= end
+        })
     }
 
     /// Whether git wrote `bytes`, the change to `path` seen at `seen`: it was
-    /// seen while git held the index lock or within 150 ms of its release,
-    /// and `bytes` are the blob the index stages for `path`. Until the lock
-    /// is released the index is the old one, so ask after.
+    /// seen while git held the index lock, for at most `LOCK_WAIT`, or within
+    /// 150 ms of its release, and `bytes` are the blob the index stages for
+    /// `path`. False while the lock is held, since the index is the old one
+    /// until it is released.
     pub fn wrote(&self, path: &Path, bytes: &[u8], seen: Instant) -> bool {
-        self.covers(seen) && self.entry(path) == Entry::Staged(blob_id(bytes))
+        !self.gitdir.join("index.lock").exists()
+            && self.covers(seen)
+            && self.entry(path) == Entry::Staged(blob_id(bytes))
     }
 }
 
@@ -236,10 +271,11 @@ fn read_file(path: &Path, max: u64) -> io::Result<Vec<u8>> {
         .read(true)
         .custom_flags(libc::O_NONBLOCK)
         .open(path)?;
-    if !file.metadata()?.is_file() {
+    let metadata = file.metadata()?;
+    if !metadata.is_file() {
         return Err(io::Error::new(io::ErrorKind::InvalidData, "not a file"));
     }
-    let mut bytes = Vec::new();
+    let mut bytes = Vec::with_capacity(metadata.len().min(max) as usize);
     file.take(max + 1).read_to_end(&mut bytes)?;
     if bytes.len() as u64 > max {
         return Err(io::ErrorKind::FileTooLarge.into());
@@ -640,6 +676,19 @@ mod tests {
         fs::remove_file(sub.join(".git")).unwrap();
         mkfifo(&sub.join(".git"));
         assert!(Repo::find(&sub.join("CLAUDE.md")).is_none());
+
+        // A gitdir needs a HEAD: git looks past a .git folder without one,
+        // and refuses a .git file that names one.
+        fs::remove_file(sub.join(".git")).unwrap();
+        fs::create_dir(sub.join(".git")).unwrap();
+        let repo = Repo::find(&sub.join("CLAUDE.md")).unwrap();
+        assert_eq!(repo.gitdir(), root.join(".git"));
+        fs::write(
+            root.join("wt/.git"),
+            format!("gitdir: {}\n", sub.join(".git").display()),
+        )
+        .unwrap();
+        assert!(Repo::find(&worktree.join("CLAUDE.md")).is_none());
     }
 
     #[test]
@@ -729,6 +778,11 @@ mod tests {
             ("released and taken again", &[(0, false, 1), (200, false, 2), (300, true, 2)], 320, true),
             ("between two locks", &[(0, false, 1), (100, true, 1), (110, false, 2), (900, true, 2)], 500, false),
             ("an index that disappears", &[(0, false, 1), (200, false, 0)], 100, true),
+            ("a lock released with no new index", &[(0, false, 1), (100, true, 1), (200, false, 1)], 150, false),
+            ("a stale lock covers 10 s", &[(0, false, 1), (100, true, 1)], 10_100, true),
+            ("and no more", &[(0, false, 1), (100, true, 1)], 10_101, false),
+            ("a new index after a long quiet", &[(0, false, 1), (60_000, false, 2)], 50_000, true),
+            ("covers only the last 10 s", &[(0, false, 1), (60_000, false, 2)], 49_999, false),
         ];
         for (name, samples, seen, covered) in table {
             let mut repo = Repo {
@@ -765,6 +819,15 @@ mod tests {
         assert!(repo.wrote(&path, &bytes, seen));
         assert!(!repo.wrote(&path, b"# One, edited\n", seen));
         assert!(!repo.wrote(&path, &bytes, seen + Duration::from_millis(151)));
+
+        // Nothing is git's while the lock is held: the index is the old one.
+        let lock = root.join(".git/index.lock");
+        fs::write(&lock, b"").unwrap();
+        repo.sample(seen);
+        assert!(!repo.wrote(&path, &bytes, seen));
+        fs::remove_file(&lock).unwrap();
+        repo.sample(seen);
+        assert!(repo.wrote(&path, &bytes, seen));
 
         // The same bytes from another writer, with no lock: not git's.
         let later = seen + Duration::from_secs(5);

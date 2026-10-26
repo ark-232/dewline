@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -6,9 +6,9 @@ use blake3::Hash;
 
 /// Session and tool use ids are 1 to this many printable ASCII characters.
 pub const MAX_ID: usize = 128;
-/// A pair of claims explains only changes asked about within this long of
-/// its second half's arrival.
-pub const LINK_WINDOW: Duration = Duration::from_secs(60);
+/// A pair of claims explains only a change seen from this long before its
+/// PreToolUse arrived to this long after its PostToolUse did.
+pub const LINK_GRACE: Duration = Duration::from_secs(5);
 /// PATH_MAX: no realpath is longer.
 const MAX_PATH: usize = 1024;
 /// The ledger forgets its oldest tool uses, and its oldest holds, past this
@@ -147,8 +147,8 @@ impl Claim {
     }
 }
 
-/// A run of one session's paired writes that takes a file from a change's
-/// ancestor to its disk bytes.
+/// One session's paired writes that take a file from a change's ancestor to
+/// its disk bytes: every pair on any run between the two.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Chain {
     pub session: Id,
@@ -174,10 +174,11 @@ impl Use {
 
 struct Link {
     session: Id,
-    tool: Tool,
     path: PathBuf,
     from: Option<Hash>,
     to: Option<Hash>,
+    pre_at: Instant,
+    post_at: Instant,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -231,6 +232,10 @@ impl Claims {
 
     fn half(&mut self, tool_use: ToolUse, pre: bool, now: Instant) -> Result<(), Refused> {
         let ToolUse { id, half } = tool_use;
+        // A Read only holds: it never links, so it needs no pair.
+        if half.tool == Tool::Read {
+            return Ok(());
+        }
         let (entry, result) = match self.uses.remove(&id) {
             None => (Use::Half { pre, half, at: now }, Ok(())),
             Some(Use::Half {
@@ -249,17 +254,26 @@ impl Claims {
                     (Use::Closed { at: now }, Err(Refused::Replayed))
                 }
             }
-            Some(Use::Half { half: first, .. }) => {
-                let (before, after) = if pre { (half, first) } else { (first, half) };
+            Some(Use::Half {
+                half: first,
+                at: first_at,
+                ..
+            }) => {
+                let ((before, pre_at), (after, post_at)) = if pre {
+                    ((half, now), (first, first_at))
+                } else {
+                    ((first, first_at), (half, now))
+                };
                 if (&before.session, before.tool, &before.path)
                     == (&after.session, after.tool, &after.path)
                 {
                     let link = Link {
                         session: before.session,
-                        tool: before.tool,
                         path: before.path,
                         from: before.hash,
                         to: after.hash,
+                        pre_at,
+                        post_at,
                     };
                     (Use::Pair { link, at: now }, Ok(()))
                 } else {
@@ -304,30 +318,27 @@ impl Claims {
     }
 
     /// The chain of one session's Edit, MultiEdit and Write pairs on `path`
-    /// that takes it from `from` to `to`, using only pairs whose second half
-    /// arrived within `LINK_WINDOW` of `now` and that no change has spent.
-    /// None when no session's pairs link them, or more than one's do.
-    pub fn chain(&self, path: &Path, from: &Hash, to: &Hash, now: Instant) -> Option<Chain> {
+    /// that takes it from `from` to `to`, for a change seen at `seen`. Only
+    /// pairs no change has spent count, and only within `LINK_GRACE` of the
+    /// change. None when no session's pairs link the two, or more than one's
+    /// do.
+    pub fn chain(&self, path: &Path, from: &Hash, to: &Hash, seen: Instant) -> Option<Chain> {
         if from == to {
             return None;
         }
-        let mut sessions: BTreeMap<&Id, Vec<(Instant, &Id, &Link)>> = BTreeMap::new();
+        let mut sessions: BTreeMap<&Id, Vec<(&Id, &Link)>> = BTreeMap::new();
         for (id, entry) in &self.uses {
-            if let Use::Pair { link, at } = entry
-                && link.tool != Tool::Read
+            if let Use::Pair { link, .. } = entry
                 && link.path == path
-                && now.saturating_duration_since(*at) <= LINK_WINDOW
+                && link.pre_at <= seen + LINK_GRACE
+                && seen <= link.post_at + LINK_GRACE
             {
-                sessions
-                    .entry(&link.session)
-                    .or_default()
-                    .push((*at, id, link));
+                sessions.entry(&link.session).or_default().push((id, link));
             }
         }
         let mut found = None;
-        for (session, mut links) in sessions {
-            links.sort_by_key(|&(at, id, _)| (at, id));
-            if let Some(uses) = walk(&links, Some(*from), Some(*to)) {
+        for (session, links) in sessions {
+            if let Some(uses) = between(&links, Some(*from), Some(*to)) {
                 if found.is_some() {
                     return None;
                 }
@@ -351,35 +362,43 @@ impl Claims {
     }
 }
 
-/// The uses along a shortest run of `links` from `from` to `to`.
-fn walk(links: &[(Instant, &Id, &Link)], from: Option<Hash>, to: Option<Hash>) -> Option<Vec<Id>> {
-    let mut next: HashMap<Option<Hash>, Vec<(&Id, Option<Hash>)>> = HashMap::new();
-    for &(_, id, link) in links {
-        next.entry(link.from).or_default().push((id, link.to));
-    }
-    let mut came: HashMap<Option<Hash>, (Option<Hash>, &Id)> = HashMap::new();
-    let mut queue = VecDeque::from([from]);
-    while let Some(state) = queue.pop_front() {
-        for &(id, after) in next.get(&state).into_iter().flatten() {
-            if after == from || came.contains_key(&after) {
-                continue;
-            }
-            came.insert(after, (state, id));
-            if after == to {
-                let mut uses = Vec::new();
-                let mut at = to;
-                while at != from {
-                    let (before, id) = came.get(&at)?;
-                    uses.push((*id).clone());
-                    at = *before;
-                }
-                uses.reverse();
-                return Some(uses);
-            }
-            queue.push_back(after);
+/// Every use on some run of `links` from `from` to `to`, so that spending
+/// them leaves no loop of the session's for a later writer's change to use.
+/// None when no run reaches `to`.
+fn between(links: &[(&Id, &Link)], from: Option<Hash>, to: Option<Hash>) -> Option<Vec<Id>> {
+    let reach = |start: Option<Hash>, forward: bool| {
+        let mut next: HashMap<Option<Hash>, Vec<Option<Hash>>> = HashMap::new();
+        for (_, link) in links {
+            let (a, b) = if forward {
+                (link.from, link.to)
+            } else {
+                (link.to, link.from)
+            };
+            next.entry(a).or_default().push(b);
         }
+        let mut reached = HashSet::from([start]);
+        let mut queue = vec![start];
+        while let Some(state) = queue.pop() {
+            for &after in next.get(&state).into_iter().flatten() {
+                if reached.insert(after) {
+                    queue.push(after);
+                }
+            }
+        }
+        reached
+    };
+    let ahead = reach(from, true);
+    if !ahead.contains(&to) {
+        return None;
     }
-    None
+    let behind = reach(to, false);
+    let mut uses: Vec<Id> = links
+        .iter()
+        .filter(|(_, link)| ahead.contains(&link.from) && behind.contains(&link.to))
+        .map(|(id, _)| (*id).clone())
+        .collect();
+    uses.sort();
+    Some(uses)
 }
 
 #[cfg(test)]
@@ -539,7 +558,10 @@ mod tests {
                 vec![(pre("s1", "t1", "Edit", P, "A"), Ok(())), (post("s2", "t1", "Edit", P, "B"), Err(Refused::Mismatched))],
                 (P, "A", "B"), None),
             ("halves naming two tools link nothing",
-                vec![(pre("s1", "t1", "Read", P, "A"), Ok(())), (post("s1", "t1", "Write", P, "B"), Err(Refused::Mismatched))],
+                vec![(pre("s1", "t1", "Edit", P, "A"), Ok(())), (post("s1", "t1", "Write", P, "B"), Err(Refused::Mismatched))],
+                (P, "A", "B"), None),
+            ("a Read's id can't finish a write",
+                vec![(pre("s1", "t1", "Read", P, "A"), Ok(())), (post("s1", "t1", "Write", P, "B"), Ok(()))],
                 (P, "A", "B"), None),
             ("a Read never links, even when the file changed under it",
                 vec![(pre("s1", "t1", "Read", P, "A"), Ok(())), (post("s1", "t1", "Read", P, "B"), Ok(()))],
@@ -625,18 +647,60 @@ mod tests {
     }
 
     #[test]
-    fn pairs_older_than_the_window_link_nothing() {
+    fn pairs_link_only_changes_seen_near_them() {
         let t0 = Instant::now();
         let mut ledger = Claims::default();
-        ledger.record(pre("s1", "t1", "Edit", P, "A"), t0).unwrap();
-        let paired = t0 + Duration::from_secs(300);
+        let pre_at = t0 + Duration::from_secs(10);
+        let post_at = t0 + Duration::from_secs(300);
         ledger
-            .record(post("s1", "t1", "Edit", P, "B"), paired)
+            .record(pre("s1", "t1", "Edit", P, "A"), pre_at)
             .unwrap();
-        let ask = |after| ledger.chain(Path::new(P), &h("A"), &h("B"), paired + after);
-        assert!(ask(Duration::ZERO).is_some());
-        assert!(ask(LINK_WINDOW).is_some());
-        assert!(ask(LINK_WINDOW + Duration::from_millis(1)).is_none());
+        ledger
+            .record(post("s1", "t1", "Edit", P, "B"), post_at)
+            .unwrap();
+        let ask = |seen| ledger.chain(Path::new(P), &h("A"), &h("B"), seen);
+        let ms = Duration::from_millis(1);
+        assert!(ask(pre_at - LINK_GRACE).is_some());
+        assert!(ask(pre_at - LINK_GRACE - ms).is_none());
+        assert!(ask(post_at).is_some());
+        assert!(ask(post_at + LINK_GRACE).is_some());
+        assert!(ask(post_at + LINK_GRACE + ms).is_none());
+    }
+
+    #[test]
+    fn spending_closes_every_loop_the_change_absorbed() {
+        // The session wrote A, B, A, B and X, B between two looks: the engine
+        // saw only A to B. No later writer's B to A or B to X is the
+        // session's.
+        let t0 = Instant::now();
+        let mut ledger = Claims::default();
+        let edits = [
+            ("t1", "A", "B"),
+            ("t2", "B", "A"),
+            ("t3", "A", "B"),
+            ("t4", "B", "X"),
+            ("t5", "X", "B"),
+        ];
+        for (id, before, after) in edits {
+            ledger.record(pre("s1", id, "Edit", P, before), t0).unwrap();
+            ledger.record(post("s1", id, "Edit", P, after), t0).unwrap();
+        }
+        let chain = ledger.chain(Path::new(P), &h("A"), &h("B"), t0).unwrap();
+        assert_eq!(chain.uses, ids(&["t1", "t2", "t3", "t4", "t5"]));
+        ledger.spend(&chain, t0);
+        for (from, to) in [("A", "B"), ("B", "A"), ("B", "X"), ("X", "B")] {
+            assert!(
+                ledger.chain(Path::new(P), &h(from), &h(to), t0).is_none(),
+                "{from} {to}"
+            );
+        }
+        // A later edit past B is not part of the change, and stays.
+        ledger.record(pre("s1", "t6", "Edit", P, "B"), t0).unwrap();
+        ledger.record(post("s1", "t6", "Edit", P, "C"), t0).unwrap();
+        let chain = ledger.chain(Path::new(P), &h("A"), &h("C"), t0);
+        assert!(chain.is_none(), "t1 to t5 are spent");
+        let next = ledger.chain(Path::new(P), &h("B"), &h("C"), t0).unwrap();
+        assert_eq!(next.uses, ids(&["t6"]));
     }
 
     #[test]

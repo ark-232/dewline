@@ -1,3 +1,4 @@
+use std::os::unix::ffi::OsStrExt;
 use std::path::{Component, Path};
 use std::sync::OnceLock;
 
@@ -41,22 +42,20 @@ impl AgentFiles {
     /// Whether an agent loads the file at `path`, judged by its name and the
     /// folders above it.
     pub fn matches(&self, path: &Path) -> bool {
-        let names: Option<Vec<&str>> = path
+        let names: Vec<&[u8]> = path
             .components()
             .filter_map(|component| match component {
-                Component::Normal(name) => Some(name.to_str()),
+                Component::Normal(name) => Some(name.as_bytes()),
                 _ => None,
             })
             .collect();
-        names.is_some_and(|names| {
-            self.patterns
-                .iter()
-                .any(|pattern| (0..names.len()).any(|start| glob(pattern, &names[start..])))
-        })
+        self.patterns
+            .iter()
+            .any(|pattern| (0..names.len()).any(|start| glob(pattern, &names[start..])))
     }
 }
 
-fn glob(pattern: &[String], names: &[&str]) -> bool {
+fn glob(pattern: &[String], names: &[&[u8]]) -> bool {
     match pattern.split_first() {
         None => names.is_empty(),
         Some((part, rest)) if part == "**" => {
@@ -68,8 +67,8 @@ fn glob(pattern: &[String], names: &[&str]) -> bool {
     }
 }
 
-fn name_matches(part: &str, name: &str) -> bool {
-    let (part, name) = (part.as_bytes(), name.as_bytes());
+fn name_matches(part: &str, name: &[u8]) -> bool {
+    let part = part.as_bytes();
     match part.iter().position(|&byte| byte == b'*') {
         None => part.eq_ignore_ascii_case(name),
         Some(star) => {
@@ -176,5 +175,10 @@ mod tests {
         for &(path, expected) in table {
             assert_eq!(files.matches(Path::new(path)), expected, "{path}");
         }
+        let unnamed = std::ffi::OsStr::from_bytes(b"/Volumes/share/\xff\xfe/CLAUDE.md");
+        assert!(
+            files.matches(Path::new(unnamed)),
+            "a name that isn't UTF-8 above it"
+        );
     }
 }
