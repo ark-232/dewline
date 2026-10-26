@@ -15,9 +15,23 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
     }()
     private var revealed: Set<SyntaxSpan> = []
     private var pending: NSRange?
+    /// Text not styled yet, whole paragraphs, which `styleSome` works through from the top of the view.
+    private var unstyled = IndexSet()
+    private var scheduled = false
+
+    var hasUnstyledText: Bool {
+        !unstyled.isEmpty
+    }
 
     static let bodyFont = serif(size: 17, traits: [])
     static let hiddenFont = NSFont.systemFont(ofSize: 0.01)
+    /// The attributes styling owns; restyling leaves every other attribute in the storage as it is.
+    private static let keys = [NSAttributedString.Key.font, .foregroundColor, .paragraphStyle, .underlineStyle, .strikethroughStyle, .dewlineHidden, .dewlineMarkerFont, .dewlineBlock]
+        .map { $0.rawValue as NSString }
+    /// Fonts with added traits by font and traits, since matching a font descriptor costs more than styling a run.
+    private static var traited: [NSFont: [UInt32: NSFont]] = [:]
+    /// The most text one pass styles while more waits: several screens, a few milliseconds of work.
+    private static let chunk = 1 << 14
     private static let base: [NSAttributedString.Key: Any] = [
         .font: bodyFont,
         .foregroundColor: NSColor.labelColor,
@@ -63,6 +77,8 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
                 guard span.range.location > oldEnd else { return nil }
                 return span.shifted(by: delta)
             })
+            unstyled.remove(integersIn: editedRange.location..<oldEnd)
+            unstyled.shift(startingAt: oldEnd, by: delta)
             var range = editedRange
             if let waiting = pending {
                 func moved(_ offset: Int) -> Int {
@@ -77,7 +93,7 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
             } else {
                 pending = nil
                 let selection = [NSRange(location: NSMaxRange(editedRange), length: 0)]
-                restyle(range, in: textView!.textStorage!, selection: selection)
+                restyleSoon(range, in: textView!.textStorage!, selection: selection)
                 for block in changed where NSUnionRange(block, range) != range {
                     restyle(block, in: textView!.textStorage!, selection: selection)
                 }
@@ -91,6 +107,7 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
             restyle(range)
         }
         updateReveal()
+        if !unstyled.isEmpty { schedule() }
     }
 
     /// Switches mode and restyles the paragraphs around `range`; `restyleDocument()` brings the rest along.
@@ -121,16 +138,81 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
 }
 
 extension MarkdownStyler {
+    /// Restyles `range`, unless it is long and the view is at the top of the text, as when a document opens: then its
+    /// first chunk, which covers the view, is styled now and the rest by `styleSome`.
+    private func restyleSoon(_ range: NSRange, in storage: NSTextStorage, selection: [NSRange]) {
+        let paragraphs = storage.mutableString.paragraphRange(for: range)
+        guard paragraphs.length > Self.chunk, textView!.visibleRect.minY <= 0 else {
+            return restyle(paragraphs, in: storage, selection: selection)
+        }
+        unstyled.insert(integersIn: Range(paragraphs)!)
+        restyle(NSRange(location: paragraphs.location, length: Self.chunk), in: storage, selection: selection)
+        schedule()
+    }
+
+    /// Runs `styleSome` on the main run loop's next pass, which comes after any event in hand and before the view
+    /// displays. A block, unlike a timer, runs before the display that follows an event; unlike the main queue, it
+    /// also runs in a run loop nested inside a main-queue job.
+    private func schedule() {
+        guard !scheduled else { return }
+        scheduled = true
+        RunLoop.main.perform(inModes: [.common]) { [weak self] in
+            MainActor.assumeIsolated { self?.styleSome() }
+        }
+        CFRunLoopWakeUp(CFRunLoopGetMain())
+    }
+
+    /// Styles the next chunk of unstyled text in text order and schedules the next. Once the view is past the first
+    /// unstyled character, the rest is styled in one pass: each chunk styled above the view would make TextKit 1 lay
+    /// out again all the text down to the view, and TextKit 2 place the view again. That pass holds the caret's line,
+    /// or the first visible line, in place, as switching to the source does.
+    private func styleSome() {
+        scheduled = false
+        guard let textView, !textView.defersStyling, let first = unstyled.first else { return }
+        let storage = textView.textStorage!
+        let past = isPast(first)
+        var held: (anchor: Int, offset: CGFloat)?
+        if past {
+            let visible = textView.visibleRect
+            func index(_ x: CGFloat, _ y: CGFloat) -> Int {
+                textView.characterIndexForInsertion(at: NSPoint(x: x, y: max(y, textView.textContainerOrigin.y)))
+            }
+            let top = index(visible.minX, visible.minY)
+            let caret = textView.selectedRange().location
+            let anchor = min(top <= caret && caret <= index(visible.maxX, visible.maxY) ? caret : top, storage.length - 1)
+            held = textView.baseline(at: anchor).map { (anchor, $0 - visible.minY) }
+        }
+        let length = past ? storage.length - first : min(unstyled.rangeView.first!.count, Self.chunk)
+        storage.beginEditing()
+        restyle(NSRange(location: first, length: length), in: storage, selection: textView.selectedRanges.map(\.rangeValue))
+        storage.endEditing()
+        if let held { textView.hold(held.anchor, at: held.offset) }
+        if !unstyled.isEmpty { schedule() }
+    }
+
+    /// Whether the top of the view is past the line holding `index`, found without laying out any text. TextKit 1 has
+    /// not laid out text past its first unlaid character, so styling it costs no second layout.
+    private func isPast(_ index: Int) -> Bool {
+        let textView = textView!
+        let visible = textView.visibleRect
+        guard textView.textLayoutManager == nil else {
+            // TextKit 2 answers a point in the top inset with an index near the end of the text.
+            return index < textView.characterIndexForInsertion(at: NSPoint(x: visible.minX, y: max(visible.minY, textView.textContainerOrigin.y)))
+        }
+        let layout = textView.layoutManager!
+        guard index < layout.firstUnlaidCharacterIndex() else { return false }
+        return textView.textContainerOrigin.y + layout.lineFragmentRect(forGlyphAt: layout.glyphIndexForCharacter(at: index), effectiveRange: nil).maxY < visible.minY
+    }
+
     private func restyle(_ range: NSRange, in storage: NSTextStorage, selection: [NSRange]) {
         restyles += 1
         let paragraphs = storage.mutableString.paragraphRange(for: range)
-        let styled = NSMutableAttributedString(attributedString: storage.attributedSubstring(from: paragraphs))
+        unstyled.remove(integersIn: Range(paragraphs)!)
+        let styled = NSMutableAttributedString(string: storage.mutableString.substring(with: paragraphs))
         let text = styled.mutableString
         let whole = NSRange(location: 0, length: styled.length)
         let source = showsSource
         styled.addAttributes(baseAttributes, range: whole)
-        styled.removeAttribute(.dewlineHidden, range: whole)
-        styled.removeAttribute(.dewlineMarkerFont, range: whole)
         revealed = revealed.filter { !NSLocationInRange($0.range.location, paragraphs) }
         let selection = selection.map { NSRange(location: $0.location - paragraphs.location, length: $0.length) }
         text.enumerateSubstrings(in: whole, options: [.byParagraphs, .substringNotRequired]) { _, line, paragraph, _ in
@@ -169,18 +251,32 @@ extension MarkdownStyler {
             }
         }
         blocks.style(styled, at: paragraphs.location, selection: source ? [whole] : selection)
-        // Only attributes that differ are written, so layout invalidates only what changed.
-        let keys: [NSAttributedString.Key] = [.font, .foregroundColor, .paragraphStyle, .underlineStyle, .strikethroughStyle, .dewlineHidden, .dewlineMarkerFont, .dewlineBlock]
-        styled.enumerateAttributes(in: whole) { wanted, run, _ in
-            storage.enumerateAttributes(in: NSRange(location: run.location + paragraphs.location, length: run.length)) { current, part, _ in
-                for key in keys where wanted[key] as? NSObject != current[key] as? NSObject {
-                    if let value = wanted[key] {
-                        storage.addAttribute(key, value: value, range: part)
-                    } else {
-                        storage.removeAttribute(key, range: part)
+        // Only runs whose styling differs are written, once each, so layout invalidates only what changed. The CF
+        // accessors return a run's dictionary without bridging it to Swift, which costs more than the comparison.
+        var offset = 0
+        while offset < whole.length {
+            var run = CFRange()
+            let wanted = CFAttributedStringGetAttributes(styled, offset, &run) as NSDictionary
+            let end = paragraphs.location + run.location + run.length
+            var location = paragraphs.location + offset
+            while location < end {
+                var part = CFRange()
+                let current = CFAttributedStringGetAttributes(storage, location, &part) as NSDictionary
+                let length = min(part.location + part.length, end) - location
+                if Self.keys.contains(where: { wanted.object(forKey: $0) as? NSObject != current.object(forKey: $0) as? NSObject }) {
+                    let merged = current.mutableCopy() as! NSMutableDictionary
+                    for key in Self.keys {
+                        if let value = wanted.object(forKey: key) {
+                            merged.setObject(value, forKey: key)
+                        } else {
+                            merged.removeObject(forKey: key)
+                        }
                     }
+                    CFAttributedStringSetAttributes(storage, CFRange(location: location, length: length), merged, true)
                 }
+                location += length
             }
+            offset = run.location + run.length
         }
     }
 
@@ -208,6 +304,8 @@ extension MarkdownStyler {
         for range in selection {
             text.enumerateSubstrings(in: text.paragraphRange(for: range), options: [.byParagraphs, .substringNotRequired]) { _, line, _, _ in
                 guard !self.blocks.contains(line) else { return }
+                // Unstyled text takes the selection's reveal state when it is styled.
+                guard !self.unstyled.intersects(integersIn: Range(line)!) else { return }
                 now.formUnion(SpikeTokenizer.spans(in: text, line: line).filter { Self.touches($0, selection) })
             }
         }
@@ -231,8 +329,12 @@ extension MarkdownStyler {
     private static func add(_ traits: NSFontDescriptor.SymbolicTraits, in range: NSRange, of storage: NSMutableAttributedString) {
         storage.enumerateAttribute(.font, in: range) { value, run, _ in
             let font = value as! NSFont
-            let descriptor = font.fontDescriptor.withSymbolicTraits(font.fontDescriptor.symbolicTraits.union(traits))
-            storage.addAttribute(.font, value: NSFont(descriptor: descriptor, size: font.pointSize)!, range: run)
+            let derived = traited[font]?[traits.rawValue] ?? {
+                let descriptor = font.fontDescriptor.withSymbolicTraits(font.fontDescriptor.symbolicTraits.union(traits))
+                return NSFont(descriptor: descriptor, size: font.pointSize)!
+            }()
+            traited[font, default: [:]][traits.rawValue] = derived
+            storage.addAttribute(.font, value: derived, range: run)
         }
     }
 

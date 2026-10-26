@@ -11,17 +11,20 @@ final class HiddenGlyphs: NSObject, NSLayoutManagerDelegate {
         font: NSFont,
         forGlyphRange glyphRange: NSRange
     ) -> Int {
-        let storage = layoutManager.textStorage!
         let count = glyphRange.length
+        let indexes = UnsafeBufferPointer(start: characterIndexes, count: count)
+        guard let first = indexes.min(), let last = indexes.max() else { return 0 }
+        var hidden = IndexSet()
+        layoutManager.textStorage!.enumerateAttribute(.dewlineHidden, in: NSRange(location: first, length: last + 1 - first)) { value, range, _ in
+            if value != nil { hidden.insert(integersIn: Range(range)!) }
+        }
+        guard !hidden.isEmpty else { return 0 }
         let changed = UnsafeMutablePointer<NSLayoutManager.GlyphProperty>.allocate(capacity: count)
         defer { changed.deallocate() }
         changed.initialize(from: properties, count: count)
-        var hidden = false
-        for index in 0..<count where storage.attribute(.dewlineHidden, at: characterIndexes[index], effectiveRange: nil) != nil {
+        for (index, character) in indexes.enumerated() where hidden.contains(character) {
             changed[index] = .controlCharacter
-            hidden = true
         }
-        guard hidden else { return 0 }
         layoutManager.setGlyphs(glyphs, properties: changed, characterIndexes: characterIndexes, font: font, forGlyphRange: glyphRange)
         return count
     }

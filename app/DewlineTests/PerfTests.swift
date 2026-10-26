@@ -43,6 +43,28 @@ private struct Editor {
     func open(_ text: String) {
         view.string = text
         display()
+        finishStyling()
+    }
+
+    /// Runs the run loop until the styler has styled the text it left for after the first display.
+    func finishStyling() {
+        let deadline = Date(timeIntervalSinceNow: 60)
+        while view.styler.hasUnstyledText && Date() < deadline {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01))
+        }
+        #expect(!view.styler.hasUnstyledText)
+    }
+
+    /// Strong spans in the paragraphs from the start of the text to the bottom of the visible rect.
+    var strongSpansShown: [SyntaxSpan] {
+        let text = view.textStorage!.mutableString
+        let visible = view.visibleRect
+        let end = view.characterIndexForInsertion(at: NSPoint(x: visible.maxX, y: visible.maxY))
+        var spans: [SyntaxSpan] = []
+        text.enumerateSubstrings(in: NSRange(location: 0, length: end), options: [.byParagraphs, .substringNotRequired]) { _, line, _, _ in
+            spans += SpikeTokenizer.spans(in: text, line: line).filter { $0.kind == .strong }
+        }
+        return spans
     }
 
     /// Milliseconds from a key down sent through the window to the first committed display, and to the display
@@ -91,8 +113,11 @@ private struct Editor {
         return span!
     }
 
+    /// Empties the view first: a closed window's text system stays alive for a while, and TextKit 1 would go on laying
+    /// out its text in the next measurement's run loop passes.
     func close() {
         #expect((view.textLayoutManager != nil) == (variant == .textKit2))
+        view.string = ""
         window.close()
     }
 }
@@ -112,7 +137,8 @@ private func percentiles(_ samples: [Double]) -> [String: Double] {
 /// Runs only with `DEWLINE_PERF` set (`TEST_RUNNER_DEWLINE_PERF=1` through xcodebuild) and merges its numbers
 /// into the JSON at `DEWLINE_PERF_OUT`, by variant. `scripts/perf.sh` runs it in a Release build. Key presses
 /// count to their first committed display; opening and select all, which TextKit 1 finishes on later run loop
-/// passes, count until the display settles.
+/// passes, count until the display settles. Opening also records when the styler has styled the text it left
+/// for after the first display.
 @MainActor
 @Suite(.serialized, .enabled(if: ProcessInfo.processInfo.environment["DEWLINE_PERF"] != nil))
 struct PerfTests {
@@ -137,7 +163,13 @@ struct PerfTests {
             let editor = Editor(variant)
             let setText = milliseconds { editor.view.string = text }
             let display = milliseconds { editor.display() }
-            #expect(editor.view.textStorage!.attribute(.foregroundColor, at: editor.middleSpan.range.location, effectiveRange: nil) as? NSColor == .clear)
+            let hidden = { (span: SyntaxSpan) in
+                editor.view.textStorage!.attribute(.foregroundColor, at: span.range.location, effectiveRange: nil) as? NSColor == .clear
+            }
+            let shown = editor.strongSpansShown
+            #expect(!shown.isEmpty && shown.allSatisfy(hidden), "the first display shows every span styled")
+            let styling = milliseconds { editor.finishStyling() }
+            #expect(hidden(editor.middleSpan))
             switch variant {
             case .textKit1:
                 let used = editor.view.layoutManager!.usedRect(for: editor.view.textContainer!)
@@ -145,7 +177,7 @@ struct PerfTests {
             case .textKit2:
                 #expect(editor.view.textLayoutManager!.textViewportLayoutController.viewportRange?.isEmpty == false)
             }
-            try record(variant, "open\(size)", ["ms": setText + display, "setTextMs": setText, "displayMs": display])
+            try record(variant, "open\(size)", ["ms": setText + display, "setTextMs": setText, "displayMs": display, "styledMs": setText + display + styling])
             editor.close()
             // scripts/perf.sh opens the same documents in the app.
             try text.write(to: Self.output().deletingLastPathComponent().appending(path: "\(size).md"), atomically: true, encoding: .utf8)
