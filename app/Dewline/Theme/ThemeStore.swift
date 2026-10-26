@@ -124,8 +124,10 @@ final class ThemeStore {
     }
 
     var bodyFont: NSFont {
+        // Read on a cache hit too, so a view that shows the font observes them.
+        let face = bodyFace, size = bodySize
         if let body { return body }
-        let font = Faces.font(bodyFace, size: bodySize)
+        let font = Faces.font(face, size: size)
         body = font
         return font
     }
@@ -182,8 +184,10 @@ final class ThemeStore {
     }
 
     func codeFont(size: CGFloat) -> NSFont {
+        // Read on a cache hit too, so a view that shows the font observes it.
+        let face = codeFace
         if let font = code[size] { return font }
-        let font = Faces.font(codeFace, size: size)
+        let font = Faces.font(face, size: size)
         code[size] = font
         return font
     }
