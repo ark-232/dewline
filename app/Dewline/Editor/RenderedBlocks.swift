@@ -115,22 +115,24 @@ final class RenderedBlocks {
 
     private func request(for block: RenderedBlock, in textView: EditorTextView) -> PictureRequest {
         var source = block.source
-        var ink: UInt32 = 0
+        var colors: DiagramColors?
         switch block.kind {
-        case .mermaid:
-            break
-        case .math:
-            // The ink as sRGB 0xRRGGBBAA in the view's appearance.
-            textView.effectiveAppearance.performAsCurrentDrawingAppearance {
-                guard let color = ThemeStore.shared.color(.ink).usingColorSpace(.sRGB) else { return }
-                ink = [color.redComponent, color.greenComponent, color.blueComponent, color.alphaComponent]
+        case .mermaid, .math:
+            func rgba(_ token: Token) -> UInt32 {
+                let color = ThemeStore.shared.color(token).usingColorSpace(.sRGB)!
+                return [color.redComponent, color.greenComponent, color.blueComponent, color.alphaComponent]
                     .reduce(0) { $0 << 8 | UInt32(($1 * 255).rounded()) }
+            }
+            textView.effectiveAppearance.performAsCurrentDrawingAppearance {
+                colors = DiagramColors(
+                    paper: rgba(.paper), ink: rgba(.ink), ink2: rgba(.ink2), accent: rgba(.accent), rule: rgba(.syntax), fill: rgba(.codeBackground)
+                )
             }
         case .image:
             source = textView.documentFolder.map { $0.appending(path: block.source).standardizedFileURL.path } ?? ""
         }
         return PictureRequest(
-            kind: block.kind, source: source, scale: textView.window?.backingScaleFactor ?? 2, color: ink, engine: MathEngine.current
+            kind: block.kind, source: source, scale: textView.window?.backingScaleFactor ?? 2, colors: colors, engine: MathEngine.current
         )
     }
 
