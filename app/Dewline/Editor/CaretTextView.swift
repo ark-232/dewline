@@ -106,6 +106,8 @@ class CaretTextView: NSTextView {
     }
 
     override func updateInsertionPointStateAndRestartTimer(_ restartFlag: Bool) {
+        LatencyProbe.begin(.caret)
+        defer { LatencyProbe.end(.caret) }
         super.updateInsertionPointStateAndRestartTimer(restartFlag)
         holdSolid()
         followMark()
