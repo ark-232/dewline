@@ -3,6 +3,10 @@
 # Rust (scripts default CARGO_TARGET_DIR outside the repo; this catches plain cargo runs)
 /core/target/
 
+# scripts/build-xcframework.sh output
+/Packages/MdCore/DewlineFFI.xcframework/
+/Packages/MdCore/Sources/DewlineFFIBindings/
+
 # XcodeGen output: regenerate with `xcodegen generate --spec app/project.yml`
 /app/Dewline.xcodeproj/
 /app/Dewline/Info.plist
