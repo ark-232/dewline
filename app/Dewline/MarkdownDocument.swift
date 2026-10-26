@@ -30,4 +30,19 @@ final class MarkdownDocument: NSDocument {
         window.center()
         addWindowController(NSWindowController(window: window))
     }
+
+    override func showWindows() {
+        super.showWindows()
+        // scripts/perf.sh: print milliseconds from process start to this first display, then quit.
+        guard ProcessInfo.processInfo.environment["DEWLINE_LAUNCH_PROBE"] != nil else { return }
+        windowControllers[0].window!.displayIfNeeded()
+        CATransaction.flush()
+        var process = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.stride
+        var name = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
+        sysctl(&name, 4, &process, &size, nil, 0)
+        let start = process.kp_proc.p_starttime
+        Swift.print(String(format: "%.1f", Date().timeIntervalSince1970 * 1000 - Double(start.tv_sec) * 1000 - Double(start.tv_usec) / 1000))
+        exit(0)
+    }
 }
