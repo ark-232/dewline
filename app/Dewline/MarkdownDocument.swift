@@ -51,7 +51,8 @@ final class MarkdownDocument: NSDocument {
         try MainActor.assumeIsolated {
             let shown = shownText
             let bytes = bytes(of: shown)
-            guard saveOperation == .saveOperation || url.resolvingSymlinksInPath() == fileURL?.resolvingSymlinksInPath() else {
+            let target = Self.identity(of: url)
+            guard saveOperation == .saveOperation || target != nil && target == fileURL.flatMap(Self.identity) else {
                 try super.writeSafely(to: url, ofType: typeName, for: saveOperation)
                 if saveOperation == .saveAsOperation {
                     (text, base) = (shown, (bytes, contentHash(bytes)))
@@ -67,6 +68,13 @@ final class MarkdownDocument: NSDocument {
                 throw CocoaError(.fileWriteUnknown, userInfo: [NSLocalizedFailureReasonErrorKey: reason])
             }
         }
+    }
+
+    /// The device and inode of the file at `url`, the same for every name of one file.
+    private static func identity(of url: URL) -> [Int]? {
+        let attributes = try? FileManager.default.attributesOfItem(atPath: url.resolvingSymlinksInPath().path)
+        guard let device = attributes?[.systemNumber] as? Int, let inode = attributes?[.systemFileNumber] as? Int else { return nil }
+        return [device, inode]
     }
 
     override func willPresentError(_ error: any Error) -> any Error {
