@@ -6,6 +6,12 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
     weak var textView: EditorTextView?
     let undoManager = UndoManager()
     private(set) var restyles = 0
+    private(set) var showsSource = false
+    /// Source line height: 22 pt, or prose's 24.5 pt pitch through `DewlineSourceLineHeight`, until the owner picks one.
+    var sourceLineHeight: CGFloat = {
+        let height = UserDefaults.standard.double(forKey: "DewlineSourceLineHeight")
+        return height > 0 ? height : 22
+    }()
     private var revealed: Set<SyntaxSpan> = []
     private var pending: NSRange?
 
@@ -14,10 +20,24 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
     private static let base: [NSAttributedString.Key: Any] = [
         .font: bodyFont,
         .foregroundColor: NSColor.labelColor,
-        .paragraphStyle: lines(of: 17),
+        .paragraphStyle: lines(24.5),
         .underlineStyle: 0,
         .strikethroughStyle: 0,
     ]
+
+    /// The Code font slot (the face `DewlineCodeFont` names, else the bundled JetBrains Mono) at `font`'s x-height.
+    static func code(matching font: NSFont) -> NSFont {
+        func face(_ size: CGFloat) -> NSFont {
+            NSFont(name: UserDefaults.standard.string(forKey: "DewlineCodeFont") ?? "JetBrainsMono-Regular", size: size)
+                ?? .monospacedSystemFont(ofSize: size, weight: .regular)
+        }
+        return face(font.pointSize * font.xHeight / face(font.pointSize).xHeight)
+    }
+
+    var baseAttributes: [NSAttributedString.Key: Any] {
+        guard showsSource else { return Self.base }
+        return Self.base.merging([.font: Self.code(matching: Self.bodyFont), .paragraphStyle: Self.lines(sourceLineHeight)]) { $1 }
+    }
 
     func undoManager(for view: NSTextView) -> UndoManager? {
         undoManager
@@ -62,12 +82,26 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
     func flush() {
         if let range = pending {
             pending = nil
-            let storage = textView!.textStorage!
-            storage.beginEditing()
-            restyle(range, in: storage, selection: textView!.selectedRanges.map(\.rangeValue))
-            storage.endEditing()
+            restyle(range)
         }
         updateReveal()
+    }
+
+    /// Switches mode and restyles the paragraphs around `range`; `restyleDocument()` brings the rest along.
+    func toggleSource(restyling range: NSRange) {
+        showsSource.toggle()
+        restyle(range)
+    }
+
+    func restyleDocument() {
+        restyle(NSRange(location: 0, length: textView!.textStorage!.length))
+    }
+
+    private func restyle(_ range: NSRange) {
+        let storage = textView!.textStorage!
+        storage.beginEditing()
+        restyle(range, in: storage, selection: textView!.selectedRanges.map(\.rangeValue))
+        storage.endEditing()
     }
 }
 
@@ -78,7 +112,8 @@ extension MarkdownStyler {
         let styled = NSMutableAttributedString(attributedString: storage.attributedSubstring(from: paragraphs))
         let text = styled.mutableString
         let whole = NSRange(location: 0, length: styled.length)
-        styled.addAttributes(Self.base, range: whole)
+        let source = showsSource
+        styled.addAttributes(baseAttributes, range: whole)
         styled.removeAttribute(.dewlineHidden, range: whole)
         styled.removeAttribute(.dewlineMarkerFont, range: whole)
         revealed = revealed.filter { !NSLocationInRange($0.range.location, paragraphs) }
@@ -87,9 +122,11 @@ extension MarkdownStyler {
             let spans = SpikeTokenizer.spans(in: text, line: line)
             for span in spans {
                 switch span.kind {
+                case .heading where source:
+                    Self.add(.bold, in: paragraph, of: styled)
                 case .heading(let level):
                     let font = Self.serif(size: [28, 23, 20, 19, 18, 17.5][level - 1], traits: .bold)
-                    styled.addAttributes([.font: font, .paragraphStyle: Self.lines(of: font.pointSize)], range: paragraph)
+                    styled.addAttributes([.font: font, .paragraphStyle: Self.lines(font.pointSize / 17 * 24.5)], range: paragraph)
                 case .strong:
                     Self.add(.bold, in: span.content, of: styled)
                 case .emphasis:
@@ -98,10 +135,11 @@ extension MarkdownStyler {
                     styled.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: span.content)
                 case .link:
                     styled.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: span.content)
+                case .inlineCode where source:
+                    break
                 case .inlineCode:
                     styled.enumerateAttribute(.font, in: span.content) { value, run, _ in
-                        let size = (value as! NSFont).pointSize * 0.88
-                        styled.addAttribute(.font, value: NSFont.monospacedSystemFont(ofSize: size, weight: .regular), range: run)
+                        styled.addAttribute(.font, value: Self.code(matching: value as! NSFont), range: run)
                     }
                 }
             }
@@ -111,7 +149,7 @@ extension MarkdownStyler {
                 }
                 let reveal = Self.touches(span, selection)
                 if reveal { self.revealed.insert(span.shifted(by: paragraphs.location)) }
-                self.mark(span, revealed: reveal, in: styled)
+                self.mark(span, revealed: reveal || source, in: styled)
             }
         }
         // Only attributes that differ are written, so layout invalidates only what changed.
@@ -133,7 +171,7 @@ extension MarkdownStyler {
         for marker in span.markers {
             if revealed {
                 let font = storage.attribute(.dewlineMarkerFont, at: marker.location, effectiveRange: nil)!
-                storage.addAttributes([.font: font, .foregroundColor: NSColor.tertiaryLabelColor], range: marker)
+                storage.addAttributes([.font: font, .foregroundColor: showsSource ? NSColor.secondaryLabelColor : .tertiaryLabelColor], range: marker)
                 storage.removeAttribute(.dewlineHidden, range: marker)
             } else if textView!.textLayoutManager == nil {
                 storage.addAttributes([.dewlineHidden: true, .foregroundColor: NSColor.clear], range: marker)
@@ -144,6 +182,7 @@ extension MarkdownStyler {
     }
 
     private func updateReveal() {
+        guard !showsSource else { return }
         let textView = textView!
         let storage = textView.textStorage!
         let text = storage.mutableString
@@ -182,10 +221,10 @@ extension MarkdownStyler {
         return NSFont(descriptor: descriptor, size: size)!
     }
 
-    private static func lines(of size: CGFloat) -> NSParagraphStyle {
+    private static func lines(_ height: CGFloat) -> NSParagraphStyle {
         let style = NSMutableParagraphStyle()
-        style.minimumLineHeight = size / 17 * 24.5
-        style.maximumLineHeight = style.minimumLineHeight
+        style.minimumLineHeight = height
+        style.maximumLineHeight = height
         return style
     }
 }

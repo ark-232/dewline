@@ -27,6 +27,11 @@ targets:
     platform: macOS
     sources:
       - path: Dewline
+        excludes:
+          - Fonts
+      - path: Dewline/Fonts
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: MdCore
     settings:
@@ -39,6 +44,7 @@ targets:
     info:
       path: Dewline/Info.plist
       properties:
+        ATSApplicationFontsPath: Fonts
         CFBundleDocumentTypes:
           - CFBundleTypeName: Markdown
             # Viewer until saving goes through the engine; then Editor.

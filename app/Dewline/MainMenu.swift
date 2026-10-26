@@ -5,7 +5,7 @@ enum MainMenu {
     static func build() -> NSMenu {
         let main = NSMenu()
         let window = windowMenu()
-        for menu in [appMenu(), fileMenu(), editMenu(), window] {
+        for menu in [appMenu(), fileMenu(), editMenu(), viewMenu(), window] {
             let item = NSMenuItem()
             item.submenu = menu
             main.addItem(item)
@@ -47,6 +47,13 @@ enum MainMenu {
         menu.addItem(.separator())
         let find = menu.addItem(withTitle: "Find…", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "f")
         find.tag = NSTextFinder.Action.showFindInterface.rawValue
+        return menu
+    }
+
+    private static func viewMenu() -> NSMenu {
+        let menu = NSMenu(title: "View")
+        let source = menu.addItem(withTitle: "Show Source", action: #selector(EditorTextView.toggleSource(_:)), keyEquivalent: "u")
+        source.keyEquivalentModifierMask = [.command, .option]
         return menu
     }
 
