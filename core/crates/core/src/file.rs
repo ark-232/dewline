@@ -1,5 +1,7 @@
+use std::ffi::{c_int, c_void};
+use std::fmt;
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, Seek, SeekFrom, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
@@ -24,64 +26,147 @@ impl From<io::Error> for SaveError {
     }
 }
 
+impl fmt::Display for SaveError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SaveError::Conflict => f.write_str("the file changed after it was read"),
+            SaveError::Io(error) => error.fmt(f),
+        }
+    }
+}
+
+/// A file that is gone was removed or renamed by someone else.
+fn gone(error: io::Error) -> SaveError {
+    match error.kind() {
+        io::ErrorKind::NotFound => SaveError::Conflict,
+        _ => SaveError::Io(error),
+    }
+}
+
 /// Writes `bytes` to `path` if the file still holds the bytes `base` hashes,
 /// and returns their hash. Bytes that hash to `base` write nothing.
 ///
-/// A symlink, or a file with other hard links, is written in place so its
-/// links survive. Any other file is replaced by a sibling that carries its
-/// mode, flags, ACL and extended attributes.
+/// The file is replaced by a hidden sibling that takes its mode, owner,
+/// group, flags and extended attributes. It is written in place instead,
+/// through the descriptor that was hashed, when the path is a symlink, the
+/// file has other hard links or an access control list, or a new file
+/// beside it can't take its owner and group; a failed write in place puts
+/// the original bytes back.
 pub fn save(path: &Path, base: &Hash, bytes: &[u8]) -> Result<Hash, SaveError> {
     // Hashed first, so the check stays next to the write.
     let new = hash(bytes);
-    let mut file = unchanged(path, base)?;
+    let symlink = fs::symlink_metadata(path).map_err(gone)?.is_symlink();
+    let (mut file, original) = unchanged(path, base)?;
     if new == *base {
         return Ok(new);
     }
-    let link = fs::symlink_metadata(path)?;
-    if link.is_symlink() || link.nlink() > 1 {
-        file.seek(SeekFrom::Start(0))?;
-        file.write_all(bytes)?;
-        file.set_len(bytes.len() as u64)?;
-        file.sync_all()?;
-    } else {
-        replace(path, &file, base, bytes)?;
+    if symlink
+        || file.metadata()?.nlink() > 1
+        || has_acl(&file)?
+        || !replace(path, &file, base, bytes)?
+    {
+        write_in_place(path, &mut file, &original, bytes)?;
     }
     Ok(new)
 }
 
-/// Opens `path` for writing if it still holds the bytes `base` hashes.
-fn unchanged(path: &Path, base: &Hash) -> Result<File, SaveError> {
+/// Opens `path` for writing if it still holds the bytes `base` hashes, and
+/// returns it with those bytes.
+fn unchanged(path: &Path, base: &Hash) -> Result<(File, Vec<u8>), SaveError> {
     let mut file = OpenOptions::new()
         .read(true)
         .write(true)
         .open(path)
-        .map_err(|error| match error.kind() {
-            io::ErrorKind::NotFound => SaveError::Conflict,
-            _ => SaveError::Io(error),
-        })?;
-    let mut hasher = blake3::Hasher::new();
-    io::copy(&mut file, &mut hasher)?;
-    if hasher.finalize() == *base {
-        Ok(file)
+        .map_err(gone)?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)?;
+    if hash(&bytes) == *base {
+        Ok((file, bytes))
     } else {
         Err(SaveError::Conflict)
     }
 }
 
+// libc has no ACL calls.
+unsafe extern "C" {
+    fn acl_get_fd_np(fd: c_int, kind: c_int) -> *mut c_void;
+    fn acl_free(acl: *mut c_void) -> c_int;
+}
+
+const ACL_TYPE_EXTENDED: c_int = 0x100;
+
+/// Whether `file` has an access control list. A sibling can't take one on
+/// safely: a list that denies delete would also keep the sibling from being
+/// removed when the save fails.
+fn has_acl(file: &File) -> io::Result<bool> {
+    // SAFETY: the descriptor is open, and a list it returns is freed once.
+    unsafe {
+        let acl = acl_get_fd_np(file.as_raw_fd(), ACL_TYPE_EXTENDED);
+        if !acl.is_null() {
+            acl_free(acl);
+            return Ok(true);
+        }
+    }
+    let error = io::Error::last_os_error();
+    match error.raw_os_error() {
+        Some(libc::ENOENT) => Ok(false),
+        _ => Err(error),
+    }
+}
+
+/// Writes `bytes` over `file`, which holds `original`, and puts `original`
+/// back if the write fails or `path` no longer names the file.
+fn write_in_place(
+    path: &Path,
+    file: &mut File,
+    original: &[u8],
+    bytes: &[u8],
+) -> Result<(), SaveError> {
+    let written = overwrite(file, bytes)
+        .map_err(SaveError::Io)
+        .and_then(|()| {
+            // A replace that lands after the check takes the path from this file.
+            let (named, written) = (fs::metadata(path).map_err(gone)?, file.metadata()?);
+            if (named.dev(), named.ino()) == (written.dev(), written.ino()) {
+                Ok(())
+            } else {
+                Err(SaveError::Conflict)
+            }
+        });
+    if let Err(error) = &written
+        && let Err(restore) = overwrite(file, original)
+    {
+        return Err(SaveError::Io(io::Error::new(
+            restore.kind(),
+            format!("{error}, and the original could not be put back: {restore}"),
+        )));
+    }
+    written
+}
+
+fn overwrite(file: &mut File, bytes: &[u8]) -> io::Result<()> {
+    file.seek(SeekFrom::Start(0))?;
+    file.write_all(bytes)?;
+    file.set_len(bytes.len() as u64)?;
+    file.sync_all()
+}
+
 /// Writes `bytes` to a hidden sibling of `path` with `original`'s metadata,
-/// then renames it over `path` if the file still holds `base`.
-fn replace(path: &Path, original: &File, base: &Hash, bytes: &[u8]) -> Result<(), SaveError> {
+/// then renames it over `path` if the file still holds `base`. Returns false,
+/// having written nothing, when the sibling can't take `original`'s owner
+/// and group.
+fn replace(path: &Path, original: &File, base: &Hash, bytes: &[u8]) -> Result<bool, SaveError> {
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_nanos();
     // Not derived from the file's name, which may already be at the 255-byte limit.
     let temp = path.with_file_name(format!(".dewline.{}.{stamp:x}.tmp", std::process::id()));
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temp)?;
     let result = (|| {
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temp)?;
         // Copying the metadata copies the old modification date too, so it
         // comes before the bytes, whose write sets the date to now.
         // SAFETY: both descriptors stay open for the call; copyfile accepts a null state.
@@ -90,21 +175,35 @@ fn replace(path: &Path, original: &File, base: &Hash, bytes: &[u8]) -> Result<()
                 original.as_raw_fd(),
                 file.as_raw_fd(),
                 std::ptr::null_mut(),
-                libc::COPYFILE_METADATA,
+                libc::COPYFILE_STAT | libc::COPYFILE_XATTR,
             )
         };
         if copied != 0 {
             return Err(io::Error::last_os_error().into());
+        }
+        // fcopyfile succeeds even when it may not set the owner or group.
+        let (copy, from) = (file.metadata()?, original.metadata()?);
+        if (copy.uid(), copy.gid()) != (from.uid(), from.gid()) {
+            return Ok(false);
         }
         file.write_all(bytes)?;
         file.sync_all()?;
         // Another writer may have landed while the copy was written.
         unchanged(path, base)?;
         fs::rename(&temp, path)?;
-        Ok(())
+        Ok(true)
     })();
-    if result.is_err() {
-        let _ = fs::remove_file(&temp);
+    if !matches!(result, Ok(true))
+        && let Err(cleanup) = fs::remove_file(&temp)
+    {
+        let after = result
+            .err()
+            .map(|error| format!("{error}; "))
+            .unwrap_or_default();
+        return Err(SaveError::Io(io::Error::new(
+            cleanup.kind(),
+            format!("{after}{} could not be removed: {cleanup}", temp.display()),
+        )));
     }
     result
 }
@@ -298,6 +397,85 @@ mod tests {
             Some(&b"kept"[..])
         );
         assert_eq!(names(dir.path()), ["launch-plan.md", "link.md"]);
+    }
+
+    #[test]
+    fn an_acl_keeps_the_file_in_place_and_leaves_nothing_behind() {
+        let (dir, path) = file(b"# Notes\n");
+        let chmod = |args: &[&str]| {
+            let status = std::process::Command::new("/bin/chmod")
+                .args(args)
+                .arg(&path)
+                .status()
+                .unwrap();
+            assert!(status.success());
+        };
+        chmod(&["+a", "everyone deny delete"]);
+        let before = fs::metadata(&path).unwrap();
+        let saves = [
+            save(&path, &hash(b"# Notes\n"), b"# My notes\n"),
+            save(&path, &hash(b"# My notes\n"), b"# Our notes\n"),
+        ];
+        let acl = has_acl(&File::open(&path).unwrap()).unwrap();
+        // Lifted before asserting, so the folder can always be removed.
+        chmod(&["-N"]);
+        assert!(saves.iter().all(Result::is_ok), "{saves:?}");
+        assert!(acl);
+        assert_eq!(fs::read(&path).unwrap(), b"# Our notes\n");
+        assert_eq!(fs::metadata(&path).unwrap().ino(), before.ino());
+        assert_eq!(names(dir.path()), ["launch-plan.md"]);
+    }
+
+    #[test]
+    fn a_failed_write_in_place_puts_the_original_back() {
+        // The file size limit holds for the whole process, so this runs alone in a child.
+        let name = "file::tests::a_failed_write_in_place_puts_the_original_back";
+        if std::env::var_os("DEWLINE_TEST_FSIZE").is_none() {
+            let child = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", name])
+                .env("DEWLINE_TEST_FSIZE", "1")
+                .output()
+                .unwrap();
+            let report = String::from_utf8_lossy(&child.stdout);
+            assert!(
+                child.status.success() && report.contains("1 passed"),
+                "{report}"
+            );
+            return;
+        }
+        let (dir, path) = file(b"# Notes\n");
+        fs::hard_link(&path, dir.path().join("other.md")).unwrap();
+        // SAFETY: this child process runs only this test.
+        unsafe {
+            libc::signal(libc::SIGXFSZ, libc::SIG_IGN);
+            let mut limit = std::mem::zeroed::<libc::rlimit>();
+            assert_eq!(libc::getrlimit(libc::RLIMIT_FSIZE, &mut limit), 0);
+            limit.rlim_cur = 4096;
+            assert_eq!(libc::setrlimit(libc::RLIMIT_FSIZE, &limit), 0);
+        }
+        let result = save(&path, &hash(b"# Notes\n"), &[b'x'; 65536]);
+        assert!(matches!(result, Err(SaveError::Io(_))), "{result:?}");
+        assert_eq!(fs::read(&path).unwrap(), b"# Notes\n");
+        let retry = save(&path, &hash(b"# Notes\n"), b"# My notes\n");
+        assert!(retry.is_ok(), "{retry:?}");
+    }
+
+    #[test]
+    fn a_group_the_sibling_cannot_take_stays() {
+        // Files made in /private/tmp take its group, wheel, which a sibling
+        // made elsewhere can't be given by a user outside wheel.
+        let wheel = tempfile::tempdir_in("/private/tmp").unwrap();
+        let (dir, path) = file(b"");
+        fs::remove_file(&path).unwrap();
+        fs::write(wheel.path().join("launch-plan.md"), b"# Notes\n").unwrap();
+        fs::rename(wheel.path().join("launch-plan.md"), &path).unwrap();
+        let before = fs::metadata(&path).unwrap();
+        assert_ne!(before.gid(), fs::metadata(dir.path()).unwrap().gid());
+        save(&path, &hash(b"# Notes\n"), b"# My notes\n").unwrap();
+        let after = fs::metadata(&path).unwrap();
+        assert_eq!((after.uid(), after.gid()), (before.uid(), before.gid()));
+        assert_eq!(fs::read(&path).unwrap(), b"# My notes\n");
+        assert_eq!(names(dir.path()), ["launch-plan.md"]);
     }
 
     #[test]
