@@ -47,6 +47,11 @@ enum MainMenu {
         menu.addItem(.separator())
         let find = menu.addItem(withTitle: "Find…", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "f")
         find.tag = NSTextFinder.Action.showFindInterface.rawValue
+        let next = menu.addItem(withTitle: "Find Next", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "g")
+        next.tag = NSTextFinder.Action.nextMatch.rawValue
+        let previous = menu.addItem(withTitle: "Find Previous", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "G")
+        previous.tag = NSTextFinder.Action.previousMatch.rawValue
+        menu.addItem(withTitle: "Go to Line…", action: #selector(CaretTextView.goToLine(_:)), keyEquivalent: "l")
         return menu
     }
 
