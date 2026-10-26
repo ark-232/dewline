@@ -6,6 +6,7 @@ final class EditorTextView: NSTextView {
     private let hiddenGlyphs = HiddenGlyphs()
     private var composing = false
     private var toggleWaits = false
+    private var held: (anchor: Int, offset: CGFloat)?
 
     var defersStyling: Bool {
         composing || hasMarkedText()
@@ -108,7 +109,12 @@ final class EditorTextView: NSTextView {
         let last = characterIndexForInsertion(at: NSPoint(x: visible.maxX, y: visible.maxY))
         let caret = selectedRange().location
         let anchor = min(first <= caret && caret <= last ? caret : first, storage.length - 1)
-        let offset = baseline(at: anchor).map { $0 - visible.minY }
+        var offset = baseline(at: anchor).map { $0 - visible.minY }
+        // The clip view snaps each landing to the pixel grid, so a line left where the last toggle put it aims for that toggle's offset.
+        if let held, let measured = offset, held.anchor == anchor, abs(held.offset - measured) <= 0.5 {
+            offset = held.offset
+        }
+        held = offset.map { (anchor, $0) }
 
         let scrollView = enclosingScrollView!
         let clipView = scrollView.contentView

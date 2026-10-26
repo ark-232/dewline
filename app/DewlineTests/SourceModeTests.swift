@@ -9,11 +9,17 @@ extension Editor {
         window.displayIfNeeded()
     }
 
+    /// A frame and a pause: TextKit 1 finishes laying out in the background and then repeats an earlier `scrollRangeToVisible`.
+    func settle() {
+        display()
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.5))
+    }
+
     /// Where the anchor's baseline sits below the top of the visible rect, checked against the line `firstRect` reports.
     func position(of anchor: Int) throws -> CGFloat {
         let baseline = try #require(view.baseline(at: anchor))
         let line = view.convert(window.convertFromScreen(rect(anchor, 0)), from: nil)
-        #expect(line.minY < baseline && baseline <= line.maxY, "baseline \(baseline) outside its line \(line) visible \(view.visibleRect)")
+        #expect(line.minY < baseline && baseline <= line.maxY, "baseline \(baseline) outside its line \(line)")
         return baseline - view.visibleRect.minY
     }
 }
@@ -120,10 +126,10 @@ struct SourceModeTests {
         let editor = Editor(variant, Self.long, caret: caret)
         let view = editor.view
         view.scrollRangeToVisible(NSRange(location: caret, length: 0))
-        editor.display()
+        editor.settle()
         view.scroll(NSPoint(x: 0, y: view.visibleRect.minY - 123.3))
         editor.display()
-        var before = try editor.position(of: caret)
+        let before = try editor.position(of: caret)
         for _ in 1...4 {
             view.toggleSource(nil)
             editor.display()
@@ -132,7 +138,6 @@ struct SourceModeTests {
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.25))
             let settled = try editor.position(of: caret)
             #expect(abs(settled - after) <= 0.01, "settled from \(after) to \(settled)")
-            before = after
         }
         #expect(view.selectedRange() == NSRange(location: caret, length: 0))
         editor.expectTextKitUnchanged()
@@ -143,7 +148,7 @@ struct SourceModeTests {
         let editor = Editor(variant, Self.long, caret: 0)
         let view = editor.view
         view.scrollRangeToVisible(NSRange(location: Self.long.utf16.count / 2, length: 0))
-        editor.display()
+        editor.settle()
         let top = try #require(view.baseline(at: view.characterIndexForInsertion(at: view.visibleRect.origin)))
         view.scroll(NSPoint(x: 0, y: top - 5.3))
         editor.display()
@@ -156,7 +161,7 @@ struct SourceModeTests {
             #expect(abs(after - before) <= 1, "line at \(anchor) moved from \(before) to \(after)")
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.25))
             let settled = try editor.position(of: anchor)
-            #expect(abs(settled - after) <= 0.01, "settled from \(after) to \(settled) visible \(view.visibleRect) frame \(view.frame)")
+            #expect(abs(settled - after) <= 0.01, "settled from \(after) to \(settled)")
         }
         #expect(view.selectedRange() == NSRange(location: 0, length: 0))
         editor.expectTextKitUnchanged()
