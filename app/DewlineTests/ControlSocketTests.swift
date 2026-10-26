@@ -34,6 +34,53 @@ struct ControlSocketTests {
         #expect(client.line() == nil)
     }
 
+    /// Restart to Update, with `dewline open --wait` waiting on a file, says which file and holds; the restart runs
+    /// once the file closes, after the tool heard closed. A tool that gives up stops the wait at the next return to
+    /// the app.
+    @Test func restartToUpdateWaitsWhileAToolWaitsOnAFile() async throws {
+        let listening = try await Listening()
+        defer { listening.finish() }
+        let file = try listening.file("COMMIT_EDITMSG").path
+        let restart = try await Restart(listening.received)
+        defer { restart.finish() }
+        let client = try Client(listening.socket.path)
+        client.send(#"{"v":1,"op":"open","path":"\#(file)","wait":true}"# + "\n")
+        #expect(client.line() == #"{"reply":"opened","v":1}"#)
+
+        #expect(await restart.line == "1.4.0 is ready.")
+        await MainActor.run { restart.updates.checkForUpdates(nil) }
+        #expect(await restart.installs == 0, "the app keeps running while the tool waits")
+        let waiting = "Dewline restarts into 1.4.0 when you close COMMIT_EDITMSG, which a tool is waiting on."
+        #expect(await restart.line == waiting)
+        await MainActor.run { restart.updates.refresh() }
+        #expect(await restart.line == waiting, "the ready line does not come back over the wait")
+        await MainActor.run { NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: nil) }
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(await restart.installs == 0, "a return to the app does not end the wait while the tool waits")
+
+        await MainActor.run { restart.document.windowControllers.first?.window?.performClose(nil) }
+        #expect(client.line() == #"{"reply":"closed","v":1}"#, "the tool hears that its file closed")
+        try await restart.waitForInstall()
+        #expect(await restart.installs == 1)
+        #expect(await restart.line == nil)
+
+        // A tool that gives up waiting no longer holds the restart.
+        let again = try await Restart(listening.received)
+        defer { again.finish() }
+        var quitter: Client? = try Client(listening.socket.path)
+        quitter?.send(#"{"v":1,"op":"open","path":"\#(file)","wait":true}"# + "\n")
+        #expect(quitter?.line() == #"{"reply":"opened","v":1}"#)
+        await MainActor.run { again.updates.restart() }
+        #expect(await again.installs == 0)
+        quitter = nil
+        for _ in 0..<40 where await again.document.isAwaited {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        await MainActor.run { NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: nil) }
+        try await again.waitForInstall()
+        #expect(await again.installs == 1)
+    }
+
     @Test func refusesMalformedRequests() async throws {
         let listening = try await Listening()
         defer { listening.finish() }
@@ -169,6 +216,47 @@ private final class Received {
     var connections: [ControlSocket.Connection] = []
     /// When set, waiting requests are answered when it closes.
     var document: MarkdownDocument?
+}
+
+/// A staged critical 1.4.0, so its ready line shows at once, whose install block counts, on its own defaults, with a
+/// document that waiting requests attach to. Its lines go on one window that is never shown.
+@MainActor
+private final class Restart {
+    let updates: Updates
+    let document = MarkdownDocument()
+    private(set) var installs = 0
+    private let suite = "dev.arkwerx.dewline.tests.restart.\(UUID().uuidString)"
+    private let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 500), styleMask: [.titled], backing: .buffered, defer: true)
+
+    init(_ received: Received) throws {
+        try document.read(from: Data("Fix the build\n".utf8), ofType: "net.daringfireball.markdown")
+        document.displayName = "COMMIT_EDITMSG"
+        document.makeWindowControllers()
+        received.document = document
+        window.isReleasedWhenClosed = false
+        updates = Updates(defaults: try #require(UserDefaults(suiteName: suite)))
+        updates.windows = { [window] in [window] }
+        updates.composing = { false }
+        updates.awaited = { [document] in [document].filter(\.isAwaited) }
+        updates.stage(version: "1.4.0", critical: true) { [unowned self] in installs += 1 }
+    }
+
+    /// The sentence of the update line on the window, if there is one.
+    var line: String? {
+        window.titlebarAccessoryViewControllers.compactMap { $0 as? UpdateLine }
+            .flatMap { $0.view.subviews.flatMap(\.subviews).compactMap { ($0 as? NSTextField)?.stringValue } }.first
+    }
+
+    /// Waits for the restart's install block, which runs a turn after the change that ends the wait.
+    nonisolated func waitForInstall() async throws {
+        for _ in 0..<40 where await installs == 0 {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+    }
+
+    nonisolated func finish() {
+        UserDefaults().removePersistentDomain(forName: suite)
+    }
 }
 
 /// A started socket in a new folder whose handler records each request and answers `opened`.

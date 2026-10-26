@@ -45,6 +45,8 @@ final class Updates: NSObject, NSMenuItemValidation, SPUUpdaterDelegate, SPUStan
         case ready(String)
         /// "1.4.0 needs your password to install. Install…", when Sparkle cannot install it alone.
         case password(String)
+        /// A restart that waits until the files a tool waits on (`dewline open --wait`) close.
+        case waiting(String, files: [String])
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -53,6 +55,10 @@ final class Updates: NSObject, NSMenuItemValidation, SPUUpdaterDelegate, SPUStan
     @ObservationIgnored var windows: @MainActor () -> [NSWindow] = { NSApp.windows.filter { Updates.carriesLine($0) } }
     /// Whether the key window holds an open IME composition.
     @ObservationIgnored var composing: @MainActor () -> Bool = { (NSApp.keyWindow?.firstResponder as? NSTextInputClient)?.hasMarkedText() == true }
+    /// The open documents a `dewline open --wait` client is waiting on.
+    @ObservationIgnored var awaited: @MainActor () -> [MarkdownDocument] = {
+        NSDocumentController.shared.documents.compactMap { $0 as? MarkdownDocument }.filter(\.isAwaited)
+    }
 
     var updater: SPUUpdater?
     private(set) var automaticChecks = false
@@ -71,6 +77,9 @@ final class Updates: NSObject, NSMenuItemValidation, SPUUpdaterDelegate, SPUStan
     @ObservationIgnored private var whatsNewMonitor: Any?
     @ObservationIgnored private var afterComposition: (() -> Void)?
     @ObservationIgnored private var compositionObserver: (any NSObjectProtocol)?
+    /// A restart waiting for tools, with the version it restarts into.
+    @ObservationIgnored private var afterTools: (version: String, work: () -> Void)?
+    @ObservationIgnored private var toolObservers: [any NSObjectProtocol] = []
 
     init(defaults: UserDefaults) {
         self.defaults = defaults
@@ -198,9 +207,9 @@ final class Updates: NSObject, NSMenuItemValidation, SPUUpdaterDelegate, SPUStan
     }
 
     /// Shows the ready line on every window once the staged update has waited 7 days for a quit, or at once when it
-    /// is critical. It runs on each activation and never on a timer.
+    /// is critical, unless a restart already waits for tools. It runs on each activation and never on a timer.
     func refresh() {
-        guard let staged, staged.critical || now().timeIntervalSince(staged.date) >= Self.patience else { return }
+        guard let staged, afterTools == nil, staged.critical || now().timeIntervalSince(staged.date) >= Self.patience else { return }
         show(.ready(staged.version))
     }
 
@@ -208,11 +217,42 @@ final class Updates: NSObject, NSMenuItemValidation, SPUUpdaterDelegate, SPUStan
         refresh()
     }
 
-    /// Restarts into the staged update: once no IME composition is open, Sparkle quits the app through the usual
-    /// review of unsaved documents, installs and relaunches. A canceled quit keeps the app and the staged update.
+    /// Restarts into the staged update once no tool waits on an open file and no IME composition is open. Sparkle
+    /// then quits the app through the usual review of unsaved documents, installs and relaunches. A canceled quit
+    /// keeps the app and the staged update.
     func restart() {
-        guard let install = staged?.install else { return }
-        whenNotComposing(install)
+        guard let staged else { return }
+        restart(into: staged.version, then: staged.install)
+    }
+
+    private func restart(into version: String, then install: @escaping () -> Void) {
+        whenNoToolWaits(into: version) { [weak self] in self?.whenNotComposing(install) }
+    }
+
+    /// Runs `work` once no `dewline open --wait` client waits on an open document. Until then every window names the
+    /// files, and each document that closes, or a return to the app, checks again. A tool hears that its file
+    /// closed, never that the app quit under it.
+    private func whenNoToolWaits(into version: String, _ work: @escaping () -> Void) {
+        afterTools = (version, work)
+        toolsMayHaveFinished()
+        guard afterTools != nil, toolObservers.isEmpty else { return }
+        for name in [MarkdownDocument.didCloseNotification, NSApplication.didBecomeActiveNotification] {
+            toolObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                // A closing document answers its tools on the next pass, so the check waits a turn behind it.
+                Task { @MainActor in self?.toolsMayHaveFinished() }
+            })
+        }
+    }
+
+    private func toolsMayHaveFinished() {
+        guard let pending = afterTools else { return }
+        let files = awaited().compactMap(\.displayName)
+        guard files.isEmpty else { return show(.waiting(pending.version, files: files)) }
+        toolObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        toolObservers = []
+        afterTools = nil
+        if case .waiting = attention { removeAttentionLines() }
+        pending.work()
     }
 
     private func whenNotComposing(_ work: @escaping () -> Void) {
@@ -255,6 +295,9 @@ final class Updates: NSObject, NSMenuItemValidation, SPUUpdaterDelegate, SPUStan
             line = UpdateLine("\(version) is ready.", buttons: [("Restart", { [weak self] in self?.restart() })])
         case .password(let version):
             line = UpdateLine("\(version) needs your password to install.", buttons: [("Install\u{2026}", { [weak self] in self?.checkNow() })])
+        case .waiting(let version, let files):
+            let waiting = files.count == 1 ? "a tool is" : "tools are"
+            line = UpdateLine("Dewline restarts into \(version) when you close \(ListFormatter.localizedString(byJoining: files)), which \(waiting) waiting on.", buttons: [])
         }
         window.addTitlebarAccessoryViewController(line)
         attentionLines.append(line)
@@ -363,9 +406,9 @@ final class Updates: NSObject, NSMenuItemValidation, SPUUpdaterDelegate, SPUStan
         return true
     }
 
-    /// Sparkle's own Install and Relaunch button waits for an open IME composition the same way.
+    /// Sparkle's own Install and Relaunch button waits for tools and an open IME composition the same way.
     func updater(_ updater: SPUUpdater, shouldPostponeRelaunchForUpdate item: SUAppcastItem, untilInvokingBlock installHandler: @escaping () -> Void) -> Bool {
-        whenNotComposing(installHandler)
+        restart(into: item.displayVersionString, then: installHandler)
         return true
     }
 
