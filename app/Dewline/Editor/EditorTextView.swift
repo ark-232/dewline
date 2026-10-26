@@ -250,11 +250,15 @@ final class EditorTextView: CaretTextView {
         let visible = visibleRect
         if let layout = textLayoutManager {
             // TextKit 2 sizes the view and stacks the viewport from estimates it refreshes as it lays the viewport out:
-            // lay out, scroll to the line, lay out again, correct.
+            // lay out, scroll to the line, lay out again, correct. A refresh can leave the clip view a fraction of a pixel
+            // off the grid, where a scroll to a point lands up to a pixel from it, so the scroll moves by whole pixels and
+            // lands within half of one.
+            let pixel = 1 / (window?.backingScaleFactor ?? 1)
             for _ in 0..<2 {
                 layout.textViewportLayoutController.layoutViewport()
                 guard let now = baseline(at: anchor) else { return }
-                scroll(NSPoint(x: visible.minX, y: now - offset))
+                let top = visibleRect.minY
+                scroll(NSPoint(x: visible.minX, y: top + ((now - offset - top) / pixel).rounded() * pixel))
             }
         } else if let layout = layoutManager, let container = textContainer, let restyled = baseline(at: anchor) {
             let target = NSRect(x: visible.minX, y: restyled - offset, width: visible.width, height: visible.height)
