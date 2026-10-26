@@ -34,6 +34,11 @@ final class RenderedBlocks {
         index.blocks.contains { NSIntersectionRange($0.range, range).length > 0 }
     }
 
+    /// `range` and every block it meets: a block styles and reveals as a whole.
+    func covering(_ range: NSRange) -> NSRange {
+        index.blocks.reduce(range) { NSIntersectionRange($1.range, range).length > 0 ? NSUnionRange($0, $1.range) : $0 }
+    }
+
     /// Ranges of the blocks the selection entered or left since they were last styled.
     func revealChanges(_ selection: [NSRange]) -> [NSRange] {
         Set(index.blocks.filter { Self.touches($0.range, selection) }).symmetricDifference(revealed).map(\.range)
