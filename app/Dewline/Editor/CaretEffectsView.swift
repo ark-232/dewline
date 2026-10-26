@@ -1,7 +1,7 @@
 import AppKit
 
-/// The streak and the landing mark, above the text and below the system caret. Each is a committed Core Animation
-/// animation with no delegate, so the app does no work while it runs or after it ends.
+/// The streak and the landing mark, above the text. Each is a committed Core Animation animation with no delegate,
+/// so the app does no work while it runs or after it ends.
 final class CaretEffectsView: NSView {
     let streak = CAShapeLayer()
     let mark = CAShapeLayer()

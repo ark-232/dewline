@@ -30,12 +30,13 @@ class CaretTextView: NSTextView {
         monitor = nil
         idleTimer?.cancel()
         idleTimer = nil
+        solid = false
         guard let window else { return }
         insertionPointColor = Self.accent
         if effects.superview == nil {
             effects.frame = bounds
             effects.autoresizingMask = [.width, .height]
-            if let indicator { addSubview(effects, positioned: .below, relativeTo: indicator) } else { addSubview(effects) }
+            addSubview(effects)
         }
         center.addObserver(self, selector: #selector(keyStateDidChange(_:)), name: NSWindow.didBecomeKeyNotification, object: window)
         center.addObserver(self, selector: #selector(keyStateDidChange(_:)), name: NSWindow.didResignKeyNotification, object: window)
@@ -128,7 +129,7 @@ class CaretTextView: NSTextView {
         #selector(pageUp(_:)), #selector(pageDown(_:)),
     ]
 
-    /// Moves the selection as Go to Line does, and as Quick Open and the outline will.
+    /// Moves the selection as Go to Line does.
     func jump(to range: NSRange) {
         move(.jump) {
             setSelectedRange(range)
@@ -137,7 +138,7 @@ class CaretTextView: NSTextView {
     }
 
     func jump(toLine line: Int) {
-        guard let text = textStorage?.mutableString else { return }
+        let text = textStorage!.mutableString
         var start = 0
         var remaining = line
         while remaining > 1, start < text.length {
@@ -148,7 +149,6 @@ class CaretTextView: NSTextView {
     }
 
     @objc func goToLine(_ sender: Any?) {
-        guard let window else { return }
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
         let alert = NSAlert()
         alert.messageText = "Go to Line"
@@ -156,7 +156,7 @@ class CaretTextView: NSTextView {
         alert.addButton(withTitle: "Go")
         alert.addButton(withTitle: "Cancel")
         alert.window.initialFirstResponder = field
-        alert.beginSheetModal(for: window) { [weak self] response in
+        alert.beginSheetModal(for: window!) { [weak self] response in
             if response == .alertFirstButtonReturn, let line = Int(field.stringValue) { self?.jump(toLine: line) }
         }
     }
@@ -228,8 +228,8 @@ class CaretTextView: NSTextView {
     }
 
     private var accentColor: CGColor {
-        var color = Self.accent.cgColor
+        var color: CGColor?
         effectiveAppearance.performAsCurrentDrawingAppearance { color = Self.accent.cgColor }
-        return color
+        return color!
     }
 }

@@ -11,7 +11,7 @@ extension CaretTextView {
         let start = DispatchTime.now()
         let log = { @Sendable (line: String) in
             let seconds = Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1e9
-            FileHandle.standardOutput.write(Data(String(format: "%.3f %@\n", seconds, line).utf8))
+            try? FileHandle.standardOutput.write(contentsOf: Data(String(format: "%.3f %@\n", seconds, line).utf8))
         }
         let streaking = { self.effects.streak.animation(forKey: "streak") != nil }
         let steps: [(Double, () -> Void)] = [
