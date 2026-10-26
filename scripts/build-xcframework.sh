@@ -6,6 +6,8 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 package="$root/Packages/MdCore"
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$HOME/Library/Caches/dev.arkwerx.dewline/target}"
+# The app's deployment target, which C code in dependencies (BLAKE3's) otherwise takes from the build Mac.
+export MACOSX_DEPLOYMENT_TARGET=26.0
 
 case "${1:-}" in
   "") targets=("$(rustc --print host-tuple)") ;;
