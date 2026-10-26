@@ -29,6 +29,11 @@ final class ThemeStore {
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var colors: [Token: NSColor] = [:]
     @ObservationIgnored private var headings: [Int: Heading] = [:]
+    @ObservationIgnored private var body: NSFont?
+    @ObservationIgnored private var code: [CGFloat: NSFont] = [:]
+    @ObservationIgnored private var traited: [NSFont: [UInt32: NSFont]] = [:]
+    @ObservationIgnored private var lines: [CGFloat: NSParagraphStyle] = [:]
+    @ObservationIgnored private var quote: NSParagraphStyle?
 
     var appearance: Appearance {
         didSet {
@@ -69,6 +74,11 @@ final class ThemeStore {
         defaults.set(value, forKey: "Dewline" + key)
         colors = [:]
         headings = [:]
+        body = nil
+        code = [:]
+        traited = [:]
+        lines = [:]
+        quote = nil
         NotificationCenter.default.post(name: Self.didChange, object: self)
     }
 
@@ -114,12 +124,37 @@ final class ThemeStore {
     }
 
     var bodyFont: NSFont {
-        Faces.font(bodyFace, size: bodySize)
+        // Read on a cache hit too, so a view that shows the font observes them.
+        let face = bodyFace, size = bodySize
+        if let body { return body }
+        let font = Faces.font(face, size: size)
+        body = font
+        return font
     }
 
     /// The body's line height, on the half-point grid.
     var bodyLineHeight: CGFloat {
         (bodySize * lineHeight * 2).rounded() / 2
+    }
+
+    /// A paragraph style whose lines are all `height` tall.
+    func paragraphStyle(lineHeight height: CGFloat) -> NSParagraphStyle {
+        if let style = lines[height] { return style }
+        let style = NSMutableParagraphStyle()
+        style.minimumLineHeight = height
+        style.maximumLineHeight = height
+        lines[height] = style
+        return style
+    }
+
+    /// The body's paragraph style, indented for a quote.
+    var quoteParagraphStyle: NSParagraphStyle {
+        if let quote { return quote }
+        let style = paragraphStyle(lineHeight: bodyLineHeight).mutableCopy() as! NSMutableParagraphStyle
+        style.firstLineHeadIndent = (18 * bodySize / 17).rounded()
+        style.headIndent = style.firstLineHeadIndent
+        quote = style
+        return style
     }
 
     /// The text column's width: `columnWidth` times the body font's average advance over the lowercase alphabet and
@@ -149,7 +184,20 @@ final class ThemeStore {
     }
 
     func codeFont(size: CGFloat) -> NSFont {
-        Faces.font(codeFace, size: size)
+        // Read on a cache hit too, so a view that shows the font observes it.
+        let face = codeFace
+        if let font = code[size] { return font }
+        let font = Faces.font(face, size: size)
+        code[size] = font
+        return font
+    }
+
+    func font(_ font: NSFont, adding traits: NSFontDescriptor.SymbolicTraits) -> NSFont {
+        if let derived = traited[font]?[traits.rawValue] { return derived }
+        let descriptor = font.fontDescriptor.withSymbolicTraits(font.fontDescriptor.symbolicTraits.union(traits))
+        let derived = NSFont(descriptor: descriptor, size: font.pointSize)!
+        traited[font, default: [:]][traits.rawValue] = derived
+        return derived
     }
 
     struct Heading {
