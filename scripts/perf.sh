@@ -1,7 +1,9 @@
 #!/bin/bash
 # Measures the editor on this Mac: the perf tests in a Release build, then launch, memory, idle CPU and wakeups,
-# and the app and DMG sizes. Writes perf/m0-<date>.json, with the 1-minute load average at the start, after the
-# tests and at the end, and prints a table. Windows come to the front while it runs; no app is left running.
+# and the app and DMG sizes. Writes perf/<version>.json for the Cargo workspace version, with the 1-minute load
+# average at the start, after the tests and at the end, and each budget in perf/budgets.jq with its result; prints
+# the budgets, the other measurements and whether every budget holds. Windows come to the front while it runs; no app
+# is left running.
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -39,7 +41,7 @@ cold() { # n
 }
 
 # Opens a document and waits until the app's CPU time holds for 2 s, then 10 s more. Prints JSON: the footprint
-# then, and over the next 30 s the CPU, idle wakeups, context switches and whether the app stayed in front.
+# then, and over the next 60 s the CPU, idle wakeups, context switches and whether the app stayed in front.
 idle() { # document
     open -n -a "$app" "$1" --args -ApplePersistenceIgnoreState YES
     for _ in {1..50}; do pid=$(pgrep -n -f "$app/Contents/MacOS/Dewline") && break; sleep 0.1; done
@@ -47,7 +49,7 @@ idle() { # document
     local previous now=
     while previous=$now; sleep 2; now=$(ps -o time= -p "$pid"); [[ $now != "$previous" ]]; do :; done
     sleep 10
-    top -l 2 -s 30 -c d -pid "$pid" -stats pid,mem,cpu,idlew,csw > "$work/top"
+    top -l 2 -s 60 -c d -pid "$pid" -stats pid,mem,cpu,idlew,csw > "$work/top"
     local front
     front=$(lsappinfo info -only pid "$(lsappinfo front)" | grep -o 'pid = [0-9]*')
     kill "$pid"
@@ -88,8 +90,8 @@ mkdir "$work/dmg"
 ditto "$app" "$work/dmg/Dewline.app"
 hdiutil create -quiet -format ULMO -volname Dewline -srcfolder "$work/dmg" "$work/Dewline.dmg"
 
-mkdir -p "$root/perf"
-result=$root/perf/m0-$(date +%F).json
+version=$(awk -F'"' '/^\[workspace.package\]/ { s = 1; next } /^\[/ { s = 0 } s && $1 ~ /^version *= */ { print $2; exit }' "$root/core/Cargo.toml")
+result=$root/perf/$version.json
 jq -n --slurpfile tests "$work/tests.json" --slurpfile cold "$work/cold" --slurpfile warm "$work/warm" \
     --slurpfile one "$work/idle1MB" --slurpfile ten "$work/idle10MB" \
     --arg date "$(date +%F)" --arg commit "$(git -C "$root" describe --always --dirty)" \
@@ -101,27 +103,30 @@ jq -n --slurpfile tests "$work/tests.json" --slurpfile cold "$work/cold" --slurp
     '{date: $date, commit: $commit, mac: $mac, xcode: $xcode, build: "Release, arm64, unsigned", load: $load,
       corpusBytes: {"1MB": $corpus1, "10MB": $corpus10}, appBytes: $app, dmgBytes: $dmg, firstLaunchMs: $first[0],
       launch1MB: {coldMs: $cold, warmMs: $warm}, idle1MB: $one[0], idle10MB: $ten[0]} + $tests[0]' \
-    > "$result"
+    | jq -f "$root/perf/budgets.jq" > "$result"
 
 jq -r '
-    def f: if . >= 100 then round | tostring else . * 10 | round / 10 | tostring end;
-    def median: sort | .[length / 2 | floor];
-    def row($metric; value; $budget): [$metric, value, $budget] | @tsv;
-    (["Metric", "Measured", "Budget"] | @tsv),
-    row("Open 1 MB, ms"; .open1MB.ms | f; "50"),
-    row("Open 10 MB, ms"; .open10MB.ms | f; "250"),
-    row("Keystroke 1 MB p50 / p95 / p99, ms"; "\(.keystroke1MB.p50 | f) / \(.keystroke1MB.p95 | f) / \(.keystroke1MB.p99 | f)"; "8 / - / 16"),
-    row("Keystroke 10 MB p50 / p95 / p99, ms"; "\(.keystroke10MB.p50 | f) / \(.keystroke10MB.p95 | f) / \(.keystroke10MB.p99 | f)"; "- / 16 / -"),
-    row("Reveal p50 / p99, ms"; "\(.reveal.p50 | f) / \(.reveal.p99 | f)"; "-"),
-    row("Select all / deselect 1 MB, ms"; "\(.reveal.selectAll1MB | f) / \(.reveal.deselect1MB | f)"; "-"),
-    row("Scroll step p50 / p99, ms"; "\(.scroll.p50 | f) / \(.scroll.p99 | f)"; "-"),
-    row("Scroll steps over 8.3 ms, of 200"; .scroll.over8_3ms | f; "-"),
-    row("Scroll step settled p50 / p99, ms"; "\(.scrollSettled.p50 | f) / \(.scrollSettled.p99 | f)"; "-"),
-    row("First launch after the build, 1 MB, ms"; .firstLaunchMs | f; "-"),
-    row("Launch 1 MB cold (slowest of 3) / warm (median of 5), ms"; "\(.launch1MB.coldMs | max | f) / \(.launch1MB.warmMs | median | f)"; "300 / 150"),
-    row("Memory 1 MB / 10 MB, MB"; "\(.idle1MB.footprintMB | f) / \(.idle10MB.footprintMB | f)"; "80 / 150"),
-    row("Idle 1 MB CPU %, idle wakeups, context switches in 30 s"; "\(.idle1MB.cpuPercent | f), \(.idle1MB.idleWakeups | f), \(.idle1MB.contextSwitches | f)"; "0, 0, -"),
-    row("App in front while idle, 1 MB / 10 MB"; "\(.idle1MB.frontmost) / \(.idle10MB.frontmost)"; "-"),
-    row("App, DMG (ULMO), MB"; "\(.appBytes / 1048576 | f), \(.dmgBytes / 1048576 | f)"; "-, 20")
+    def f: if type != "number" then "-" elif . >= 100 then round | tostring else . * 10 | round / 10 | tostring end;
+    (["Budget", "Ceiling", "Measured", "Result"] | @tsv),
+    (.budgets[] | [.metric, "\(.budget) \(.unit)", "\(.measured | f) \(.unit)", if .pass then "holds" else "missed" end] | @tsv)
 ' "$result" | column -t -s $'\t'
+echo
+jq -r '
+    def f: if type != "number" then "-" elif . >= 100 then round | tostring else . * 10 | round / 10 | tostring end;
+    def row($metric; value): [$metric, value] | @tsv;
+    (["Also measured", "Measured"] | @tsv),
+    row("Keystroke 1 MB p95 / max, ms"; "\(.keystroke1MB.p95 | f) / \(.keystroke1MB.max | f)"),
+    row("Keystroke 10 MB p50 / p99, ms"; "\(.keystroke10MB.p50 | f) / \(.keystroke10MB.p99 | f)"),
+    row("Reveal p50 / p99, ms"; "\(.reveal.p50 | f) / \(.reveal.p99 | f)"),
+    row("Select all / deselect 1 MB, ms"; "\(.reveal.selectAll1MB | f) / \(.reveal.deselect1MB | f)"),
+    row("Scroll step p50 / p99, ms"; "\(.scroll.p50 | f) / \(.scroll.p99 | f)"),
+    row("Scroll steps over 8.3 ms, of 200"; .scroll.over8_3ms | f),
+    row("Scroll step settled p50 / p99, ms"; "\(.scrollSettled.p50 | f) / \(.scrollSettled.p99 | f)"),
+    row("First launch after the build, 1 MB, ms"; .firstLaunchMs | f),
+    row("Idle context switches in 60 s, 1 MB / 10 MB"; "\(.idle1MB.contextSwitches | f) / \(.idle10MB.contextSwitches | f)"),
+    row("App in front while idle, 1 MB / 10 MB"; "\(.idle1MB.frontmost) / \(.idle10MB.frontmost)"),
+    row("App, MB"; .appBytes / 1048576 | f)
+' "$result" | column -t -s $'\t'
+echo
+jq -r 'if .pass then "Every budget holds." else "\([.budgets[] | select(.pass | not)] | length) of \(.budgets | length) budgets missed." end' "$result"
 echo "Wrote $result"

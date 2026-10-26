@@ -1,6 +1,6 @@
 # Releases
 
-`release.yml` builds, signs, notarizes and publishes Dewline when the owner pushes a signed tag: `v1.4.0` releases, `rehearse/v1.4.0` runs everything through the approval and publishes nothing. The full design is the updates spec (`~/.claude/plans/dewline/research/updates.md`); this page holds the commands.
+`release.yml` builds, signs, notarizes and publishes Dewline when the owner pushes a signed tag: `v1.4.0` releases, `rehearse/v1.4.0` runs everything through the approval and publishes nothing. `pull.yml` takes a release back on every channel when the owner pushes `pull/v1.4.0`. The full design is the updates spec (`~/.claude/plans/dewline/research/updates.md`); this page holds the commands.
 
 ## Local builds
 
@@ -8,9 +8,15 @@
 scripts/build-release.sh                 # universal unsigned Dewline.app in ~/Library/Caches/dev.arkwerx.dewline/release
 scripts/sign.sh <Dewline.app> <out.dmg>  # signs, makes the ULMO DMG, notarizes and staples when the inputs exist
 scripts/notices.sh                       # rewrites THIRD_PARTY_NOTICES.md after a dependency change
+scripts/release-dry.sh <Dewline.app> <dir>  # ci.yml's release-dry: ad hoc signed DMG, a feed signed with a key made for the run
+scripts/verify-feed.sh <appcast.xml or URL> <public key> [SHA-256]  # checks a signed feed with only the public key
+scripts/sparkle-tools.sh <dir>           # Sparkle's generate_appcast and sign_update at the pinned version and SHA-256
+scripts/perf.sh                          # measures this Mac; writes perf/<version>.json with each budget's result
 ```
 
 `sign.sh` reads `SIGN_IDENTITY` (`Developer ID Application: ArkWerx LLC (7W6LLR2DK7)`) and `ASC_KEY_PATH`, `ASC_KEY_ID`, `ASC_ISSUER_ID`, and prints a skip line for each stage whose inputs are missing. Releases are built only in CI.
+
+A release PR sets the version in `core/Cargo.toml`, adds the version's section to `CHANGELOG.md` (`## 1.4.0 (2 Nov 2026)`, or `## 1.4.1 (critical)` for a critical update), and commits `perf/1.4.0.json` from `scripts/perf.sh` on the owner's Mac. `verify` refuses a tag whose perf file misses a budget in `perf/budgets.jq`. The section becomes the appcast notes, the release body and the app's What's New.
 
 ## Owner setup
 
@@ -18,6 +24,13 @@ Run these in a terminal on this Mac. Keep every exported key in a new folder und
 
 ```fish
 for env in release-approval release feed-signing updates tap site; gh api -X PUT repos/ark-232/dewline/environments/$env; end
+```
+
+`pull.yml` deploys to `release-approval`, `feed-signing`, `updates` and `site` from `pull/v*` tags and to a `tap-revert` environment that holds the tap App's credentials with no wait timer. Create `tap-revert`, then allow `pull/v*` tags on all five:
+
+```fish
+echo '{"deployment_branch_policy": {"protected_branches": false, "custom_branch_policies": true}}' | gh api -X PUT repos/ark-232/dewline/environments/tap-revert --input -
+for env in release-approval feed-signing updates site tap-revert; gh api -X POST repos/ark-232/dewline/environments/$env/deployment-branch-policies -f name='pull/v*' -f type=tag; end
 ```
 
 **Developer ID certificate.** Confirm it comes from the G2 intermediate, then export it with a new password and store it:
@@ -44,10 +57,7 @@ xcrun notarytool history --key /path/to/AuthKey_39V9MTV26C.p8 --key-id 39V9MTV26
 **Sparkle EdDSA key.** `generate_keys` keeps the private key in the login keychain and prints the public key:
 
 ```sh
-umask 077; mkdir -p ~/dewline-keys; cd ~/dewline-keys
-curl -fsSLO https://github.com/sparkle-project/Sparkle/releases/download/2.10.0/Sparkle-2.10.0.tar.xz
-shasum -a 256 Sparkle-2.10.0.tar.xz   # c2bf58aa8387266ac179357b1415d6f2635f044da8be41042af32425dae6da0c
-tar -xf Sparkle-2.10.0.tar.xz
+umask 077; mkdir -p ~/dewline-keys; ~/Development/dewline/scripts/sparkle-tools.sh ~/dewline-keys; cd ~/dewline-keys
 ./bin/generate_keys
 ./bin/generate_keys -x ed25519.key
 gh secret set SPARKLE_ED_PRIVATE_KEY --env feed-signing -R ark-232/dewline < ed25519.key
@@ -71,7 +81,31 @@ gh secret set FEED_APP_ID --env updates -R ark-232/dewline --body <dewline-feed 
 gh secret set FEED_APP_PRIVATE_KEY --env updates -R ark-232/dewline < ~/dewline-keys/dewline-feed.private-key.pem
 gh secret set TAP_APP_ID --env tap -R ark-232/dewline --body <dewline-tap App ID>
 gh secret set TAP_APP_PRIVATE_KEY --env tap -R ark-232/dewline < ~/dewline-keys/dewline-tap.private-key.pem
+gh secret set TAP_APP_ID --env tap-revert -R ark-232/dewline --body <dewline-tap App ID>
+gh secret set TAP_APP_PRIVATE_KEY --env tap-revert -R ark-232/dewline < ~/dewline-keys/dewline-tap.private-key.pem
 rm ~/dewline-keys/*.pem
 ```
 
-**Signed tags.** `verify` checks each tag against `.github/release-allowed-signers` (one line: `ark-232 namespaces="git" <your SSH public key>`). Tag with `git tag -s v1.4.0 -m "Dewline 1.4.0"` after `git config gpg.format ssh` and `git config user.signingkey ~/.ssh/<key>.pub`.
+**The feed repo.** `ark-232/dewline-updates` is public (`verify` and `feed-sign` read it without a token) and starts with a signed feed that has no items. In a checkout of it, write this `appcast.xml`, sign it with the keychain key (`~/dewline-keys/bin/sign_update appcast.xml`), and check it with `scripts/verify-feed.sh appcast.xml <public key>` before the first push:
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>Dewline</title>
+    </channel>
+</rss>
+```
+
+Beside it, `firebase.json` serves only the feed, uncached:
+
+```json
+{"hosting": {"public": ".", "ignore": ["firebase.json", "pulled.txt", "**/.*"],
+  "headers": [{"source": "/appcast.xml", "headers": [{"key": "Cache-Control", "value": "no-cache"}]}]}}
+```
+
+The Firebase project `dewline-updates` serves it at `updates.dewline.dev`. Its Workload Identity provider admits only this repository's `updates` environment, through a `feed-deploy` service account with Hosting deploy rights in that project alone; set the provider and the account as the `updates` environment's variables `FEED_WIF_PROVIDER` and `FEED_DEPLOY_SA`. The site does the same with `SITE_WIF_PROVIDER`, `SITE_DEPLOY_SA` and `SITE_PROJECT` in `site`.
+
+**The tap.** `ark-232/homebrew-tap` holds `Casks/dewline.rb` (spec section 3.6) with exactly one `version` and one `sha256` line, and CI that runs `brew style` and `brew audit --cask`.
+
+**Signed tags.** `verify` checks each tag against `.github/release-allowed-signers` (one line: `ark-232 namespaces="git" <your SSH public key>`). Tag with `git tag -s v1.4.0 -m "Dewline 1.4.0"` after `git config gpg.format ssh` and `git config user.signingkey ~/.ssh/<key>.pub`. A pull's message is its reason, one line, which `pulled.txt` records: `git tag -s pull/v1.4.0 -m "Loses the last line on save"`.

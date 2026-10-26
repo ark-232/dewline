@@ -72,6 +72,31 @@ jobs:
       - run: xcodebuild build -project app/Dewline.xcodeproj -scheme Dewline -configuration Release -destination 'generic/platform=macOS' CODE_SIGNING_ALLOWED=NO
       - run: lipo -info Packages/MdCore/DewlineFFI.xcframework/macos-arm64_x86_64/libdewline_ffi.a
 
+  # The release path with no secrets: the universal app from pinned inputs, its Mach-O and Info.plist checks, its DMG
+  # signed ad hoc, and a feed signed with a key made for this run and checked by scripts/verify-feed.sh.
+  release-dry:
+    runs-on: xcode-27
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install XcodeGen 2.46.0
+        run: |
+          curl -sSL -o "$RUNNER_TEMP/xcodegen.zip" https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip
+          echo "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: 1.99.1
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - name: Build the universal app and check it
+        run: scripts/build-release.sh "$RUNNER_TEMP/release"
+      - name: Package it and sign a feed with a throwaway key
+        run: scripts/release-dry.sh "$RUNNER_TEMP/release/Dewline.app" "$RUNNER_TEMP/dry"
+
   zizmor:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -86,7 +111,7 @@ jobs:
 
   required:
     if: always()
-    needs: [rust, deny, swift, zizmor]
+    needs: [rust, deny, swift, release-dry, zizmor]
     runs-on: ubuntu-latest
     steps:
       - env:
