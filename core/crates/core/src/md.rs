@@ -231,11 +231,13 @@ pub struct Token {
     pub end: u32,
 }
 
-/// Link and footnote labels, compared as pulldown-cmark compares them.
+/// What a window needs from the rest of its document: the link and footnote labels, compared as pulldown-cmark
+/// compares them, and whether the document opens front matter that no line closes.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Labels {
     links: HashSet<UniCase<String>>,
     footnotes: HashSet<UniCase<String>>,
+    open_front_matter: bool,
 }
 
 impl Labels {
@@ -251,16 +253,18 @@ pub struct Parse {
     pub tokens: Vec<Token>,
     /// The labels the text defines.
     pub labels: Labels,
-    /// Whether the rest of the document still parses as it did: the next block starts where it did, a row window is
-    /// still a table's head and rows, and the window defines no label the document lacked. True for a document.
+    /// Whether the rest of the document still parses as it did: the next block starts where it did and is no new table
+    /// row, a row window is still a table's head and rows, front matter the window opens closes in it, and the window
+    /// defines no label the document lacked. True for a document.
     pub holds: bool,
 }
 
 /// The text the editor reparses after an edit, cut from its document.
 #[derive(Debug, Clone, Copy)]
 pub struct Window<'a> {
-    /// Whole blocks: those holding the edit, and the block above when no blank line separates them. For an edit in a
-    /// table's body, the table's head and then the edited rows.
+    /// Whole blocks: those holding the edit, and the block above when no blank line separates them or the window
+    /// starts with a blank or a line break. For an edit in a table's body, the table's head and then the edited rows;
+    /// for an edit in its head, the whole table.
     pub text: &'a str,
     /// The lines after `text` through the first one that is not blank and the line after that, which can make it a
     /// table's header; nothing at the end of the document.
@@ -287,7 +291,9 @@ pub fn parse(text: &str) -> Parse {
         at_start: true,
         row: false,
     };
-    run(&window, &Labels::default())
+    let mut parse = run(&window, &Labels::default());
+    parse.labels.open_front_matter = matches!(front_matter(text), Some(Err(())));
+    parse
 }
 
 /// A window, with the document's labels from its last whole parse; `None` over `WINDOW_LIMIT`.
@@ -296,7 +302,16 @@ pub fn parse_window(window: &Window<'_>, labels: &Labels) -> Option<Parse> {
         return None;
     }
     let mut parse = run(window, labels);
-    parse.holds &= labels.covers(&parse.labels);
+    // A closing line anywhere closes front matter the document's first line opened.
+    let closes = |text: &str| {
+        let bytes = text.as_bytes();
+        (0..bytes.len()).any(|at| {
+            (at == 0 || matches!(bytes[at - 1], b'\n' | b'\r'))
+                && closing_fence(&bytes[at..]).is_some()
+        })
+    };
+    parse.holds &= labels.covers(&parse.labels)
+        && !(labels.open_front_matter && !window.at_start && closes(window.text));
     Some(parse)
 }
 
@@ -326,9 +341,7 @@ fn run(window: &Window<'_>, table: &Labels) -> Parse {
             [0, front.open, front.close, front.close_end],
         ));
     }
-    let mut starts = Vec::with_capacity(walk.blocks.len());
     for (kind, range) in &walk.blocks {
-        starts.push(range.start);
         if inside(range.start) {
             blocks.push((*kind, local(range.start)..local(range.end)));
         }
@@ -352,7 +365,16 @@ fn run(window: &Window<'_>, table: &Labels) -> Parse {
     }
 
     let next = hi + blank_lines(window.next);
-    let mut holds = next == source.len() || (!open && starts.contains(&next));
+    // The window's blocks end in it, the next block starts where it did, and only a row window's table runs on into
+    // it.
+    let after = walk.blocks.iter().find(|(_, range)| range.start == next);
+    let mut holds = walk
+        .blocks
+        .iter()
+        .all(|(_, range)| !inside(range.start) || range.end <= hi)
+        && (next == source.len()
+            || (!open
+                && after.is_some_and(|(kind, _)| window.row || *kind != BlockKind::TableRow)));
     if window.row {
         holds &= matches!(blocks.split_first(), Some(((BlockKind::TableHead, _), rows))
             if !rows.is_empty() && rows.iter().all(|(kind, _)| *kind == BlockKind::TableRow));
@@ -781,6 +803,22 @@ fn walk(source: &str, table: &Labels) -> Walk {
         tokens.push(token);
     }
     tokens.extend(extra);
+    // pulldown-cmark can report a child of a wikilink outside the wikilink's text; a token that does not nest in its
+    // parent's content goes.
+    let mut parents: Vec<[usize; 4]> = Vec::new();
+    tokens.retain(|(_, offsets)| {
+        let [start, .., end] = *offsets;
+        while parents.last().is_some_and(|parent| parent[3] <= start) {
+            parents.pop();
+        }
+        let nests = parents
+            .last()
+            .is_none_or(|parent| parent[1] <= start && end <= parent[2]);
+        if nests {
+            parents.push(*offsets);
+        }
+        nests
+    });
     walk.tokens = tokens;
     walk
 }
@@ -873,18 +911,27 @@ impl Walk {
                     *last = kind;
                     before.end = range.end;
                 }
-                Some((_, before)) if indent >= 4 && kind != BlockKind::Code => {
-                    before.end = range.end
+                Some((last, before)) if indent >= 4 && kind != BlockKind::Code => {
+                    before.end = range.end;
+                    // A table's head brings its rows into its window, wherever it starts.
+                    if kind == BlockKind::TableHead {
+                        *last = kind;
+                    }
                 }
                 _ => merged.push((kind, range)),
             }
         }
         self.blocks = merged;
         // pulldown-cmark reports a label's first definition only, so each block's definitions come from parsing the
-        // block alone, which a whole document and a window do alike. A table holds none.
+        // block alone, which a whole document and a window do alike. A table holds none, and a footnote's own `]:`
+        // is not one.
         for (kind, range) in &self.blocks {
             let text = &source[range.clone()];
-            if matches!(kind, BlockKind::TableHead | BlockKind::TableRow) || !defines_link(text) {
+            let colons = text.matches("]:").take(2).count();
+            if matches!(kind, BlockKind::TableHead | BlockKind::TableRow)
+                || colons == 0
+                || (*kind == BlockKind::FootnoteDefinition && colons == 1)
+            {
                 continue;
             }
             let mut events = Parser::new_ext(text, OPTIONS).into_offset_iter();
@@ -1022,16 +1069,6 @@ fn between(start: usize, end: usize, open: usize, close: usize) -> [usize; 4] {
         end.saturating_sub(close).max(content_start),
         end,
     ]
-}
-
-/// Whether a line of `text` may define a link: a `[`, not a footnote's `[^`, and then `]:`.
-fn defines_link(text: &str) -> bool {
-    text.match_indices("]:").any(|(at, _)| {
-        let line = text[..at].rfind(['\n', '\r']).map_or(0, |n| n + 1);
-        text[line..at]
-            .rfind('[')
-            .is_some_and(|open| !text[line + open + 1..].starts_with('^'))
-    })
 }
 
 /// `[` and `]:`, the destination and the title, around a definition's label.
@@ -1226,7 +1263,15 @@ fn inline_marks(text: &str, kind: TokenKind, range: &Range<usize>, child_end: us
         TokenKind::Link | TokenKind::Image => {
             child_end + text[child_end..end].find(']').unwrap_or(0)
         }
+        // Inline HTML can run over a setext heading's last line break, which the underline keeps.
         TokenKind::Heading { .. } => {
+            let child_end = match source.rfind('\n').or_else(|| source.rfind('\r')) {
+                Some(at) if marker == 0 => {
+                    let line_break = start + at - usize::from(source[..at].ends_with('\r'));
+                    child_end.min(line_break).max(content_start)
+                }
+                _ => child_end,
+            };
             content_start + text[content_start..child_end].trim_end_matches(BLANK).len()
         }
         _ => child_end,
@@ -1887,7 +1932,19 @@ mod tests {
     }
 
     /// The window an edit in `blocks[index]` reparses, as UTF-16 pieces, and whether it is a table row's.
-    fn window_of(blocks: &[Block], index: usize) -> (Vec<Range<u32>>, bool) {
+    /// Whether `text` starts with a blank or a line break, either of which can continue a list item, a footnote or
+    /// a fence above it across blank lines.
+    fn starts_indented(text: &str) -> bool {
+        matches!(text.as_bytes().first(), Some(b' ' | b'\t' | b'\n' | b'\r'))
+    }
+
+    /// The block above joins the window when no blank line separates them, or when the window starts with a blank
+    /// or a line break.
+    fn window_of(
+        blocks: &[Block],
+        index: usize,
+        indented: &dyn Fn(u32) -> bool,
+    ) -> (Vec<Range<u32>>, bool) {
         let head = |i: usize| {
             (0..=i)
                 .rev()
@@ -1911,7 +1968,7 @@ mod tests {
             _ => 0,
         };
         let start = match index.checked_sub(1).map(|i| (i, blocks[i])) {
-            Some((i, above)) if above.end == block.start => {
+            Some((i, above)) if above.end == block.start || indented(block.start) => {
                 if above.kind == BlockKind::TableRow
                     && let Some(head) = head(i)
                 {
@@ -1930,7 +1987,8 @@ mod tests {
         let whole = parse(text);
         let byte = bytes_of(text);
         for index in 0..whole.blocks.len() {
-            let (pieces, row) = window_of(&whole.blocks, index);
+            let indented = |at: u32| starts_indented(&text[byte[at as usize]..]);
+            let (pieces, row) = window_of(&whole.blocks, index, &indented);
             let window: String = pieces
                 .iter()
                 .map(|p| &text[byte[p.start as usize]..byte[p.end as usize]])
@@ -2021,6 +2079,172 @@ mod tests {
                     "window {index} {window:?}: tokens {mapped:?} != {expected:?}"
                 ));
             }
+        }
+        Ok(())
+    }
+
+    /// The lines after a window that `Window::next` holds.
+    fn lookahead(rest: &str) -> &str {
+        let blank = blank_lines(rest);
+        if blank == rest.len() {
+            rest
+        } else {
+            &rest[..line_after(rest, line_after(rest, blank))]
+        }
+    }
+
+    /// After an edit inside a block's window, a window that holds leaves every block and token outside it as it was,
+    /// and those inside as the window parsed them. A window that held a definition before the edit is the editor's to
+    /// reparse, since the label table cannot tell what the edit removed.
+    fn check_edit(
+        text: &str,
+        pick: usize,
+        offset: usize,
+        delete: usize,
+        insert: &str,
+    ) -> Result<(), String> {
+        let old = parse(text);
+        if old.blocks.is_empty() {
+            return Ok(());
+        }
+        let byte = bytes_of(text);
+        let index = pick % old.blocks.len();
+        let block = old.blocks[index];
+        let (ws16, we16) = (block.start, block.end);
+        let (ws, we) = (byte[ws16 as usize], byte[we16 as usize]);
+        if block.kind == BlockKind::TableRow
+            || block.kind == BlockKind::TableHead
+            || old.tokens.iter().any(|t| {
+                matches!(
+                    t.kind,
+                    TokenKind::Definition | TokenKind::FootnoteDefinition
+                ) && ws16 <= t.start
+                    && t.end <= we16
+            })
+        {
+            return Ok(());
+        }
+        // The edit stays inside the block and off its last line break.
+        let last = if text[..we].ends_with("\r\n") {
+            we - 2
+        } else if text[..we].ends_with(['\n', '\r']) {
+            we - 1
+        } else {
+            we
+        };
+        let mut from = ws + offset % (last - ws + 1);
+        while !text.is_char_boundary(from) {
+            from -= 1;
+        }
+        let mut to = (from + delete).min(last);
+        while !text.is_char_boundary(to) {
+            to -= 1;
+        }
+        let edited = format!("{}{insert}{}", &text[..from], &text[to..]);
+        let new_we = we + insert.len() - (to - from);
+        // The window is cut from the edited text, by the old blocks.
+        let new_byte = bytes_of(&edited);
+        let indented = |at: u32| starts_indented(&edited[new_byte[at as usize]..]);
+        let mut blocks = old.blocks.clone();
+        let delta16 = edited[ws..new_we].encode_utf16().count() as i64 - (we16 - ws16) as i64;
+        blocks[index].end = (we16 as i64 + delta16) as u32;
+        for b in &mut blocks[index + 1..] {
+            b.start = (b.start as i64 + delta16) as u32;
+            b.end = (b.end as i64 + delta16) as u32;
+        }
+        let (pieces, _) = window_of(&blocks, index, &indented);
+        let [piece] = pieces.as_slice() else {
+            return Ok(());
+        };
+        let (start, end) = (new_byte[piece.start as usize], new_byte[piece.end as usize]);
+        let window = Window {
+            text: &edited[start..end],
+            next: lookahead(&edited[end..]),
+            at_start: start == 0,
+            row: false,
+        };
+        let Some(got) = parse_window(&window, &old.labels) else {
+            return Ok(());
+        };
+        if !got.holds {
+            return Ok(());
+        }
+        let new = parse(&edited);
+        let (w0, w1) = (piece.start, piece.end);
+        let old_end = (w1 as i64 - delta16) as u32;
+        let shift = |at: u32| (at as i64 + delta16) as u32;
+        let before = |s: u32, e: u32| e <= w0 && s < w0 || (s == e && e < w0);
+        let outside_old: Vec<(BlockKind, u32, u32)> = old
+            .blocks
+            .iter()
+            .filter(|b| b.end <= w0 || b.start >= old_end)
+            .map(|b| {
+                if b.start >= old_end {
+                    (b.kind, shift(b.start), shift(b.end))
+                } else {
+                    (b.kind, b.start, b.end)
+                }
+            })
+            .collect();
+        let outside_new: Vec<(BlockKind, u32, u32)> = new
+            .blocks
+            .iter()
+            .filter(|b| b.end <= w0 || b.start >= w1)
+            .map(|b| (b.kind, b.start, b.end))
+            .collect();
+        if outside_old != outside_new {
+            return Err(format!(
+                "blocks outside the window {:?} changed: {outside_old:?} != {outside_new:?} in {edited:?}",
+                window.text
+            ));
+        }
+        let moved = |t: &Token| Token {
+            kind: t.kind,
+            start: shift(t.start),
+            content_start: shift(t.content_start),
+            content_end: shift(t.content_end),
+            end: shift(t.end),
+        };
+        let tokens_old: Vec<Token> = old
+            .tokens
+            .iter()
+            .filter(|t| before(t.start, t.end) || t.start >= old_end)
+            .map(|t| if t.start >= old_end { moved(t) } else { *t })
+            .collect();
+        let tokens_new: Vec<Token> = new
+            .tokens
+            .iter()
+            .filter(|t| before(t.start, t.end) || t.start >= w1)
+            .copied()
+            .collect();
+        if tokens_old != tokens_new {
+            return Err(format!(
+                "tokens outside the window {:?} changed in {edited:?}",
+                window.text
+            ));
+        }
+        let inside: Vec<Token> = new
+            .tokens
+            .iter()
+            .filter(|t| w0 <= t.start && t.end <= w1 && !before(t.start, t.end))
+            .copied()
+            .collect();
+        let windowed: Vec<Token> = got
+            .tokens
+            .iter()
+            .map(|t| Token {
+                kind: t.kind,
+                start: t.start + w0,
+                content_start: t.content_start + w0,
+                content_end: t.content_end + w0,
+                end: t.end + w0,
+            })
+            .collect();
+        if inside != windowed {
+            return Err(format!(
+                "window {:?} parsed apart from the document {edited:?}: {windowed:?} != {inside:?}",
+                window.text
+            ));
         }
         Ok(())
     }
@@ -2446,6 +2670,22 @@ mod tests {
         #[test]
         fn every_window_parses_alone_as_in_the_document(text in document()) {
             prop_assert!(check_restart(&text).is_ok(), "{}", check_restart(&text).unwrap_err());
+        }
+
+        #[test]
+        fn an_edit_whose_window_holds_changes_nothing_outside_it(
+            text in document(),
+            pick in any::<usize>(),
+            offset in any::<usize>(),
+            delete in 0..6usize,
+            insert in prop::sample::select(vec![
+                "", "a", " ", "  ", "    ", "\t", "\n", "\n\n", "- ", "1. ", "> ", "# ", "```", "~~~", "$$", "%%", "==",
+                "<div>", "<!--", "-->", "---", "===", "|", "| a |\n|---|", "[a]: /u", "[^1]: n", "[^1]", "[a]", "[[",
+                "]]", "*", "`", "\r\n", "é", "🙂",
+            ]),
+        ) {
+            let result = check_edit(&text, pick, offset, delete, insert);
+            prop_assert!(result.is_ok(), "{}", result.unwrap_err());
         }
 
         #[test]
