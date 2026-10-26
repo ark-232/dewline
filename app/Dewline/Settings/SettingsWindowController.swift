@@ -18,6 +18,7 @@ final class SettingsWindowController: NSWindowController {
         tabs.addTabViewItem(Self.pane("Appearance", "paintpalette", AppearancePane(store: store)))
         tabs.addTabViewItem(Self.pane("Editor", "character.cursor.ibeam", EditorPane(store: store)))
         tabs.addTabViewItem(Self.pane("Fonts", "textformat", FontsPane(store: store, library: .shared)))
+        tabs.addTabViewItem(Self.pane("Updates", "arrow.triangle.2.circlepath", UpdatesPane(updates: .shared)))
         let window = NSWindow(contentViewController: tabs)
         window.styleMask = [.titled, .closable]
         window.toolbarStyle = .preference
