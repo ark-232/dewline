@@ -34,7 +34,7 @@ A pure-Rust UI was ruled out: no Rust GUI framework offers VoiceOver for text, W
 | Updates | Sparkle 2, EdDSA-signed |
 | Quick Look | static HTML with no web view and no scripts |
 | Diagrams | Mermaid through mermaid-rs-renderer, off the main thread and cached; no JavaScript |
-| Math | native typesetting, no JavaScript; the engine is chosen in M0 |
+| Math | TeX through RaTeX, off the main thread and cached; no JavaScript ([0005](decisions/0005-math-engine.md)) |
 | Vim mode | an input layer in the app, off by default |
 | Collaboration | Loro for the shared file's history, iroh for transport with a relay fallback |
 
