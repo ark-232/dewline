@@ -10,6 +10,8 @@ struct EditorPane: View {
                     Stepper(value: $store.bodySize, in: ThemeStore.bodySizes, step: 1) {
                         Text("\(Int(store.bodySize)) pt").monospacedDigit()
                     }
+                    .accessibilityLabel("Text size")
+                    .accessibilityValue("\(Int(store.bodySize)) points")
                 }
                 LabeledContent("Line height") {
                     HStack(spacing: 10) {
@@ -20,6 +22,8 @@ struct EditorPane: View {
                         } maximumValueLabel: {
                             Text("Loose")
                         }
+                        .accessibilityLabel("Line height")
+                        .accessibilityValue(store.lineHeight.formatted(.number.precision(.fractionLength(2))))
                         Text(store.lineHeight, format: .number.precision(.fractionLength(2)))
                             .monospacedDigit()
                             .frame(width: 34, alignment: .trailing)
@@ -35,6 +39,8 @@ struct EditorPane: View {
                         } maximumValueLabel: {
                             Text("90")
                         }
+                        .accessibilityLabel("Line width")
+                        .accessibilityValue("\(Int(store.columnWidth)) characters")
                         Text("\(Int(store.columnWidth)) characters")
                             .monospacedDigit()
                             .frame(width: 92, alignment: .trailing)
