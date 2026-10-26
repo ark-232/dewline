@@ -18,6 +18,9 @@ enum MainMenu {
         let menu = NSMenu(title: "Dewline")
         menu.addItem(withTitle: "About Dewline", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         menu.addItem(.separator())
+        let settings = menu.addItem(withTitle: "Settings…", action: #selector(SettingsWindowController.showSettings(_:)), keyEquivalent: ",")
+        settings.target = SettingsWindowController.self
+        menu.addItem(.separator())
         menu.addItem(withTitle: "Hide Dewline", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         let others = menu.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
         others.keyEquivalentModifierMask = [.command, .option]
