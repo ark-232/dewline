@@ -1,0 +1,9 @@
+gfm_table.txt, gfm_strikethrough.txt and gfm_tasklist.txt are the table,
+strikethrough and task list sections of the GitHub Flavored Markdown Spec 0.29
+(https://github.github.com/gfm/), as pulldown-cmark 0.13.5 keeps them in
+third_party/GitHub with "example table" and the like renamed to "example".
+
+The GitHub Flavored Markdown Spec is based on the CommonMark Spec,
+Copyright (C) 2014-16 John MacFarlane, and is released under the
+Creative Commons CC-BY-SA 4.0 license:
+<https://creativecommons.org/licenses/by-sa/4.0/>.
