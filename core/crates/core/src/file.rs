@@ -6,7 +6,7 @@ use std::os::fd::AsRawFd;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub use blake3::Hash;
 
@@ -15,6 +15,10 @@ use crate::store::Store;
 /// The most swaps one save makes. Past the first, each puts back a version
 /// another writer wrote during the save's own swaps.
 const SWAPS: usize = 16;
+
+/// The most times, a millisecond apart, a save looks for another process to
+/// stop writing what its last swap took off.
+const WAITS: usize = 200;
 
 pub fn hash(bytes: &[u8]) -> Hash {
     blake3::hash(bytes)
@@ -72,29 +76,32 @@ pub fn save(path: &Path, base: &Hash, bytes: &[u8], store: &Store) -> Result<Has
     // Hashed first, so the check stays next to the write.
     let new = hash(bytes);
     let path = &fs::canonicalize(path).map_err(gone)?;
-    let (mut file, original) = unchanged(path, base)?;
-    if new == *base {
-        return Ok(new);
-    }
-    if file.metadata()?.nlink() > 1 || has_acl(&file)? || !replace(path, &file, base, bytes, store)?
-    {
-        write_in_place(path, &mut file, &original, bytes)?;
-    }
-    Ok(new)
-}
-
-/// Opens `path` for writing if it still holds the bytes `base` hashes, and
-/// returns it with those bytes.
-fn unchanged(path: &Path, base: &Hash) -> Result<(File, Vec<u8>), SaveError> {
     let mut file = OpenOptions::new()
         .read(true)
         .write(true)
         .open(path)
         .map_err(gone)?;
+    unchanged(&mut file, base)?;
+    if new == *base {
+        return Ok(new);
+    }
+    if file.metadata()?.nlink() > 1 || has_acl(&file)? || !replace(path, &file, base, bytes, store)?
+    {
+        // Checked again next to the write: a sibling that could not swap took time.
+        step();
+        let original = unchanged(&mut file, base)?;
+        write_in_place(path, &mut file, &original, bytes)?;
+    }
+    Ok(new)
+}
+
+/// The bytes of `file` if they are the ones `base` hashes.
+fn unchanged(file: &mut File, base: &Hash) -> Result<Vec<u8>, SaveError> {
     let mut bytes = Vec::new();
+    file.seek(SeekFrom::Start(0))?;
     file.read_to_end(&mut bytes)?;
     if hash(&bytes) == *base {
-        Ok((file, bytes))
+        Ok(bytes)
     } else {
         Err(SaveError::Conflict)
     }
@@ -234,9 +241,10 @@ fn replace(
 /// Finishes a save after the swap that put its bytes, which `new` hashes, at
 /// `path` and moved the file there to `temp`. Each swap should take off what
 /// the path held when the swap before it ran, `base` at first. When it takes
-/// off something else, another writer got in, and the next swap puts their
-/// version back. Every version a swap took off, other than `base` and the
-/// save's own, goes into `store` before `temp` is removed.
+/// off something else, or another process still has it open for writing,
+/// another writer got in, and the next swap puts their version back. Every
+/// version a swap took off, other than `base` and the save's own, goes into
+/// `store` before `temp` is removed.
 fn settle(
     path: &Path,
     temp: &Path,
@@ -246,25 +254,56 @@ fn settle(
 ) -> Result<(), SaveError> {
     let (mut expected, mut put) = (*base, *new);
     let mut theirs: Vec<(Hash, Vec<u8>)> = Vec::new();
-    let mut swaps = 1;
-    let deleted = loop {
-        let out = read(temp)?;
-        let got = hash(&out);
+    let mut keep = |got: Hash, out: Vec<u8>| {
         if got != *base && got != *new && theirs.iter().all(|(kept, _)| *kept != got) {
             theirs.push((got, out));
         }
-        if got == expected || swaps == SWAPS {
-            break false;
+    };
+    let (mut swaps, mut deleted, mut waits) = (1, false, 0);
+    let busy = loop {
+        let out = read(temp)?;
+        let got = hash(&out);
+        keep(got, out);
+        let swappable = !deleted && swaps < SWAPS;
+        if got == expected || !swappable {
+            // A writer that opened the file before a swap writes into it
+            // wherever it is. Once no process has it open for writing, what
+            // it holds is final, and is read once more.
+            if !held(temp)? {
+                let last = read(temp)?;
+                if hash(&last) == got {
+                    break false;
+                }
+                keep(hash(&last), last);
+                continue;
+            }
+            if !swappable {
+                waits += 1;
+                if waits == WAITS {
+                    break true;
+                }
+                std::thread::sleep(Duration::from_millis(1));
+                continue;
+            }
         }
         match swap(temp, path) {
             Ok(()) => (expected, put, swaps) = (put, got, swaps + 1),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => break true,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => deleted = true,
             Err(error) => return Err(error.into()),
         }
     };
     let now = SystemTime::now();
     for (_, bytes) in &theirs {
         store.put(path, bytes, "Unknown app", now)?;
+    }
+    if busy {
+        return Err(SaveError::Io(io::Error::new(
+            io::ErrorKind::ResourceBusy,
+            format!(
+                "another app still has {} open for writing, so it stays",
+                temp.display()
+            ),
+        )));
     }
     fs::remove_file(temp)?;
     match (deleted, swaps) {
@@ -289,6 +328,94 @@ fn swap(a: &Path, b: &Path) -> io::Result<()> {
     }
 }
 
+// libc has no vnode_fdinfo.
+#[repr(C)]
+struct VnodeFdInfo {
+    file: ProcFileInfo,
+    vnode: libc::vnode_info,
+}
+
+#[repr(C)]
+struct ProcFileInfo {
+    open_flags: u32,
+    status: u32,
+    offset: libc::off_t,
+    kind: i32,
+    guard_flags: u32,
+}
+
+const PROC_PIDFDVNODEINFO: c_int = 1;
+const FWRITE: u32 = 2;
+
+/// Whether a process other than this one has the file at `path` open for
+/// writing. Processes this user can't inspect are not seen.
+fn held(path: &Path) -> io::Result<bool> {
+    let file = fs::symlink_metadata(path)?;
+    let me = std::process::id() as c_int;
+    let size = |count: usize, of: usize| {
+        c_int::try_from(count * of).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))
+    };
+    // SAFETY: each buffer holds the bytes its size says, and libproc writes no more.
+    unsafe {
+        let mut pids =
+            vec![0 as c_int; libc::proc_listallpids(std::ptr::null_mut(), 0).max(0) as usize + 64];
+        let count = libc::proc_listallpids(pids.as_mut_ptr().cast(), size(pids.len(), 4)?);
+        if count < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let mut fds = Vec::new();
+        for &pid in pids.iter().take(count as usize).filter(|&&pid| pid != me) {
+            let needed = libc::proc_pidinfo(pid, libc::PROC_PIDLISTFDS, 0, std::ptr::null_mut(), 0);
+            // Gone, or another user's.
+            if needed <= 0 {
+                continue;
+            }
+            fds.resize(
+                needed as usize / size_of::<libc::proc_fdinfo>(),
+                libc::proc_fdinfo {
+                    proc_fd: 0,
+                    proc_fdtype: 0,
+                },
+            );
+            let listed = libc::proc_pidinfo(
+                pid,
+                libc::PROC_PIDLISTFDS,
+                0,
+                fds.as_mut_ptr().cast(),
+                size(fds.len(), size_of::<libc::proc_fdinfo>())?,
+            );
+            for fd in fds
+                .iter()
+                .take(listed.max(0) as usize / size_of::<libc::proc_fdinfo>())
+            {
+                if fd.proc_fdtype != libc::PROX_FDTYPE_VNODE as u32 {
+                    continue;
+                }
+                let mut info = std::mem::MaybeUninit::<VnodeFdInfo>::zeroed();
+                let wrote = libc::proc_pidfdinfo(
+                    pid,
+                    fd.proc_fd,
+                    PROC_PIDFDVNODEINFO,
+                    info.as_mut_ptr().cast(),
+                    size(1, size_of::<VnodeFdInfo>())?,
+                );
+                if wrote as usize != size_of::<VnodeFdInfo>() {
+                    continue;
+                }
+                let info = info.assume_init();
+                let stat = &info.vnode.vi_stat;
+                // dev_t is 32 bits here.
+                if (stat.vst_dev, stat.vst_ino) == (file.dev() as u32, file.ino())
+                    && info.file.open_flags & FWRITE != 0
+                {
+                    return Ok(true);
+                }
+            }
+        }
+    }
+    Ok(false)
+}
+
 /// Reads what a swap took off the path, without waiting on a pipe put there.
 fn read(path: &Path) -> io::Result<Vec<u8>> {
     let mut bytes = Vec::new();
@@ -306,8 +433,8 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
-/// Test builds run the hook a test sets before each swap, standing in for
-/// another writer.
+/// Test builds run the hook a test sets before each swap and each write in
+/// place, standing in for another writer.
 #[cfg(test)]
 fn step() {
     HOOK.with_borrow_mut(|hook| {
@@ -616,6 +743,19 @@ mod tests {
     }
 
     #[test]
+    fn a_write_just_before_a_write_in_place_is_a_conflict_and_stays() {
+        let (dir, path) = file(b"# Notes\n");
+        fs::hard_link(&path, dir.path().join("other.md")).unwrap();
+        let at = path.clone();
+        let saved = hooked(
+            move |_| append(&at, b"Codex wrote this.\n"),
+            || save(&path, &hash(b"# Notes\n"), b"# My notes\n"),
+        );
+        assert!(matches!(saved, Err(SaveError::Conflict)), "{saved:?}");
+        assert_eq!(fs::read(&path).unwrap(), b"# Notes\nCodex wrote this.\n");
+    }
+
+    #[test]
     fn a_symlink_swaps_its_target_beside_it() {
         let (dir, target) = file(b"# Notes\n");
         let links = tempfile::tempdir().unwrap();
@@ -826,6 +966,48 @@ mod tests {
             kept(&store, &path),
             (1..=SWAPS).map(version).collect::<Vec<_>>()
         );
+        assert_eq!(names(dir.path()), ["launch-plan.md"]);
+    }
+
+    #[test]
+    fn a_writer_holding_the_file_open_keeps_what_it_writes_after_the_save() {
+        let test =
+            "file::tests::a_writer_holding_the_file_open_keeps_what_it_writes_after_the_save";
+        let signals = |folder: &Path| (folder.join("open"), folder.join("write"));
+        if let Some(path) = std::env::var_os("DEWLINE_TEST_HOLDER") {
+            let (open, write) = signals(Path::new(
+                &std::env::var_os("DEWLINE_TEST_SIGNALS").unwrap(),
+            ));
+            let mut file = OpenOptions::new().append(true).open(path).unwrap();
+            File::create(open).unwrap();
+            while !write.exists() {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            file.write_all(b"Appended late.\n").unwrap();
+            return;
+        }
+        let (dir, path) = file(b"# Notes\n");
+        let other = tempfile::tempdir().unwrap();
+        let store = Store::open(&other.path().join("snapshots")).unwrap();
+        let (open, write) = signals(other.path());
+        let mut holder = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", test])
+            .env("DEWLINE_TEST_HOLDER", &path)
+            .env("DEWLINE_TEST_SIGNALS", other.path())
+            .stdout(Stdio::null())
+            .spawn()
+            .unwrap();
+        while !open.exists() {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let saved = super::save(&path, &hash(b"# Notes\n"), b"# My notes\n", &store);
+        File::create(&write).unwrap();
+        assert!(holder.wait().unwrap().success());
+        assert!(
+            matches!(saved, Err(SaveError::Raced(on)) if on == hash(b"# Notes\n")),
+            "{saved:?}"
+        );
+        assert_eq!(fs::read(&path).unwrap(), b"# Notes\nAppended late.\n");
         assert_eq!(names(dir.path()), ["launch-plan.md"]);
     }
 
