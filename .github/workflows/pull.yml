@@ -226,11 +226,19 @@ jobs:
         run: |
           feed=$RUNNER_TEMP/feed/appcast.xml
           echo "$FEED_SHA256  $feed" | sha256sum -c -
+          repo=repos/ark-232/dewline-updates
+          head=$(gh api "$repo/git/ref/heads/main" --jq .object.sha)
+          if [[ $head != "$UPDATES_COMMIT" ]] \
+            && gh api "$repo/contents/appcast.xml?ref=$head" --jq .content | base64 -d | sha256sum | grep -q "^$FEED_SHA256 "; then
+            echo "::notice::dewline-updates already holds this feed at $head, from an earlier attempt"
+            echo "UPDATES_HEAD=$head" >> "$GITHUB_ENV"
+            exit 0
+          fi
           pulled=$RUNNER_TEMP/pulled.txt
           if [[ -f verified/pulled.txt ]]; then cp verified/pulled.txt "$pulled"; fi
           printf '%s %s %s\n' "$VERSION" "$DATE" "$REASON" >> "$pulled"
-          repo=repos/ark-232/dewline-updates
-          tree=$(jq -n --arg base "$(gh api "$repo/git/commits/$UPDATES_COMMIT" --jq .tree.sha)" \
+          base=$(gh api "$repo/git/commits/$UPDATES_COMMIT" --jq .tree.sha)
+          tree=$(jq -n --arg base "$base" \
             --rawfile feed "$feed" --rawfile pulled "$pulled" '{base_tree: $base, tree: [
               {path: "appcast.xml", mode: "100644", type: "blob", content: $feed},
               {path: "pulled.txt", mode: "100644", type: "blob", content: $pulled}]}' \

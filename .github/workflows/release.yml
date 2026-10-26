@@ -344,6 +344,24 @@ jobs:
         run: |
           feed=$RUNNER_TEMP/archives/appcast.xml
           scripts/verify-feed.sh "$feed" "$PUBLIC_KEY"
+          # The new feed is the committed one plus this build. generate_appcast may drop old items and rewrites how
+          # kept ones are written, so kept items are compared by content.
+          python3 -I - updates/appcast.xml "$feed" "$BUILD" <<'EOF'
+          import sys, xml.etree.ElementTree as ET
+          old, new, build = sys.argv[1:]
+          S = "{http://www.andymatuschak.org/xml-namespaces/sparkle}"
+          def content(e):
+              return e.tag, sorted(e.attrib.items()), (e.text or "").strip(), [content(c) for c in e]
+          def items(path):
+              return {i.findtext(S + "version"): content(i) for i in ET.parse(path).iter("item")}
+          before, after = items(old), items(new)
+          if sorted(set(after) - set(before)) != [build]:
+              sys.exit(f"the new feed adds builds {sorted(set(after) - set(before))}, not build {build} alone")
+          changed = [b for b in before if b in after and before[b] != after[b]]
+          if changed:
+              sys.exit(f"generate_appcast changed the items for builds {changed}")
+          print(f"adds build {build}; drops {sorted(set(before) - set(after), key=int) or 'nothing'}")
+          EOF
           echo "sha256=$(shasum -a 256 "$feed" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
           {
             echo "## Dewline $VERSION"
@@ -492,8 +510,13 @@ jobs:
         run: |
           feed=$RUNNER_TEMP/feed/appcast.xml
           echo "$FEED_SHA256  $feed" | sha256sum -c -
-          blob=$(gh api "repos/ark-232/dewline-updates/contents/appcast.xml?ref=$UPDATES_COMMIT" --jq .sha)
-          gh api -X PUT repos/ark-232/dewline-updates/contents/appcast.xml -f branch=main -f sha="$blob" \
+          repo=repos/ark-232/dewline-updates
+          if gh api "$repo/contents/appcast.xml?ref=main" --jq .content | base64 -d | sha256sum | grep -q "^$FEED_SHA256 "; then
+            echo "::notice::dewline-updates already holds this feed, from an earlier attempt"
+            exit 0
+          fi
+          blob=$(gh api "$repo/contents/appcast.xml?ref=$UPDATES_COMMIT" --jq .sha)
+          gh api -X PUT "$repo/contents/appcast.xml" -f branch=main -f sha="$blob" \
             -f message="Dewline $VERSION" -f content="$(base64 -w0 "$feed")" > /dev/null
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
