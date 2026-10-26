@@ -101,11 +101,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         self.textView = textView
         sidebar.show(document.fileURL, text: document.text)
         if let url = document.fileURL {
-            let parent = url.deletingLastPathComponent()
-            let inFolder = folder?.relativePath(of: url).map { path in
-                ([folder!.url.lastPathComponent] + path.split(separator: "/").dropLast().map(String.init)).joined(separator: " › ")
+            let folders = folder.flatMap { folder in
+                folder.relativePath(of: url).map { [folder.url.lastPathComponent] + $0.split(separator: "/").dropLast().map(String.init) }
             }
-            window?.subtitle = inFolder ?? FileManager.default.displayName(atPath: parent.path)
+            window?.subtitle = (folders ?? [FileManager.default.displayName(atPath: url.deletingLastPathComponent().path)]).joined(separator: " › ")
             Library.noteOpened(url)
         } else {
             window?.subtitle = ""
@@ -207,6 +206,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         toolbarDefaultItemIdentifiers(toolbar)
     }
 
+    // Without this method NSToolbar shows no items, though AppKit makes both standard ones itself.
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
         nil
     }

@@ -12,7 +12,7 @@ final class SidebarNode {
         /// A Pinned or Recents row, with the time it was opened.
         case shortcut(FolderEntry, Date?)
         case heading(Heading)
-        /// The last row of a folder: what its .gitignore hid.
+        /// The last row of a folder: what its .gitignore hides.
         case ignored([String])
         /// The row after the first 12 headings that shows the rest.
         case more(Int)
@@ -293,7 +293,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             add("Open in New Tab", #selector(openInNewTab(_:)))
             menu.addItem(.separator())
         }
-        let isPinned = Library.pins.contains(entry.url)
+        let isPinned = Library.pins.contains { $0.path == entry.url.path }
         add(isPinned ? "Unpin" : "Pin", isPinned ? #selector(unpin(_:)) : #selector(pin(_:)))
         if case .shortcut(_, .some) = node.kind {
             add("Remove from Recents", #selector(forget(_:)))
@@ -389,6 +389,11 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
                 : names.joined(separator: ", ") + " hidden by .gitignore"
             cell.textField?.textColor = .tertiaryLabelColor
             cell.toolTip = names.joined(separator: "\n")
+            cell.setAccessibilityCustomActions([NSAccessibilityCustomAction(name: showsIgnored ? "Hide Ignored Items" : "Show Ignored Items") { [weak self] in
+                self?.showsIgnored.toggle()
+                self?.relist { _ in true }
+                return true
+            }])
             return cell
         case .more(let count):
             let cell = cell(SidebarCell.note)
