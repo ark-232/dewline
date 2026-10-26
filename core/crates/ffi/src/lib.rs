@@ -4,6 +4,7 @@ use std::thread;
 use std::time::Duration;
 
 use dewline_core::md;
+use mermaid_rs_renderer::{LayoutConfig, RenderOptions, Theme};
 use ratex_layout::LayoutOptions;
 use ratex_types::color::Color;
 use resvg::{tiny_skia, usvg};
@@ -68,6 +69,76 @@ pub enum RenderError {
     Invalid { message: String },
 }
 
+/// The editor theme's colors for a diagram, each sRGB 0xRRGGBBAA.
+#[derive(uniffi::Record)]
+pub struct DiagramColors {
+    pub paper: u32,
+    pub ink: u32,
+    pub ink2: u32,
+    pub accent: u32,
+    pub rule: u32,
+    pub fill: u32,
+}
+
+impl DiagramColors {
+    /// The renderer's theme in these colors for a diagram of `kind`. On a dark page, where the ink is lighter than
+    /// the paper, pie slices and git branches take the renderer's dark palettes and `LIGHT_ONLY` kinds keep its light
+    /// theme.
+    fn theme(&self, kind: &str) -> Theme {
+        let lightness = |color: u32| (color >> 24) + ((color >> 16) & 0xff) + ((color >> 8) & 0xff);
+        let modern = Theme::modern();
+        let base = if lightness(self.ink) <= lightness(self.paper) {
+            modern
+        } else if LIGHT_ONLY.contains(&kind) {
+            return modern;
+        } else {
+            Theme {
+                font_family: modern.font_family,
+                font_size: modern.font_size,
+                ..Theme::dark()
+            }
+        };
+        let [paper, ink, ink2, accent, rule, fill] = [
+            self.paper,
+            self.ink,
+            self.ink2,
+            self.accent,
+            self.rule,
+            self.fill,
+        ]
+        .map(|color| format!("#{color:08x}"));
+        Theme {
+            background: paper.clone(),
+            edge_label_background: paper.clone(),
+            cluster_background: paper.clone(),
+            tertiary_color: paper,
+            primary_text_color: ink.clone(),
+            text_color: ink.clone(),
+            git_commit_label_color: ink.clone(),
+            git_tag_label_color: ink.clone(),
+            pie_title_text_color: ink.clone(),
+            pie_legend_text_color: ink,
+            line_color: ink2,
+            sequence_note_border: accent,
+            primary_border_color: rule.clone(),
+            cluster_border: rule.clone(),
+            sequence_actor_border: rule.clone(),
+            sequence_actor_line: rule.clone(),
+            sequence_activation_border: rule.clone(),
+            git_tag_label_border: rule.clone(),
+            pie_outer_stroke_color: rule,
+            primary_color: fill.clone(),
+            secondary_color: fill.clone(),
+            sequence_actor_fill: fill.clone(),
+            sequence_note_fill: fill.clone(),
+            sequence_activation_fill: fill.clone(),
+            git_commit_label_background: fill.clone(),
+            git_tag_label_background: fill,
+            ..base
+        }
+    }
+}
+
 /// Premultiplied RGBA, row by row.
 #[derive(uniffi::Record)]
 pub struct Raster {
@@ -110,6 +181,20 @@ const HEADERS: [&str; 29] = [
     "treemap",
     "xychart",
 ];
+// Diagram types the renderer draws for a white page: on a dark one, some of their labels, lines or flows vanish.
+const LIGHT_ONLY: [&str; 11] = [
+    "c4",
+    "c4context",
+    "c4container",
+    "c4component",
+    "c4dynamic",
+    "c4deployment",
+    "quadrantchart",
+    "radar",
+    "requirementdiagram",
+    "sankey",
+    "timeline",
+];
 const MAX_SOURCE: usize = 50 * 1024;
 const MAX_PIXELS: u32 = 16 << 20;
 const BUDGET: Duration = Duration::from_millis(250);
@@ -143,7 +228,7 @@ fn within_budget<T: Send + 'static>(
 }
 
 #[uniffi::export]
-pub fn render_mermaid(source: String) -> Result<String, RenderError> {
+pub fn render_mermaid(source: String, colors: DiagramColors) -> Result<String, RenderError> {
     if source.len() > MAX_SOURCE {
         return Err(RenderError::TooLarge);
     }
@@ -157,13 +242,22 @@ pub fn render_mermaid(source: String) -> Result<String, RenderError> {
             .next()
             .unwrap_or("")
     });
-    if !HEADERS.contains(&kind.to_ascii_lowercase().as_str()) {
+    let known = kind.to_ascii_lowercase();
+    if !HEADERS.contains(&known.as_str()) {
         return Err(RenderError::Invalid {
             message: format!("unsupported diagram type '{kind}'"),
         });
     }
     LazyLock::force(&MERMAID_FONTS);
-    within_budget(move || mermaid_rs_renderer::render(&source).map_err(|error| error.to_string()))
+    let theme = colors.theme(&known);
+    within_budget(move || {
+        let options = RenderOptions {
+            theme,
+            layout: LayoutConfig::default(),
+        };
+        mermaid_rs_renderer::render_with_options(&source, options)
+            .map_err(|error| error.to_string())
+    })
 }
 
 /// Draws an SVG at `scale` pixels per SVG unit, or smaller to fit `max_width`
@@ -245,30 +339,70 @@ mod tests {
         });
     }
 
+    // Nightwatch, dark.
+    fn night() -> DiagramColors {
+        DiagramColors {
+            paper: 0x08101aff,
+            ink: 0xd1e1e9ff,
+            ink2: 0xa3b8c5ff,
+            accent: 0x62bbf5ff,
+            rule: 0x4f6172ff,
+            fill: 0x0f1926ff,
+        }
+    }
+
     #[test]
     fn mermaid_renders_svg() {
         isolate();
-        let svg = render_mermaid("flowchart LR\n  a[Start] --> b[Stop]".into()).unwrap();
+        let svg = render_mermaid("flowchart LR\n  a[Start] --> b[Stop]".into(), night()).unwrap();
         assert!(svg.starts_with("<svg") && svg.contains("Start"));
+    }
+
+    #[test]
+    fn mermaid_takes_the_theme_colors() {
+        isolate();
+        let svg = render_mermaid(
+            "sequenceDiagram\n  a->>b: hi\n  note over b: n".into(),
+            night(),
+        )
+        .unwrap();
+        for color in [
+            "#08101aff",
+            "#d1e1e9ff",
+            "#a3b8c5ff",
+            "#62bbf5ff",
+            "#4f6172ff",
+            "#0f1926ff",
+        ] {
+            assert!(svg.contains(color), "{color} is missing");
+        }
+    }
+
+    #[test]
+    fn light_only_kinds_keep_the_light_theme_on_a_dark_page() {
+        isolate();
+        let svg = render_mermaid("timeline\n  2002 : LinkedIn".into(), night()).unwrap();
+        assert!(svg.contains("fill=\"#FFFFFF\"") && !svg.contains("#08101aff"));
     }
 
     #[test]
     fn mermaid_errors_name_the_problem() {
         isolate();
         let Err(RenderError::Invalid { message }) =
-            render_mermaid("venn-beta\n  set A\n  set B".into())
+            render_mermaid("venn-beta\n  set A\n  set B".into(), night())
         else {
             panic!("rendered a diagram type the renderer does not parse");
         };
         assert_eq!(message, "unsupported diagram type 'venn'");
         let Err(RenderError::Invalid { message }) = render_mermaid(
             "---\ntitle: T\n---\nclassDiagram\n  class A {\n    <<interface>>\n  }".into(),
+            night(),
         ) else {
             panic!("rendered a class body the renderer does not parse");
         };
         assert!(message.contains("<<interface>>"), "{message}");
         assert!(matches!(
-            render_mermaid("%%\n".repeat(MAX_SOURCE)),
+            render_mermaid("%%\n".repeat(MAX_SOURCE), night()),
             Err(RenderError::TooLarge)
         ));
     }

@@ -134,6 +134,56 @@ struct RenderedBlockTests {
         editor.expectTextKitUnchanged()
     }
 
+    /// Light and dark take the light and dark slots' themes, so switching the window's appearance changes the theme
+    /// without touching the owner's defaults.
+    @Test(arguments: TextKitVariant.allCases)
+    func blocksRedrawInTheThemeOfEachAppearance(_ variant: TextKitVariant) async {
+        let text = "Above\n\(Self.diagram)\n\(Self.formula)\nBelow"
+        let diagram = 6
+        let formula = diagram + Self.diagram.utf16.count + 1
+        let editor = BlockEditor(variant, text, caret: 0)
+        let store = ThemeStore.shared
+        let increased = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
+        var drawn: [CGImage] = []
+        for (name, tokens) in [
+            (NSAppearance.Name.aqua, increased ? store.lightTheme.increasedLightColors : store.lightTheme.lightColors),
+            (.darkAqua, increased ? store.darkTheme.increasedDarkColors : store.darkTheme.darkColors),
+        ] {
+            func rgb(_ token: Token) -> [Int] {
+                let color = tokens[token]!.usingColorSpace(.sRGB)!
+                return [color.redComponent, color.greenComponent, color.blueComponent].map { Int(($0 * 255).rounded()) }
+            }
+            // The diagram's top-left pixel, and the formula's most opaque pixel unpremultiplied.
+            func colors() -> (paper: [Int], ink: [Int])? {
+                guard let chart = editor.picture(at: diagram), let math = editor.picture(at: formula) else { return nil }
+                let pixels = Self.pixels(math.image)
+                let solid = stride(from: 0, to: pixels.count, by: 4).max { pixels[$0 + 3] < pixels[$1 + 3] }!
+                let ink = pixels[solid..<solid + 3].map { Int((Double($0) * 255 / Double(pixels[solid + 3])).rounded()) }
+                return (Self.pixels(chart.image)[0..<3].map(Int.init), ink)
+            }
+            func taken() -> Bool {
+                guard case let (paper, ink)? = colors() else { return false }
+                return paper == rgb(.paper) && zip(ink, rgb(.ink)).allSatisfy { abs($0 - $1) <= 2 }
+            }
+            editor.window.appearance = NSAppearance(named: name)
+            await editor.wait(until: taken)
+            #expect(taken(), "\(name.rawValue): paper \(rgb(.paper)) and ink \(rgb(.ink)), drawn \(String(describing: colors()))")
+            drawn += [diagram, formula].compactMap { editor.picture(at: $0)?.image }
+        }
+        #expect(drawn.count == 4 && drawn[0] !== drawn[2] && drawn[1] !== drawn[3], "the light pictures are replaced")
+        editor.expectTextKitUnchanged()
+    }
+
+    /// The image drawn in sRGB as premultiplied RGBA, row by row from the top.
+    static func pixels(_ image: CGImage) -> [UInt8] {
+        let context = CGContext(
+            data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: image.width * 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )!
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        return Array(UnsafeBufferPointer(start: context.data!.assumingMemoryBound(to: UInt8.self), count: image.width * image.height * 4))
+    }
+
     @Test(arguments: TextKitVariant.allCases)
     func theCaretRevealsTheSource(_ variant: TextKitVariant) async {
         let text = "Above\n\(Self.diagram)\nBelow"

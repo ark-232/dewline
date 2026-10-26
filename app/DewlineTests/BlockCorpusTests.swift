@@ -11,6 +11,10 @@ struct BlockCorpusTests {
     static let corpus = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         .deletingLastPathComponent().appending(path: "corpus")
     static let out = URL(fileURLWithPath: ProcessInfo.processInfo.environment["DEWLINE_CORPUS_OUT"] ?? "")
+    /// Tidewater's light colors.
+    static let colors = DiagramColors(
+        paper: 0xF9FC_FFFF, ink: 0x1A1F_29FF, ink2: 0x555B_66FF, accent: 0x2D54_D3FF, rule: 0x8C93_9FFF, fill: 0xEFF4_FAFF
+    )
 
     /// Milliseconds to the finished picture, and the picture or why there is none.
     static func render(_ request: PictureRequest) -> (milliseconds: Double, picture: Result<BlockPicture, RenderFailure>) {
@@ -43,7 +47,7 @@ struct BlockCorpusTests {
                 return !frontmatter && !line.isEmpty && line != "---" && !line.hasPrefix("%%")
             }
             let name = file.deletingPathExtension().lastPathComponent
-            let (milliseconds, picture) = Self.render(PictureRequest(kind: .mermaid, source: source, scale: 2, color: 0, engine: .raTeX))
+            let (milliseconds, picture) = Self.render(PictureRequest(kind: .mermaid, source: source, scale: 2, colors: Self.colors, engine: .raTeX))
             var result: [String: Any] = ["file": name, "header": header ?? "", "ms": milliseconds]
             switch picture {
             case .success(let picture):
@@ -62,7 +66,7 @@ struct BlockCorpusTests {
         let formulas = try String(contentsOf: Self.corpus.appending(path: "math/formulas.tex"), encoding: .utf8)
             .split(whereSeparator: \.isNewline).map(String.init)
         #expect(formulas.count == 50)
-        let request = { (tex: String) in PictureRequest(kind: .math, source: tex, scale: 2, color: 0x0000_00FF, engine: engine) }
+        let request = { (tex: String) in PictureRequest(kind: .math, source: tex, scale: 2, colors: Self.colors, engine: engine) }
         let cold = Self.render(request("x")).milliseconds
         var results: [[String: Any]] = []
         var times: [Double] = []

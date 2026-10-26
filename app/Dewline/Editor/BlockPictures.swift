@@ -25,8 +25,8 @@ struct PictureRequest: Hashable, Sendable {
     /// The diagram, the TeX, or the image file's path.
     let source: String
     let scale: CGFloat
-    /// Math only: sRGB 0xRRGGBBAA.
-    let color: UInt32
+    /// The theme's colors in the view's appearance: a diagram takes them all and math the ink; an image takes none.
+    let colors: DiagramColors?
     let engine: MathEngine
 
     /// Renders off the main thread, no wider than `width` points where the renderer can narrow.
@@ -35,9 +35,9 @@ struct PictureRequest: Hashable, Sendable {
             let image: CGImage
             switch kind {
             case .mermaid:
-                image = try mermaidImage(source, scale: scale, maxWidth: Int(width * scale))
+                image = try mermaidImage(source, colors: colors!, scale: scale, maxWidth: Int(width * scale))
             case .math:
-                image = try typesetMath(source, engine: engine, size: 20, scale: scale, color: color)
+                image = try typesetMath(source, engine: engine, size: 20, scale: scale, color: colors!.ink)
             case .image:
                 guard !source.isEmpty else { throw RenderFailure("the note is not saved in a folder yet") }
                 // Only a regular file: a pipe would hold the render queue forever.

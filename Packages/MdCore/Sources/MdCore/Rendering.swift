@@ -12,10 +12,22 @@ public struct RenderFailure: Error, Sendable, Equatable {
     }
 }
 
-/// A Mermaid diagram drawn by the engine at `scale` pixels per point, narrowed to `maxWidth` pixels.
-public func mermaidImage(_ source: String, scale: Double, maxWidth: Int) throws(RenderFailure) -> CGImage {
+/// The editor theme's colors for a diagram, each sRGB 0xRRGGBBAA.
+public struct DiagramColors: Hashable, Sendable {
+    public let paper, ink, ink2, accent, rule, fill: UInt32
+
+    public init(paper: UInt32, ink: UInt32, ink2: UInt32, accent: UInt32, rule: UInt32, fill: UInt32) {
+        (self.paper, self.ink, self.ink2, self.accent, self.rule, self.fill) = (paper, ink, ink2, accent, rule, fill)
+    }
+}
+
+/// A Mermaid diagram drawn by the engine in `colors` at `scale` pixels per point, narrowed to `maxWidth` pixels.
+public func mermaidImage(_ source: String, colors: DiagramColors, scale: Double, maxWidth: Int) throws(RenderFailure) -> CGImage {
+    let colors = DewlineFFIBindings.DiagramColors(
+        paper: colors.paper, ink: colors.ink, ink2: colors.ink2, accent: colors.accent, rule: colors.rule, fill: colors.fill
+    )
     let raster = try engine {
-        try rasterizeSvg(svg: try renderMermaid(source: source), scale: Float(scale), maxWidth: UInt32(clamping: maxWidth))
+        try rasterizeSvg(svg: try renderMermaid(source: source, colors: colors), scale: Float(scale), maxWidth: UInt32(clamping: maxWidth))
     }
     guard let provider = CGDataProvider(data: raster.pixels as CFData),
         let image = CGImage(

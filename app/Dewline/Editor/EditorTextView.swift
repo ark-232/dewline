@@ -91,7 +91,7 @@ final class EditorTextView: CaretTextView {
         styler.themeDidChange()
     }
 
-    /// Rendered math takes the ink of the appearance it was drawn in.
+    /// Rendered diagrams and math take the colors of the appearance they were drawn in.
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         styler.restyleDocument()
