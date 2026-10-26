@@ -1,8 +1,15 @@
 import AppKit
+import MdCore
 
-/// A markdown file, editable but never saved until saving goes through the engine.
+/// A markdown file. Saving writes only while the file still holds the bytes it was opened or last saved with.
 final class MarkdownDocument: NSDocument {
+    private static let bom = Data([0xEF, 0xBB, 0xBF])
+
+    /// The text as opened or last saved; the tab's text view holds the edits.
     private(set) var text = ""
+    /// The hash of the file's bytes as opened or last saved.
+    private var baseHash = contentHash(Data())
+    private var hasBOM = false
 
     override class var autosavesInPlace: Bool {
         false
@@ -13,7 +20,68 @@ final class MarkdownDocument: NSDocument {
             throw CocoaError(.fileReadInapplicableStringEncoding)
         }
         // Documents read on the main thread unless canConcurrentlyReadDocuments says otherwise.
-        MainActor.assumeIsolated { text = decoded }
+        MainActor.assumeIsolated {
+            text = decoded
+            baseHash = contentHash(data)
+            hasBOM = data.starts(with: Self.bom)
+        }
+    }
+
+    override func data(ofType typeName: String) throws -> Data {
+        bytes(of: shownText)
+    }
+
+    private var shownText: String {
+        (windowControllers.first as? MainWindowController)?.textView?.string ?? text
+    }
+
+    /// Decoding drops a byte-order mark, so the file's own goes back in front.
+    private func bytes(of text: String) -> Data {
+        (hasBOM ? Self.bom : Data()) + Data(text.utf8)
+    }
+
+    override func save(withDelegate delegate: Any?, didSave didSaveSelector: Selector?, contextInfo: UnsafeMutableRawPointer?) {
+        // AppKit refuses a file whose date moved and offers to save over it; writeSafely compares content instead.
+        if let fileURL, let date = try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.modificationDate] as? Date {
+            fileModificationDate = date
+        }
+        super.save(withDelegate: delegate, didSave: didSaveSelector, contextInfo: contextInfo)
+    }
+
+    override func writeSafely(to url: URL, ofType typeName: String, for saveOperation: NSDocument.SaveOperationType) throws {
+        // canAsynchronouslyWrite is false, so AppKit writes on the main thread.
+        try MainActor.assumeIsolated {
+            let shown = shownText
+            let bytes = bytes(of: shown)
+            let target = Self.identity(of: url)
+            guard saveOperation == .saveOperation || target != nil && target == fileURL.flatMap(Self.identity) else {
+                try super.writeSafely(to: url, ofType: typeName, for: saveOperation)
+                if saveOperation == .saveAsOperation {
+                    (text, baseHash) = (shown, contentHash(bytes))
+                }
+                return
+            }
+            do throws(SaveFailure) {
+                baseHash = try saveFile(bytes, to: url, base: baseHash)
+                text = shown
+            } catch .conflict {
+                throw SaveConflict(document: self, name: url.lastPathComponent)
+            } catch .io(let reason) {
+                throw CocoaError(.fileWriteUnknown, userInfo: [NSLocalizedFailureReasonErrorKey: reason])
+            }
+        }
+    }
+
+    /// The device and inode of the file at `url`, the same for every name of one file.
+    private static func identity(of url: URL) -> [Int]? {
+        let attributes = try? FileManager.default.attributesOfItem(atPath: url.resolvingSymlinksInPath().path)
+        guard let device = attributes?[.systemNumber] as? Int, let inode = attributes?[.systemFileNumber] as? Int else { return nil }
+        return [device, inode]
+    }
+
+    override func willPresentError(_ error: any Error) -> any Error {
+        // NSDocument presents a failed save as "could not be saved"; a conflict says what happened instead.
+        (error as NSError).userInfo[NSUnderlyingErrorKey] as? SaveConflict ?? super.willPresentError(error)
     }
 
     override func makeWindowControllers() {
@@ -42,5 +110,31 @@ final class MarkdownDocument: NSDocument {
         let start = process.kp_proc.p_starttime
         Swift.print(String(format: "%.1f", Date().timeIntervalSince1970 * 1000 - Double(start.tv_sec) * 1000 - Double(start.tv_usec) / 1000))
         exit(0)
+    }
+}
+
+/// A save that found the file changed on disk since it was opened or last saved, so it wrote nothing.
+struct SaveConflict: LocalizedError, RecoverableError {
+    let document: MarkdownDocument
+    let name: String
+
+    var errorDescription: String? {
+        "“\(name)” changed on disk after you opened it."
+    }
+
+    var recoverySuggestion: String? {
+        "Your edits are still in this window. Saving now would overwrite that change, so Dewline didn’t save."
+    }
+
+    var recoveryOptions: [String] {
+        ["Save As…", "Cancel"]
+    }
+
+    func attemptRecovery(optionIndex: Int) -> Bool {
+        if optionIndex == 0 {
+            // After the alert is gone: the save panel is a sheet on the same window.
+            Task { @MainActor in document.saveAs(nil) }
+        }
+        return false
     }
 }
