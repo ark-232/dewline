@@ -67,6 +67,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         document.showWindows()
     }
 
+    @objc func quickOpen(_ sender: Any?) {
+        QuickOpenPanel.show(commands: false)
+    }
+
+    @objc func showCommandPalette(_ sender: Any?) {
+        QuickOpenPanel.show(commands: true)
+    }
+
     @objc func openFolder(_ sender: Any?) {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
