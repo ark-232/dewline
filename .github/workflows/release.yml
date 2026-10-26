@@ -1,0 +1,642 @@
+name: release
+
+# Owner-only signed tags start it: v* releases, rehearse/v* runs every step through the approval with real signing,
+# notarization and feed signing, and publishes nothing. No job that compiles code holds a secret; each signing key
+# lives in one environment, and a job that needs one fails when it is missing. Spec: docs/release.md.
+on:
+  push:
+    tags:
+      - "v*"
+      - "rehearse/v*"
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  SPARKLE_TARBALL_SHA256: c2bf58aa8387266ac179357b1415d6f2635f044da8be41042af32425dae6da0c
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      checks: read
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+      channel: ${{ steps.tag.outputs.channel }}
+      critical: ${{ steps.tag.outputs.critical }}
+      build: ${{ steps.tag.outputs.build }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check the tag
+        id: tag
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          fail() { echo "::error::$*"; exit 1; }
+          git fetch --force origin "+refs/tags/$TAG:refs/tags/$TAG"
+          [[ $(git cat-file -t "refs/tags/$TAG") == tag ]] || fail "$TAG is not an annotated tag"
+          [[ -s .github/release-allowed-signers ]] || fail ".github/release-allowed-signers is missing (docs/release.md)"
+          git -c gpg.ssh.allowedSignersFile=.github/release-allowed-signers verify-tag "$TAG" \
+            || fail "$TAG is not signed by a key in .github/release-allowed-signers"
+          commit=$(git rev-parse "refs/tags/$TAG^{commit}")
+          git merge-base --is-ancestor "$commit" origin/main || fail "$TAG is not on main"
+          passed=$(gh api "repos/$GITHUB_REPOSITORY/commits/$commit/check-runs?check_name=required" \
+            --jq '[.check_runs[] | select(.conclusion == "success")] | length')
+          [[ $passed -gt 0 ]] || fail "the required check has not passed on $commit"
+
+          version=${TAG#rehearse/}
+          version=${version#v}
+          cargo=$(awk -F'"' '/^\[workspace.package\]/ { s = 1; next } /^\[/ { s = 0 } s && $1 ~ /^version *= */ { print $2; exit }' core/Cargo.toml)
+          [[ $cargo == "$version" ]] || fail "the tag says $version but core/Cargo.toml says $cargo"
+
+          build=$(git rev-list --count "$commit")
+          curl -fsSL https://raw.githubusercontent.com/ark-232/dewline-updates/main/appcast.xml -o "$RUNNER_TEMP/appcast.xml" \
+            || fail "cannot read appcast.xml from ark-232/dewline-updates"
+          newest=$(python3 -I - "$RUNNER_TEMP/appcast.xml" <<'EOF'
+          import sys, xml.etree.ElementTree as ET
+          ns = "{http://www.andymatuschak.org/xml-namespaces/sparkle}"
+          versions = [int(e.text) for e in ET.parse(sys.argv[1]).iter(ns + "version")]
+          print(max(versions, default=0))
+          EOF
+          )
+          ((build > newest)) || fail "build $build is not above the newest sparkle:version in the feed, $newest"
+
+          heading=$(grep -E "^## ${version//./\\.}( |$)" CHANGELOG.md | head -1) || fail "CHANGELOG.md has no section for $version"
+          [[ -f perf/$version.json ]] && jq -e . "perf/$version.json" > /dev/null || fail "perf/$version.json is missing or invalid"
+          if gh api "repos/$GITHUB_REPOSITORY/releases/tags/v$version" > /dev/null 2>&1; then fail "v$version is already released"; fi
+
+          channel=stable
+          if [[ $version == *-* ]]; then channel=beta; fi
+          critical=false
+          if [[ $heading == *"(critical)"* ]]; then critical=true; fi
+          { echo "version=$version"; echo "channel=$channel"; echo "critical=$critical"; echo "build=$build"; } >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: verify
+    runs-on: xcode-27
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+      XCODE_BUILD: 27A9275
+    outputs:
+      app-sha256: ${{ steps.pack.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check the Xcode build
+        run: |
+          xcodebuild -version
+          xcodebuild -version | grep -qx "Build version $XCODE_BUILD" || { echo "::error::Xcode is not build $XCODE_BUILD"; exit 1; }
+      - name: Install XcodeGen 2.46.0
+        run: |
+          curl -sSL -o "$RUNNER_TEMP/xcodegen.zip" https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip
+          echo "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: 1.99.1
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: cargo-cyclonedx@0.5.9
+      - name: Build the universal app
+        run: scripts/build-release.sh "$RUNNER_TEMP/release"
+      - name: Require the EdDSA public key
+        run: |
+          key=$(plutil -extract SUPublicEDKey raw "$RUNNER_TEMP/release/Dewline.app/Contents/Info.plist")
+          [[ -n $key ]] || { echo "::error::SUPublicEDKey is empty: set SPARKLE_PUBLIC_ED_KEY in app/project.yml and app/updater.golden.json (docs/release.md)"; exit 1; }
+      - name: SBOM and build inputs
+        run: |
+          cargo cyclonedx --manifest-path core/Cargo.toml --format json --override-filename sbom
+          cp core/crates/ffi/sbom.json "$RUNNER_TEMP/release/sbom.cdx.json"
+          {
+            echo "Built on $ImageOS $ImageVersion with $(xcodebuild -version | paste -sd ' ' -)."
+            echo
+            echo '```'
+            rustc -Vv
+            shasum -a 256 core/Cargo.lock app/Dewline.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+            echo '```'
+          } > "$RUNNER_TEMP/release/build-inputs.md"
+      - name: Pack the unsigned app
+        id: pack
+        run: |
+          cd "$RUNNER_TEMP/release"
+          ditto -c -k --keepParent Dewline.app Dewline-unsigned.zip
+          echo "sha256=$(shasum -a 256 Dewline-unsigned.zip | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: unsigned
+          path: |
+            ${{ runner.temp }}/release/Dewline-unsigned.zip
+            ${{ runner.temp }}/release/sbom.cdx.json
+            ${{ runner.temp }}/release/build-inputs.md
+          if-no-files-found: error
+          retention-days: 14
+
+  sign:
+    needs: [verify, build]
+    runs-on: xcode-27
+    environment: release
+    timeout-minutes: 75
+    permissions: {}
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+      VERSION: ${{ needs.verify.outputs.version }}
+    outputs:
+      dmg-sha256: ${{ steps.check.outputs.sha256 }}
+      notarization-id: ${{ steps.check.outputs.notarization }}
+      public-key: ${{ steps.check.outputs.key }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: unsigned
+          path: ${{ runner.temp }}/unsigned
+      - name: Check the unsigned app's digest
+        env:
+          EXPECTED: ${{ needs.build.outputs.app-sha256 }}
+        run: |
+          cd "$RUNNER_TEMP/unsigned"
+          echo "$EXPECTED  Dewline-unsigned.zip" | shasum -a 256 -c -
+          ditto -x -k Dewline-unsigned.zip .
+          "$GITHUB_WORKSPACE/scripts/check-app.sh" Dewline.app
+      - name: Write the signing keys
+        id: keys
+        env:
+          DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          missing=0
+          for name in DEVELOPER_ID_P12 DEVELOPER_ID_P12_PASSWORD ASC_KEY_P8 ASC_KEY_ID ASC_ISSUER_ID; do
+            if [[ -z ${!name} ]]; then echo "::error::The release environment has no $name secret (docs/release.md)"; missing=1; fi
+          done
+          ((missing == 0)) || exit 1
+          umask 077
+          printf '%s' "$DEVELOPER_ID_P12" | base64 --decode > "$RUNNER_TEMP/developer-id.p12"
+          printf '%s\n' "$ASC_KEY_P8" > "$RUNNER_TEMP/asc.p8"
+          password=$(openssl rand -hex 32)
+          KEYCHAIN=$RUNNER_TEMP/signing.keychain-db
+          security create-keychain -p "$password" "$KEYCHAIN"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN"
+          security unlock-keychain -p "$password" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/developer-id.p12" -k "$KEYCHAIN" -P "$DEVELOPER_ID_P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$KEYCHAIN" > /dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          identity=$(security find-identity -v -p codesigning "$KEYCHAIN" | awk -F'"' '/Developer ID Application/ { print $2; exit }')
+          [[ -n $identity ]] || { echo "::error::DEVELOPER_ID_P12 holds no Developer ID Application identity"; exit 1; }
+          echo "identity=$identity" >> "$GITHUB_OUTPUT"
+      - name: Sign, notarize and staple
+        timeout-minutes: 50
+        env:
+          SIGN_IDENTITY: ${{ steps.keys.outputs.identity }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: ASC_KEY_PATH="$RUNNER_TEMP/asc.p8" scripts/sign.sh "$RUNNER_TEMP/unsigned/Dewline.app" "$RUNNER_TEMP/Dewline-$VERSION.dmg"
+      - name: Check the signed DMG
+        id: check
+        run: |
+          dmg=$RUNNER_TEMP/Dewline-$VERSION.dmg
+          codesign --verify --strict -vv "$dmg"
+          xcrun stapler validate "$dmg"
+          spctl -a -t open --context context:primary-signature -vv "$dmg"
+          mount=$(mktemp -d)
+          hdiutil attach -nobrowse -readonly -mountpoint "$mount" "$dmg"
+          codesign --verify --strict --deep -vv "$mount/Dewline.app"
+          scripts/check-app.sh "$mount/Dewline.app"
+          syspolicy_check distribution "$mount/Dewline.app"
+          key=$(plutil -extract SUPublicEDKey raw "$mount/Dewline.app/Contents/Info.plist")
+          hdiutil detach "$mount"
+          {
+            echo "sha256=$(shasum -a 256 "$dmg" | cut -d' ' -f1)"
+            echo "notarization=$(jq -r .id "$RUNNER_TEMP/Dewline-$VERSION.notarization.json")"
+            echo "key=$key"
+          } >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: signed
+          path: ${{ runner.temp }}/Dewline-${{ needs.verify.outputs.version }}.dmg
+          if-no-files-found: error
+          retention-days: 14
+      - name: Delete the signing keys
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/developer-id.p12" "$RUNNER_TEMP/asc.p8"
+
+  launch-26:
+    needs: [verify, sign]
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-26, macos-26-intel]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    permissions: {}
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+      DMG_SHA256: ${{ needs.sign.outputs.dmg-sha256 }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: signed
+          path: ${{ runner.temp }}/signed
+      - name: Launch the signed app on macOS 26
+        run: |
+          dmg=$RUNNER_TEMP/signed/Dewline-$VERSION.dmg
+          echo "$DMG_SHA256  $dmg" | shasum -a 256 -c -
+          sw_vers
+          mount=$(mktemp -d)
+          hdiutil attach -nobrowse -readonly -mountpoint "$mount" "$dmg"
+          app=$mount/Dewline.app
+          spctl -a -vv "$app"
+          open -n "$app"
+          sleep 30
+          pid=$(pgrep -f "$app/Contents/MacOS/Dewline") || { echo "::error::Dewline is not running 30 s after launch"; exit 1; }
+          kill "$pid"
+          cli=$app/Contents/Helpers/dewline
+          [[ -x $cli ]] || { echo "::error::Contents/Helpers/dewline is missing"; exit 1; }
+          [[ $("$cli" --version) == "dewline $VERSION" ]] || { echo "::error::the CLI does not report $VERSION"; exit 1; }
+
+  feed-sign:
+    needs: [verify, sign]
+    runs-on: xcode-27
+    environment: feed-signing
+    timeout-minutes: 20
+    permissions: {}
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+      CHANNEL: ${{ needs.verify.outputs.channel }}
+      CRITICAL: ${{ needs.verify.outputs.critical }}
+      BUILD: ${{ needs.verify.outputs.build }}
+      DMG_SHA256: ${{ needs.sign.outputs.dmg-sha256 }}
+      NOTARIZATION_ID: ${{ needs.sign.outputs.notarization-id }}
+      PUBLIC_KEY: ${{ needs.sign.outputs.public-key }}
+    outputs:
+      feed-sha256: ${{ steps.feed.outputs.sha256 }}
+      updates-commit: ${{ steps.updates.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ark-232/dewline-updates
+          path: updates
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: signed
+          path: ${{ runner.temp }}/archives
+      - name: Check the DMG and fetch Sparkle's tools
+        run: |
+          echo "$DMG_SHA256  $RUNNER_TEMP/archives/Dewline-$VERSION.dmg" | shasum -a 256 -c -
+          curl -fsSL -o "$RUNNER_TEMP/sparkle.tar.xz" https://github.com/sparkle-project/Sparkle/releases/download/2.10.0/Sparkle-2.10.0.tar.xz
+          echo "$SPARKLE_TARBALL_SHA256  $RUNNER_TEMP/sparkle.tar.xz" | shasum -a 256 -c -
+          mkdir "$RUNNER_TEMP/sparkle"
+          tar -xf "$RUNNER_TEMP/sparkle.tar.xz" -C "$RUNNER_TEMP/sparkle"
+          mount=$(mktemp -d)
+          hdiutil attach -nobrowse -readonly -mountpoint "$mount" "$RUNNER_TEMP/archives/Dewline-$VERSION.dmg"
+          embedded=$(plutil -extract CFBundleShortVersionString raw "$mount/Dewline.app/Contents/Frameworks/Sparkle.framework/Resources/Info.plist")
+          hdiutil detach "$mount"
+          [[ $embedded == 2.10.0 ]] || { echo "::error::the app embeds Sparkle $embedded, the tools are 2.10.0"; exit 1; }
+      - name: Verify the committed feed
+        id: updates
+        run: |
+          [[ -x scripts/verify-feed.sh ]] || { echo "::error::scripts/verify-feed.sh does not exist yet"; exit 1; }
+          scripts/verify-feed.sh updates/appcast.xml "$PUBLIC_KEY"
+          echo "commit=$(git -C updates rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Sign the archive and the feed
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          [[ -n $SPARKLE_ED_PRIVATE_KEY ]] || { echo "::error::The feed-signing environment has no SPARKLE_ED_PRIVATE_KEY secret (docs/release.md)"; exit 1; }
+          archives=$RUNNER_TEMP/archives
+          cp updates/appcast.xml "$archives/appcast.xml"
+          awk -v v="$VERSION" '$1 == "##" { if (on) exit; on = ($2 == v) } on' CHANGELOG.md | tail -n +2 > "$archives/Dewline-$VERSION.md"
+          flags=(--download-url-prefix "https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION/"
+            --full-release-notes-url https://dewline.dev/changelog --embed-release-notes
+            --maximum-deltas 0 --maximum-versions 26 --phased-rollout-interval 43200)
+          if [[ $CHANNEL == beta ]]; then flags+=(--channel beta); fi
+          if [[ $CRITICAL == true ]]; then flags+=(--critical-update-version "$BUILD"); fi
+          printf '%s' "$SPARKLE_ED_PRIVATE_KEY" | "$RUNNER_TEMP/sparkle/bin/generate_appcast" --ed-key-file - "${flags[@]}" "$archives"
+      - name: Check the new feed
+        id: feed
+        run: |
+          feed=$RUNNER_TEMP/archives/appcast.xml
+          scripts/verify-feed.sh "$feed" "$PUBLIC_KEY"
+          python3 -I - "$feed" <<'EOF'
+          import sys, xml.etree.ElementTree as ET
+          ns = "{http://www.andymatuschak.org/xml-namespaces/sparkle}"
+          for item in ET.parse(sys.argv[1]).iter("item"):
+              minimum = item.findtext(ns + "minimumSystemVersion") or ""
+              if [int(p) for p in minimum.split(".")] + [0] * (3 - len(minimum.split("."))) != [26, 0, 0]:
+                  sys.exit(f"an item has minimumSystemVersion {minimum!r}, not 26.0.0")
+          EOF
+          echo "sha256=$(shasum -a 256 "$feed" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Dewline $VERSION"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Notarization | Accepted, submission $NOTARIZATION_ID |"
+            echo "| DMG SHA-256 | \`$DMG_SHA256\` |"
+            echo "| Channel | $CHANNEL; critical $CRITICAL; minimum macOS 26.0.0; rollout every 12 h |"
+            echo
+            echo '```diff'
+            diff updates/appcast.xml "$feed" || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: feed
+          path: ${{ runner.temp }}/archives/appcast.xml
+          if-no-files-found: error
+          retention-days: 14
+
+  approve:
+    needs: [launch-26, feed-sign]
+    runs-on: ubuntu-24.04
+    environment: release-approval
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - run: echo "Approved in release-approval after reading the feed-sign summary."
+
+  attest:
+    needs: [verify, sign, approve]
+    if: ${{ !startsWith(github.ref_name, 'rehearse/') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: ${{ runner.temp }}/artifacts
+      - name: Check the DMG's digest
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+          DMG_SHA256: ${{ needs.sign.outputs.dmg-sha256 }}
+        run: echo "$DMG_SHA256  $RUNNER_TEMP/artifacts/signed/Dewline-$VERSION.dmg" | sha256sum -c -
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/artifacts/signed/Dewline-${{ needs.verify.outputs.version }}.dmg
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/artifacts/signed/Dewline-${{ needs.verify.outputs.version }}.dmg
+          sbom-path: ${{ runner.temp }}/artifacts/unsigned/sbom.cdx.json
+
+  publish:
+    needs: [verify, sign, attest]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+      CHANNEL: ${{ needs.verify.outputs.channel }}
+      DMG_SHA256: ${{ needs.sign.outputs.dmg-sha256 }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: ${{ runner.temp }}/artifacts
+      - name: Draft, check and publish the release
+        run: |
+          a=$RUNNER_TEMP/artifacts
+          dmg=$a/signed/Dewline-$VERSION.dmg
+          echo "$DMG_SHA256  $dmg" | sha256sum -c -
+          if gh release view "v$VERSION" > /dev/null 2>&1; then echo "::error::a release or draft for v$VERSION exists"; exit 1; fi
+          (cd "$a/signed" && sha256sum "Dewline-$VERSION.dmg" > SHA256SUMS)
+          {
+            awk -v v="$VERSION" '$1 == "##" { if (on) exit; on = ($2 == v) } on' CHANGELOG.md | tail -n +2
+            echo
+            echo "### Build inputs"
+            echo
+            cat "$a/unsigned/build-inputs.md"
+          } > "$RUNNER_TEMP/body.md"
+          prerelease=()
+          if [[ $CHANNEL == beta ]]; then prerelease=(--prerelease); fi
+          gh release create "v$VERSION" --draft --verify-tag "${prerelease[@]}" --title "Dewline $VERSION" \
+            --notes-file "$RUNNER_TEMP/body.md" "$dmg" "$a/signed/SHA256SUMS" "$a/unsigned/sbom.cdx.json" "$a/feed/appcast.xml"
+          digest=$(gh api "repos/$GH_REPO/releases?per_page=30" | jq -r --arg tag "v$VERSION" --arg name "Dewline-$VERSION.dmg" \
+            '.[] | select(.tag_name == $tag) | .assets[] | select(.name == $name) | .digest')
+          [[ $digest == "sha256:$DMG_SHA256" ]] || { echo "::error::the uploaded DMG's digest is $digest"; exit 1; }
+          latest=true
+          if [[ $CHANNEL == beta ]]; then latest=false; fi
+          gh release edit "v$VERSION" --draft=false --latest="$latest"
+
+  feed:
+    needs: [verify, feed-sign, publish]
+    runs-on: ubuntu-24.04
+    environment: updates
+    timeout-minutes: 15
+    concurrency:
+      group: feed
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+    env:
+      FEED_SHA256: ${{ needs.feed-sign.outputs.feed-sha256 }}
+      UPDATES_COMMIT: ${{ needs.feed-sign.outputs.updates-commit }}
+      VERSION: ${{ needs.verify.outputs.version }}
+    steps:
+      - name: Require the updates environment
+        env:
+          FEED_APP_ID: ${{ secrets.FEED_APP_ID }}
+          FEED_APP_PRIVATE_KEY: ${{ secrets.FEED_APP_PRIVATE_KEY }}
+          FEED_WIF_PROVIDER: ${{ vars.FEED_WIF_PROVIDER }}
+          FEED_DEPLOY_SA: ${{ vars.FEED_DEPLOY_SA }}
+        run: |
+          missing=0
+          for name in FEED_APP_ID FEED_APP_PRIVATE_KEY FEED_WIF_PROVIDER FEED_DEPLOY_SA; do
+            if [[ -z ${!name} ]]; then echo "::error::The updates environment has no $name (docs/release.md)"; missing=1; fi
+          done
+          exit "$missing"
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: token
+        with:
+          app-id: ${{ secrets.FEED_APP_ID }}
+          private-key: ${{ secrets.FEED_APP_PRIVATE_KEY }}
+          owner: ark-232
+          repositories: dewline-updates
+          permission-contents: write
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: feed
+          path: ${{ runner.temp }}/feed
+      - name: Commit the signed feed to dewline-updates
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          feed=$RUNNER_TEMP/feed/appcast.xml
+          echo "$FEED_SHA256  $feed" | sha256sum -c -
+          blob=$(gh api "repos/ark-232/dewline-updates/contents/appcast.xml?ref=$UPDATES_COMMIT" --jq .sha)
+          gh api -X PUT repos/ark-232/dewline-updates/contents/appcast.xml -f branch=main -f sha="$blob" \
+            -f message="Dewline $VERSION" -f content="$(base64 -w0 "$feed")" > /dev/null
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ark-232/dewline-updates
+          path: updates
+          token: ${{ steps.token.outputs.token }}
+          persist-credentials: false
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.FEED_WIF_PROVIDER }}
+          service_account: ${{ vars.FEED_DEPLOY_SA }}
+          create_credentials_file: true
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - name: Deploy the feed and check it live
+        run: |
+          echo "$FEED_SHA256  updates/appcast.xml" | sha256sum -c -
+          (cd updates && npx --yes firebase-tools@15.5.1 deploy --only hosting --project dewline-updates)
+          [[ -x scripts/verify-feed.sh ]] || { echo "::error::scripts/verify-feed.sh does not exist yet"; exit 1; }
+          for _ in $(seq 30); do
+            if scripts/verify-feed.sh https://updates.dewline.dev/appcast.xml "$VERSION"; then exit 0; fi
+            sleep 10
+          done
+          echo "::error::the live feed does not carry $VERSION after 5 minutes"
+          exit 1
+
+  site:
+    needs: [verify, feed]
+    if: ${{ needs.verify.outputs.channel == 'stable' }}
+    runs-on: ubuntu-24.04
+    environment: site
+    timeout-minutes: 15
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require the site
+        env:
+          SITE_WIF_PROVIDER: ${{ vars.SITE_WIF_PROVIDER }}
+          SITE_DEPLOY_SA: ${{ vars.SITE_DEPLOY_SA }}
+          SITE_PROJECT: ${{ vars.SITE_PROJECT }}
+        run: |
+          [[ -f site/package.json ]] || { echo "::error::site/ does not exist yet"; exit 1; }
+          [[ -n $SITE_WIF_PROVIDER && -n $SITE_DEPLOY_SA && -n $SITE_PROJECT ]] \
+            || { echo "::error::The site environment needs SITE_WIF_PROVIDER, SITE_DEPLOY_SA and SITE_PROJECT"; exit 1; }
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.SITE_WIF_PROVIDER }}
+          service_account: ${{ vars.SITE_DEPLOY_SA }}
+          create_credentials_file: true
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - name: Build and deploy dewline.dev
+        env:
+          SITE_PROJECT: ${{ vars.SITE_PROJECT }}
+        run: |
+          cd site
+          npm ci
+          npm run build
+          npx --yes firebase-tools@15.5.1 deploy --only hosting --project "$SITE_PROJECT"
+
+  tap:
+    needs: [verify, sign, feed]
+    if: ${{ needs.verify.outputs.channel == 'stable' }}
+    runs-on: ubuntu-24.04
+    environment: tap
+    timeout-minutes: 15
+    permissions: {}
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+      DMG_SHA256: ${{ needs.sign.outputs.dmg-sha256 }}
+    steps:
+      - name: Require the tap environment
+        env:
+          TAP_APP_ID: ${{ secrets.TAP_APP_ID }}
+          TAP_APP_PRIVATE_KEY: ${{ secrets.TAP_APP_PRIVATE_KEY }}
+        run: |
+          [[ -n $TAP_APP_ID && -n $TAP_APP_PRIVATE_KEY ]] \
+            || { echo "::error::The tap environment needs TAP_APP_ID and TAP_APP_PRIVATE_KEY (docs/release.md)"; exit 1; }
+      - name: Skip a pulled or superseded version
+        id: still
+        run: |
+          base=https://raw.githubusercontent.com/ark-232/dewline-updates/main
+          if curl -fsSL "$base/pulled.txt" | grep -q "^$VERSION\b"; then echo "::notice::$VERSION was pulled"; echo "bump=false" >> "$GITHUB_OUTPUT"; exit 0; fi
+          newest=$(curl -fsSL "$base/appcast.xml" | python3 -I -c '
+          import sys, xml.etree.ElementTree as ET
+          ns = "{http://www.andymatuschak.org/xml-namespaces/sparkle}"
+          stable = [i for i in ET.parse(sys.stdin).iter("item") if i.find(ns + "channel") is None]
+          print(max(stable, key=lambda i: int(i.findtext(ns + "version"))).findtext(ns + "shortVersionString"))')
+          if [[ $newest != "$VERSION" ]]; then echo "::notice::$newest supersedes $VERSION"; echo "bump=false" >> "$GITHUB_OUTPUT"; exit 0; fi
+          echo "bump=true" >> "$GITHUB_OUTPUT"
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        if: steps.still.outputs.bump == 'true'
+        id: token
+        with:
+          app-id: ${{ secrets.TAP_APP_ID }}
+          private-key: ${{ secrets.TAP_APP_PRIVATE_KEY }}
+          owner: ark-232
+          repositories: homebrew-tap
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Open the cask bump
+        if: steps.still.outputs.bump == 'true'
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          digest=$(gh api "repos/$REPO/releases/tags/v$VERSION" \
+            --jq ".assets[] | select(.name == \"Dewline-$VERSION.dmg\") | .digest")
+          [[ $digest == "sha256:$DMG_SHA256" ]] || { echo "::error::the released DMG's digest is $digest"; exit 1; }
+          gh repo clone ark-232/homebrew-tap "$RUNNER_TEMP/tap" -- --depth 1
+          cd "$RUNNER_TEMP/tap"
+          build=$(curl -fsSL https://raw.githubusercontent.com/ark-232/dewline-updates/main/appcast.xml | python3 -I -c '
+          import sys, xml.etree.ElementTree as ET
+          ns = "{http://www.andymatuschak.org/xml-namespaces/sparkle}"
+          v = sys.argv[1]
+          print(next(i.findtext(ns + "version") for i in ET.parse(sys.stdin).iter("item") if i.findtext(ns + "shortVersionString") == v))' "$VERSION")
+          cask=Casks/dewline.rb
+          [[ $(grep -c '^  version "' "$cask") == 1 && $(grep -c '^  sha256 "' "$cask") == 1 ]] \
+            || { echo "::error::$cask must have exactly one version and one sha256 line"; exit 1; }
+          sed -i -e "s/^  version \".*\"/  version \"$VERSION,$build\"/" -e "s/^  sha256 \".*\"/  sha256 \"$DMG_SHA256\"/" "$cask"
+          git switch -c "dewline-$VERSION"
+          git -c user.name="dewline-release[bot]" -c user.email="dewline-release[bot]@users.noreply.github.com" \
+            commit -am "dewline $VERSION"
+          gh auth setup-git
+          git push origin "dewline-$VERSION"
+          gh pr create --repo ark-232/homebrew-tap --title "dewline $VERSION" --body "Bumps the cask to the notarized DMG of Dewline $VERSION."
+          gh pr merge --repo ark-232/homebrew-tap --auto --squash "dewline-$VERSION"
