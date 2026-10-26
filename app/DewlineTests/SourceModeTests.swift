@@ -41,16 +41,22 @@ private struct Editor {
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.5))
     }
 
-    /// Where the anchor's baseline sits below the top of the visible rect, checked against the line `firstRect` reports.
+    /// The line box `firstRect` reports for the character at `index`, in the view's coordinates.
+    func line(_ index: Int) -> NSRect {
+        view.convert(window.convertFromScreen(rect(index, 0)), from: nil)
+    }
+
+    /// Where the anchor's baseline sits below the top of the visible rect, checked against its line box.
     func position(of anchor: Int) throws -> CGFloat {
         let baseline = try #require(view.baseline(at: anchor))
-        let line = view.convert(window.convertFromScreen(rect(anchor, 0)), from: nil)
+        let line = line(anchor)
         #expect(line.minY < baseline && baseline <= line.maxY, "baseline \(baseline) outside its line \(line)")
         return baseline - view.visibleRect.minY
     }
 }
 
 @MainActor
+@Suite(.serialized)
 struct SourceModeTests {
     static let sample = "# Title\n\nThe **soft** day, *quiet* `code` ~~gone~~ [link](https://example.com) _too_.\n"
     static let long = (1...120).map {
@@ -104,9 +110,10 @@ struct SourceModeTests {
         let editor = Editor(variant, Self.sample, caret: text.length)
         editor.view.toggleSource(nil)
         let storage = editor.view.textStorage!
+        let size = MarkdownStyler.code(matching: MarkdownStyler.bodyFont).pointSize
         storage.enumerateAttribute(.font, in: NSRange(location: 0, length: storage.length)) { value, run, _ in
             let font = value as! NSFont
-            #expect(font.isFixedPitch && font.pointSize == 15, "\(font) at \(run)")
+            #expect(font.isFixedPitch && font.pointSize == size, "\(font) at \(run)")
         }
         var markers: [NSRange] = []
         text.enumerateSubstrings(in: NSRange(location: 0, length: text.length), options: [.byParagraphs, .substringNotRequired]) { _, line, _, _ in
@@ -142,6 +149,17 @@ struct SourceModeTests {
         view.insertText("x", replacementRange: view.markedRange())
         #expect(view.string == "The **soâxft** day\n")
         #expect(view.styler.showsSource)
+        view.setMarkedText("a", selectedRange: NSRange(location: 1, length: 0), replacementRange: none)
+        view.toggleSource(nil)
+        view.toggleSource(nil)
+        view.unmarkText()
+        #expect(view.string == "The **soâxaft** day\n")
+        #expect(view.styler.showsSource, "two requests during one composition cancel out")
+        view.setMarkedText("a", selectedRange: NSRange(location: 1, length: 0), replacementRange: none)
+        view.toggleSource(nil)
+        view.setMarkedText("", selectedRange: NSRange(location: 0, length: 0), replacementRange: none)
+        #expect(view.string == "The **soâxaft** day\n")
+        #expect(!view.styler.showsSource, "a cancelled composition still lets the waiting toggle run")
         editor.expectTextKitUnchanged()
     }
 
@@ -149,30 +167,34 @@ struct SourceModeTests {
     func theCaretLineStaysPut(_ variant: TextKitVariant, at fraction: Double) throws {
         let start = Int(Double(Self.long.utf16.count) * fraction)
         let caret = (Self.long as NSString).range(of: "rain", options: [], range: NSRange(location: start, length: 300)).location
-        let editor = Editor(variant, Self.long, caret: caret)
-        let view = editor.view
-        view.scrollRangeToVisible(NSRange(location: caret, length: 0))
-        editor.settle()
-        view.scroll(NSPoint(x: 0, y: view.visibleRect.minY - 123.3))
-        editor.display()
-        let before = try editor.position(of: caret)
-        for _ in 1...4 {
-            view.toggleSource(nil)
+        for lineHeight in [22.0, 24.5] {
+            let editor = Editor(variant, Self.long, caret: caret)
+            let view = editor.view
+            view.styler.sourceLineHeight = lineHeight
+            view.scrollRangeToVisible(NSRange(location: caret, length: 0))
+            editor.settle()
+            view.scroll(NSPoint(x: 0, y: view.visibleRect.minY - 123.3))
             editor.display()
-            let after = try editor.position(of: caret)
-            #expect(abs(after - before) <= 1, "moved from \(before) to \(after)")
-            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.25))
-            let settled = try editor.position(of: caret)
-            #expect(abs(settled - after) <= 0.01, "settled from \(after) to \(settled)")
+            let before = try editor.position(of: caret)
+            for _ in 1...4 {
+                view.toggleSource(nil)
+                editor.display()
+                let after = try editor.position(of: caret)
+                #expect(abs(after - before) <= 0.5, "\(lineHeight) pt lines: moved from \(before) to \(after)")
+                RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.25))
+                let settled = try editor.position(of: caret)
+                #expect(abs(settled - after) <= 0.01, "\(lineHeight) pt lines: settled from \(after) to \(settled)")
+            }
+            #expect(view.selectedRange() == NSRange(location: caret, length: 0))
+            editor.expectTextKitUnchanged()
         }
-        #expect(view.selectedRange() == NSRange(location: caret, length: 0))
-        editor.expectTextKitUnchanged()
     }
 
-    @Test(arguments: TextKitVariant.allCases)
-    func theFirstVisibleLineStaysPutWhenTheCaretIsAway(_ variant: TextKitVariant) throws {
+    @Test(arguments: TextKitVariant.allCases, [22.0, 24.5])
+    func theFirstVisibleLineStaysPutWhenTheCaretIsAway(_ variant: TextKitVariant, lineHeight: Double) throws {
         let editor = Editor(variant, Self.long, caret: 0)
         let view = editor.view
+        view.styler.sourceLineHeight = lineHeight
         view.scrollRangeToVisible(NSRange(location: Self.long.utf16.count / 2, length: 0))
         editor.settle()
         let top = try #require(view.baseline(at: view.characterIndexForInsertion(at: view.visibleRect.origin)))
@@ -184,12 +206,51 @@ struct SourceModeTests {
             view.toggleSource(nil)
             editor.display()
             let after = try editor.position(of: anchor)
-            #expect(abs(after - before) <= 1, "line at \(anchor) moved from \(before) to \(after)")
+            #expect(abs(after - before) <= 0.5, "line at \(anchor) moved from \(before) to \(after)")
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.25))
             let settled = try editor.position(of: anchor)
             #expect(abs(settled - after) <= 0.01, "settled from \(after) to \(settled)")
         }
         #expect(view.selectedRange() == NSRange(location: 0, length: 0))
+        editor.expectTextKitUnchanged()
+    }
+
+    @Test(arguments: TextKitVariant.allCases)
+    func atProsePitchSourceBaselinesSitWithinAPointOfProse(_ variant: TextKitVariant) throws {
+        let text = "Plain words here.\nMore plain words.\n"
+        let editor = Editor(variant, text, caret: text.utf16.count)
+        editor.view.styler.sourceLineHeight = 24.5
+        let lines = [0, 18]
+        let live = try lines.map { try #require(editor.view.baseline(at: $0)) - editor.line($0).minY }
+        editor.view.toggleSource(nil)
+        let source = try lines.map { try #require(editor.view.baseline(at: $0)) - editor.line($0).minY }
+        for (prose, mono) in zip(live, source) {
+            #expect(abs(prose - mono) <= 1, "baseline \(mono) pt into a Source line, \(prose) pt into a Live line")
+        }
+        editor.expectTextKitUnchanged()
+    }
+
+    @Test(arguments: TextKitVariant.allCases)
+    func aKeystrokeRightAfterAToggleLandsAndTheLineHolds(_ variant: TextKitVariant) throws {
+        let heading = (Self.long as NSString).range(of: "## Part 60\n")
+        var caret = NSMaxRange(heading) - 1
+        let editor = Editor(variant, Self.long, caret: caret)
+        let view = editor.view
+        view.scrollRangeToVisible(NSRange(location: caret, length: 0))
+        editor.settle()
+        let subviews = view.subviews.count
+        for delay in stride(from: 0.0, through: 0.1, by: 0.02) {
+            let before = try editor.position(of: caret)
+            view.toggleSource(nil)
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: delay))
+            view.insertText("x", replacementRange: view.selectedRange())
+            caret += 1
+            #expect((view.string as NSString).substring(with: NSRange(location: caret - 1, length: 1)) == "x")
+            #expect(view.subviews.count == subviews, "the fading snapshot stays over the typed text")
+            editor.display()
+            let after = try editor.position(of: caret)
+            #expect(abs(after - before) <= 0.5, "\(Int(delay * 1000)) ms: moved from \(before) to \(after)")
+        }
         editor.expectTextKitUnchanged()
     }
 

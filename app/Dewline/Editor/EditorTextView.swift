@@ -7,6 +7,9 @@ final class EditorTextView: NSTextView {
     private var composing = false
     private var toggleWaits = false
     private var held: (anchor: Int, offset: CGFloat)?
+    private weak var snapshot: NSView?
+    /// When the last toggle committed its first frame and started the fade.
+    private(set) var fadeStarted: ContinuousClock.Instant?
 
     var defersStyling: Bool {
         composing || hasMarkedText()
@@ -102,11 +105,15 @@ final class EditorTextView: NSTextView {
             toggleWaits.toggle()
             return
         }
+        snapshot?.removeFromSuperview()
         let storage = textStorage!
         let visible = visibleRect
-        // TextKit 2 answers a point in the top inset with an index near the end of the text, so the probe stays below the inset.
-        let first = characterIndexForInsertion(at: NSPoint(x: visible.minX, y: max(visible.minY, textContainerOrigin.y)))
-        let last = characterIndexForInsertion(at: NSPoint(x: visible.maxX, y: visible.maxY))
+        // TextKit 2 answers a point in the top inset with an index near the end of the text, so probes stay below the inset.
+        func index(_ x: CGFloat, _ y: CGFloat) -> Int {
+            characterIndexForInsertion(at: NSPoint(x: x, y: max(y, textContainerOrigin.y)))
+        }
+        let first = index(visible.minX, visible.minY)
+        let last = index(visible.maxX, visible.maxY)
         let caret = selectedRange().location
         let anchor = min(first <= caret && caret <= last ? caret : first, storage.length - 1)
         var offset = baseline(at: anchor).map { $0 - visible.minY }
@@ -116,56 +123,73 @@ final class EditorTextView: NSTextView {
         }
         held = offset.map { (anchor, $0) }
 
-        let scrollView = enclosingScrollView!
-        let clipView = scrollView.contentView
-        var snapshot: CALayer?
-        if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, let host = scrollView.layer,
-            let bitmap = clipView.bitmapImageRepForCachingDisplay(in: clipView.bounds) {
-            clipView.cacheDisplay(in: clipView.bounds, to: bitmap)
-            let layer = CALayer()
-            layer.contents = bitmap.cgImage
-            layer.frame = clipView.frame
-            host.insertSublayer(layer, above: clipView.layer)
-            snapshot = layer
-        }
+        let caretView = subviews.first { $0 is NSTextInsertionIndicator }
+        let caretWasHidden = caretView?.isHidden ?? true
+        caretView?.isHidden = true
+        let picture = bitmapImageRepForCachingDisplay(in: visible)
+        if let picture { cacheDisplay(in: visible, to: picture) }
+        caretView?.isHidden = caretWasHidden
 
-        styler.toggleSource()
-        if storage.length > 0 {
-            // Typing attributes follow the selection only when it moves, and marked text draws with them before any restyle.
-            let neighbor = storage.attributes(at: max(caret - 1, 0), effectiveRange: nil)
-            for key in [NSAttributedString.Key.font, .foregroundColor, .paragraphStyle] {
-                typingAttributes[key] = neighbor[key]
-            }
-        }
-        if let offset, let restyled = baseline(at: anchor) {
-            let target = NSRect(x: visible.minX, y: restyled - offset, width: visible.width, height: visible.height)
-            if let layout = textLayoutManager {
-                scroll(target.origin)
-                // TextKit 2 restacks the viewport from its top fragment's estimated position; lay it out, then correct.
-                layout.textViewportLayoutController.layoutViewport()
-                if let restacked = baseline(at: anchor) {
-                    scroll(NSPoint(x: visible.minX, y: restacked - offset))
-                }
-            } else if let layout = layoutManager, let container = textContainer {
-                // TextKit 1 sizes the view only as far as it has laid out.
-                layout.ensureLayout(forBoundingRect: target.offsetBy(dx: -textContainerOrigin.x, dy: -textContainerOrigin.y), in: container)
-                scroll(target.origin)
-            }
-        }
-
-        if let snapshot {
+        // The viewport and a screen either side change first, so the fade starts before the rest of the document restyles.
+        let above = index(visible.minX, visible.minY - visible.height)
+        let below = index(visible.maxX, visible.maxY + visible.height)
+        styler.toggleSource(restyling: NSRange(location: above, length: max(below - above, 0)))
+        if let offset { hold(anchor, at: offset) }
+        if let picture {
+            let cover = Snapshot(frame: visibleRect)
+            cover.wantsLayer = true
+            cover.layer?.contents = picture.cgImage
+            if let caretView { addSubview(cover, positioned: .below, relativeTo: caretView) } else { addSubview(cover) }
             let fade = CABasicAnimation(keyPath: "opacity")
             fade.fromValue = 1
             fade.toValue = 0
-            fade.duration = 0.2
+            fade.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0.15 : 0.3
             fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
             CATransaction.begin()
             CATransaction.setDisableActions(true)
-            CATransaction.setCompletionBlock { snapshot.removeFromSuperlayer() }
-            snapshot.opacity = 0
-            snapshot.add(fade, forKey: nil)
+            CATransaction.setCompletionBlock { MainActor.assumeIsolated { cover.removeFromSuperview() } }
+            cover.layer?.opacity = 0
+            cover.layer?.add(fade, forKey: nil)
             CATransaction.commit()
+            snapshot = cover
         }
+        window?.layoutIfNeeded()
+        window?.displayIfNeeded()
+        CATransaction.flush()
+        fadeStarted = .now
+
+        styler.restyleDocument()
+        if let offset { hold(anchor, at: offset) }
+        snapshot?.frame = visibleRect
+        // Typing attributes follow the selection only when it moves, and marked text draws with them before any restyle.
+        let neighbor = storage.length > 0 ? storage.attributes(at: max(caret - 1, 0), effectiveRange: nil) : styler.baseAttributes
+        for key in [NSAttributedString.Key.font, .foregroundColor, .paragraphStyle] {
+            typingAttributes[key] = neighbor[key]
+        }
+    }
+
+    /// Scrolls so the baseline of the line holding `anchor` sits `offset` below the top of the visible rect.
+    private func hold(_ anchor: Int, at offset: CGFloat) {
+        let visible = visibleRect
+        if let layout = textLayoutManager {
+            // TextKit 2 sizes the view and stacks the viewport from estimates it refreshes as it lays the viewport out:
+            // lay out, scroll to the line, lay out again, correct.
+            for _ in 0..<2 {
+                layout.textViewportLayoutController.layoutViewport()
+                guard let now = baseline(at: anchor) else { return }
+                scroll(NSPoint(x: visible.minX, y: now - offset))
+            }
+        } else if let layout = layoutManager, let container = textContainer, let restyled = baseline(at: anchor) {
+            let target = NSRect(x: visible.minX, y: restyled - offset, width: visible.width, height: visible.height)
+            // TextKit 1 sizes the view only as far as it has laid out.
+            layout.ensureLayout(forBoundingRect: target.offsetBy(dx: -textContainerOrigin.x, dy: -textContainerOrigin.y), in: container)
+            scroll(target.origin)
+        }
+    }
+
+    override func didChangeText() {
+        snapshot?.removeFromSuperview()
+        super.didChangeText()
     }
 
     /// The baseline of the line holding the character at `index`, in this view's coordinates.
@@ -190,5 +214,12 @@ final class EditorTextView: NSTextView {
         guard menuItem.action == #selector(toggleSource(_:)) else { return super.validateMenuItem(menuItem) }
         menuItem.state = styler.showsSource ? .on : .off
         return true
+    }
+}
+
+/// The frame before a toggle, fading out over the new one; clicks go through to the text.
+private final class Snapshot: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
     }
 }
