@@ -43,6 +43,7 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
         super.init(window: window)
         window.contentView = content()
         window.initialFirstResponder = list
+        window.autorecalculatesKeyViewLoop = true
         window.center()
         NotificationCenter.default.addObserver(self, selector: #selector(reload), name: Library.changed, object: nil)
         reload()
@@ -524,6 +525,7 @@ private final class GroupCell: NSTableCellView {
 /// A file in the recents list: its name and time on the first line, its first line of prose under it.
 private final class FileCell: NSTableCellView {
     static let identifier = NSUserInterfaceItemIdentifier("file")
+    private static let prose = NSFont(descriptor: NSFont.systemFont(ofSize: 12).fontDescriptor.withDesign(.serif)!.withSymbolicTraits(.italic), size: 12)
 
     private let preview = NSTextField(labelWithString: "")
     private let time = NSTextField(labelWithString: "")
@@ -539,10 +541,6 @@ private final class FileCell: NSTableCellView {
         name.lineBreakMode = .byTruncatingMiddle
         name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         textField = name
-        let italic = NSFont.systemFont(ofSize: 12).fontDescriptor.withDesign(.serif)!.withSymbolicTraits(.italic)
-        preview.font = NSFont(descriptor: italic, size: 12)
-        preview.textColor = .secondaryLabelColor
-        preview.lineBreakMode = .byTruncatingTail
         preview.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         time.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
         time.textColor = .secondaryLabelColor
@@ -583,7 +581,9 @@ private final class FileCell: NSTableCellView {
         textField?.stringValue = url.lastPathComponent
         textField?.textColor = gone ? .secondaryLabelColor : .labelColor
         preview.stringValue = gone ? "Moved or deleted" : text ?? " "
-        preview.textColor = gone ? .tertiaryLabelColor : .secondaryLabelColor
+        preview.textColor = gone || isFolder ? .tertiaryLabelColor : .secondaryLabelColor
+        preview.font = isFolder ? .systemFont(ofSize: 11) : Self.prose
+        preview.lineBreakMode = isFolder ? .byTruncatingMiddle : .byTruncatingTail
         time.stringValue = date.map { shortDate($0) } ?? ""
     }
 }

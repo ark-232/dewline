@@ -47,6 +47,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     private var showsAllHeadings = false
     /// The location of the heading whose section is at the top of the page.
     private var section: Int?
+    private var watch: FolderWatch?
 
     init(folder: Folder?) {
         self.folder = folder
@@ -59,6 +60,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             )
         }
         super.init(nibName: nil, bundle: nil)
+        watch = folder.map { folder in FolderWatch(folder.url) { [weak self] in self?.filesChanged($0) } }
     }
 
     required init?(coder: NSCoder) {
@@ -191,6 +193,29 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             }
         }
         return node
+    }
+
+    /// Lists again each loaded folder FSEvents reported, keeping the rows that remain so their expansion holds.
+    private func filesChanged(_ folders: [URL]) {
+        guard let folder, let tree else { return }
+        let changed = Set(folders.map(\.standardizedFileURL.path))
+        func visit(_ node: SidebarNode, _ url: URL) {
+            guard let children = node.children else { return }
+            if changed.contains(url.path) {
+                let listing = folder.children(of: url)
+                var kept: [URL: SidebarNode] = [:]
+                for child in children {
+                    if case .entry(let entry) = child.kind { kept[entry.url] = child }
+                }
+                node.children = listing.entries.map { kept[$0.url] ?? SidebarNode(.entry($0)) }
+                    + (node === tree && !listing.ignored.isEmpty ? [SidebarNode(.ignored(listing.ignored))] : [])
+                outlineView.reloadItem(node, reloadChildren: true)
+            }
+            for child in node.children ?? [] {
+                if case .entry(let entry) = child.kind, entry.isFolder { visit(child, entry.url) }
+            }
+        }
+        visit(tree, folder.url)
     }
 
     private func children(of node: SidebarNode) -> [SidebarNode] {
@@ -326,15 +351,19 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             return cell
         case .entry(let entry):
             let cell = cell(SidebarCell.file)
-            cell.show(entry, detail: nil)
+            cell.show(entry, detail: nil, gone: false)
             return cell
         case .shortcut(let entry, let date):
             let cell = cell(SidebarCell.file)
-            cell.show(entry, detail: date.map { shortDate($0) })
+            cell.show(entry, detail: date.map { shortDate($0) }, gone: !FileManager.default.fileExists(atPath: entry.url.path))
             return cell
         case .heading(let heading):
             let cell = cell(SidebarCell.heading)
             cell.show(heading, current: heading.location == section)
+            cell.setAccessibilityCustomActions([NSAccessibilityCustomAction(name: "Go to Heading") { [weak self] in
+                self?.jump(heading)
+                return true
+            }])
             return cell
         case .ignored(let names):
             let cell = cell(SidebarCell.note)
@@ -349,6 +378,11 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             cell.textField?.stringValue = "Show all \(count)"
             cell.textField?.textColor = .controlAccentColor
             cell.toolTip = nil
+            cell.setAccessibilityCustomActions([NSAccessibilityCustomAction(name: "Show All Headings") { [weak self] in
+                self?.showsAllHeadings = true
+                self?.listHeadings()
+                return true
+            }])
             return cell
         }
     }
@@ -468,8 +502,9 @@ private final class SidebarCell: NSTableCellView {
         fatalError("SidebarCell is built in code")
     }
 
-    func show(_ entry: FolderEntry, detail text: String?) {
-        let openable = entry.isFolder || entry.isMarkdown
+    /// A file or folder; one that has `gone` from disk shows dimmed.
+    func show(_ entry: FolderEntry, detail text: String?, gone: Bool) {
+        let openable = !gone && (entry.isFolder || entry.isMarkdown)
         let type = UTType(filenameExtension: entry.url.pathExtension)
         let symbol = entry.isFolder ? "folder.fill"
             : entry.isMarkdown ? "doc.text"
@@ -480,6 +515,7 @@ private final class SidebarCell: NSTableCellView {
         imageView?.contentTintColor = entry.isFolder ? .controlAccentColor : openable ? .secondaryLabelColor : .quaternaryLabelColor
         textField?.stringValue = entry.url.lastPathComponent
         textField?.textColor = openable ? .labelColor : .tertiaryLabelColor
+        toolTip = gone ? "Moved or deleted" : nil
         detail.stringValue = text ?? ""
     }
 

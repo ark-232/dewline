@@ -84,6 +84,43 @@ struct Folder {
     }
 }
 
+/// Reports, on the main queue, the folders under a root whose contents changed, batched by FSEvents over 0.3 s.
+@MainActor
+final class FolderWatch {
+    private let changed: ([URL]) -> Void
+    private var stream: FSEventStreamRef?
+
+    init(_ root: URL, changed: @escaping ([URL]) -> Void) {
+        self.changed = changed
+        var context = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
+        stream = FSEventStreamCreate(
+            nil,
+            { _, info, _, paths, _, _ in
+                let watch = Int(bitPattern: info)
+                let folders = (Unmanaged<CFArray>.fromOpaque(paths).takeUnretainedValue() as! [String]).map { URL(filePath: $0) }
+                MainActor.assumeIsolated {
+                    Unmanaged<FolderWatch>.fromOpaque(UnsafeRawPointer(bitPattern: watch)!).takeUnretainedValue().changed(folders)
+                }
+            },
+            &context,
+            [root.path] as CFArray,
+            FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
+            0.3,
+            FSEventStreamCreateFlags(kFSEventStreamCreateFlagUseCFTypes)
+        )
+        guard let stream else { return }
+        FSEventStreamSetDispatchQueue(stream, .main)
+        FSEventStreamStart(stream)
+    }
+
+    isolated deinit {
+        guard let stream else { return }
+        FSEventStreamStop(stream)
+        FSEventStreamInvalidate(stream)
+        FSEventStreamRelease(stream)
+    }
+}
+
 /// Recent files, recent folders and pins, kept in user defaults.
 @MainActor
 enum Library {
@@ -116,7 +153,7 @@ enum Library {
     }
 
     nonisolated static func adding(_ visit: Visit, to visits: [Visit], limit: Int) -> [Visit] {
-        Array(([visit] + visits.filter { $0.url != visit.url }).prefix(limit))
+        Array(([visit] + visits.filter { $0.url.path != visit.url.path }).prefix(limit))
     }
 
     private static func visits(_ key: String) -> [Visit] {

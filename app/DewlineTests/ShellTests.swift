@@ -69,5 +69,7 @@ struct ShellTests {
         let again = Library.Visit(url: URL(filePath: "/a.md"), date: .now)
         #expect(Library.adding(again, to: [a, b], limit: 20) == [again, b])
         #expect(Library.adding(b, to: [a], limit: 1) == [b])
+        let folder = Library.Visit(url: URL(filePath: "/notes/", directoryHint: .isDirectory), date: .now)
+        #expect(Library.adding(folder, to: [Library.Visit(url: URL(filePath: "/notes"), date: .distantPast)], limit: 20) == [folder])
     }
 }

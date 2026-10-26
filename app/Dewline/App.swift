@@ -79,7 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func openFolder(at url: URL) {
         let folder = Folder(url)
         Library.noteOpened(folder.url, folder: true)
-        let open = NSApp.windows.first { ($0.windowController as? MainWindowController)?.folder?.url == folder.url }
+        let open = NSApp.windows.first { ($0.windowController as? MainWindowController)?.folder?.url.path == folder.url.path }
         if let open {
             open.makeKeyAndOrderFront(nil)
         } else {
