@@ -6,6 +6,10 @@ yanked = "deny"
 ignore = [
     { id = "RUSTSEC-2026-0374", reason = "basic-toml is unmaintained; askama uses it only inside uniffi-bindgen, a build tool that never ships. Remove it once a uniffi bump takes basic-toml out of Cargo.lock" },
     { id = "RUSTSEC-2026-0192", reason = "ttf-parser is unmaintained; mermaid-rs-renderer and RaTeX read fonts with it directly. Remove it once both move to skrifa" },
+    { id = "RUSTSEC-2026-0391", reason = "zstd's with_context stream constructors reuse a context; the store calls encode_all and decode_all, which make a new one each time. Remove with the zstd 0.14.3 upgrade on 30 Oct, when it is 14 days old" },
+    { id = "RUSTSEC-2026-0398", reason = "zstd-safe's seekable decompression; the seekable feature is off. Remove with the zstd 0.14.3 upgrade on 30 Oct" },
+    { id = "RUSTSEC-2026-0403", reason = "decompressing legacy zstd frames; the legacy feature is off, so the bundled library builds without legacy support. Remove with the zstd 0.14.3 upgrade on 30 Oct" },
+    { id = "RUSTSEC-2026-0410", reason = "zstd-sys's allocator shim on wasm32; Dewline builds only for macOS. Remove with the zstd 0.14.3 upgrade on 30 Oct" },
 ]
 
 [licenses]
