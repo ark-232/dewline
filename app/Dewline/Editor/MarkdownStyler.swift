@@ -5,6 +5,7 @@ import AppKit
 final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate {
     weak var textView: EditorTextView?
     let undoManager = UndoManager()
+    let blocks = RenderedBlocks()
     private(set) var restyles = 0
     private(set) var showsSource = false
     /// Source line height: 22 pt, or prose's 24.5 pt pitch through `DewlineSourceLineHeight`, until the owner picks one.
@@ -16,7 +17,7 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
     private var pending: NSRange?
 
     static let bodyFont = serif(size: 17, traits: [])
-    private static let hiddenFont = NSFont.systemFont(ofSize: 0.01)
+    static let hiddenFont = NSFont.systemFont(ofSize: 0.01)
     private static let base: [NSAttributedString.Key: Any] = [
         .font: bodyFont,
         .foregroundColor: NSColor.labelColor,
@@ -70,11 +71,16 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
                 let start = moved(waiting.location)
                 range = NSUnionRange(NSRange(location: start, length: moved(NSMaxRange(waiting)) - start), editedRange)
             }
+            let changed = blocks.textDidChange(textView!.textStorage!.mutableString, edited: editedRange, delta: delta)
             if textView!.defersStyling {
-                pending = range
+                pending = changed.reduce(range, NSUnionRange)
             } else {
                 pending = nil
-                restyle(range, in: textView!.textStorage!, selection: [NSRange(location: NSMaxRange(editedRange), length: 0)])
+                let selection = [NSRange(location: NSMaxRange(editedRange), length: 0)]
+                restyle(range, in: textView!.textStorage!, selection: selection)
+                for block in changed where NSUnionRange(block, range) != range {
+                    restyle(block, in: textView!.textStorage!, selection: selection)
+                }
             }
         }
     }
@@ -95,6 +101,15 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
 
     func restyleDocument() {
         restyle(NSRange(location: 0, length: textView!.textStorage!.length))
+    }
+
+    /// Restyles `range`, or after the composition while an input method composes.
+    func restyleNow(_ range: NSRange) {
+        guard !textView!.defersStyling else {
+            pending = pending.map { NSUnionRange($0, range) } ?? range
+            return
+        }
+        restyle(range)
     }
 
     private func restyle(_ range: NSRange) {
@@ -119,6 +134,7 @@ extension MarkdownStyler {
         revealed = revealed.filter { !NSLocationInRange($0.range.location, paragraphs) }
         let selection = selection.map { NSRange(location: $0.location - paragraphs.location, length: $0.length) }
         text.enumerateSubstrings(in: whole, options: [.byParagraphs, .substringNotRequired]) { _, line, paragraph, _ in
+            guard !self.blocks.contains(NSRange(location: line.location + paragraphs.location, length: line.length)) else { return }
             let spans = SpikeTokenizer.spans(in: text, line: line)
             for span in spans {
                 switch span.kind {
@@ -152,8 +168,9 @@ extension MarkdownStyler {
                 self.mark(span, revealed: reveal || source, in: styled)
             }
         }
+        blocks.style(styled, at: paragraphs.location, selection: source ? [whole] : selection)
         // Only attributes that differ are written, so layout invalidates only what changed.
-        let keys: [NSAttributedString.Key] = [.font, .foregroundColor, .paragraphStyle, .underlineStyle, .strikethroughStyle, .dewlineHidden, .dewlineMarkerFont]
+        let keys: [NSAttributedString.Key] = [.font, .foregroundColor, .paragraphStyle, .underlineStyle, .strikethroughStyle, .dewlineHidden, .dewlineMarkerFont, .dewlineBlock]
         styled.enumerateAttributes(in: whole) { wanted, run, _ in
             storage.enumerateAttributes(in: NSRange(location: run.location + paragraphs.location, length: run.length)) { current, part, _ in
                 for key in keys where wanted[key] as? NSObject != current[key] as? NSObject {
@@ -190,17 +207,20 @@ extension MarkdownStyler {
         var now: Set<SyntaxSpan> = []
         for range in selection {
             text.enumerateSubstrings(in: text.paragraphRange(for: range), options: [.byParagraphs, .substringNotRequired]) { _, line, _, _ in
+                guard !self.blocks.contains(line) else { return }
                 now.formUnion(SpikeTokenizer.spans(in: text, line: line).filter { Self.touches($0, selection) })
             }
         }
         let hide = revealed.subtracting(now)
         let show = now.subtracting(revealed)
         revealed = now
-        guard !hide.isEmpty || !show.isEmpty else { return }
+        let changedBlocks = blocks.revealChanges(selection)
+        guard !hide.isEmpty || !show.isEmpty || !changedBlocks.isEmpty else { return }
         storage.beginEditing()
         // In document order, the storage's attribute writes stay linear in the span count.
         for span in hide.sorted(by: { $0.range.location < $1.range.location }) { mark(span, revealed: false, in: storage) }
         for span in show.sorted(by: { $0.range.location < $1.range.location }) { mark(span, revealed: true, in: storage) }
+        for range in changedBlocks { restyle(range, in: storage, selection: selection) }
         storage.endEditing()
     }
 

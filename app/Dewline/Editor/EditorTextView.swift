@@ -4,12 +4,15 @@ import AppKit
 final class EditorTextView: NSTextView {
     let styler = MarkdownStyler()
     private let hiddenGlyphs = HiddenGlyphs()
+    private let blockFragments = BlockFragments()
     private var composing = false
     private var toggleWaits = false
     private var held: (anchor: Int, offset: CGFloat)?
     private weak var snapshot: NSView?
     /// When the last toggle committed its first frame and started the fade.
     private(set) var fadeStarted: ContinuousClock.Instant?
+    /// Where images in the document resolve from.
+    var documentFolder: URL?
 
     var defersStyling: Bool {
         composing || hasMarkedText()
@@ -23,7 +26,7 @@ final class EditorTextView: NSTextView {
         switch variant {
         case .textKit1:
             let storage = NSTextStorage()
-            let layoutManager = NSLayoutManager()
+            let layoutManager = BlockLayoutManager()
             storage.addLayoutManager(layoutManager)
             layoutManager.addTextContainer(container)
             content = storage
@@ -37,8 +40,11 @@ final class EditorTextView: NSTextView {
         super.init(frame: .zero, textContainer: container)
         if variant == .textKit1 {
             layoutManager?.delegate = hiddenGlyphs
+        } else {
+            textLayoutManager?.delegate = blockFragments
         }
         styler.textView = self
+        styler.blocks.textView = self
         delegate = styler
         textStorage?.delegate = styler
         isRichText = false
@@ -67,6 +73,19 @@ final class EditorTextView: NSTextView {
         textView.autoresizingMask = .width
         textView.textContainer?.widthTracksTextView = true
         return scrollView
+    }
+
+    /// The text's children plus one image per rendered block, labeled with its source.
+    override func accessibilityChildren() -> [Any]? {
+        var children = super.accessibilityChildren() ?? []
+        let storage = textStorage!
+        storage.enumerateAttribute(.dewlineBlock, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+            guard case .picture(let picture, let label)? = (value as? BlockLine)?.role else { return }
+            let line = firstRect(forCharacterRange: NSRange(location: range.location, length: 0), actualRange: nil)
+            let frame = NSRect(x: line.minX, y: line.maxY - picture.size.height, width: picture.size.width, height: picture.size.height)
+            children.append(NSAccessibilityElement.element(withRole: .image, frame: frame, label: label, parent: self))
+        }
+        return children
     }
 
     override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
