@@ -9,6 +9,9 @@ private struct Editor {
     let window: NSWindow
     let view: EditorTextView
 
+    /// The anchor can hold no closer than one device pixel: 0.5 pt on a Retina display, 1 pt at 1x.
+    var pixel: CGFloat { 1 / window.backingScaleFactor }
+
     init(_ variant: TextKitVariant, _ text: String, caret: Int) {
         self.variant = variant
         let scrollView = EditorTextView.scrollView(variant: variant)
@@ -180,7 +183,7 @@ struct SourceModeTests {
                 view.toggleSource(nil)
                 editor.display()
                 let after = try editor.position(of: caret)
-                #expect(abs(after - before) <= 0.5, "\(lineHeight) pt lines: moved from \(before) to \(after)")
+                #expect(abs(after - before) <= editor.pixel, "\(lineHeight) pt lines: moved from \(before) to \(after), pixel \(editor.pixel)")
                 RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.25))
                 let settled = try editor.position(of: caret)
                 #expect(abs(settled - after) <= 0.01, "\(lineHeight) pt lines: settled from \(after) to \(settled)")
@@ -208,7 +211,7 @@ struct SourceModeTests {
                 view.toggleSource(nil)
                 editor.display()
                 let after = try editor.position(of: anchor)
-                #expect(abs(after - before) <= 0.5, "\(lineHeight) pt lines: line at \(anchor) moved from \(before) to \(after)")
+                #expect(abs(after - before) <= editor.pixel, "\(lineHeight) pt lines: line at \(anchor) moved from \(before) to \(after), pixel \(editor.pixel)")
                 RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.25))
                 let settled = try editor.position(of: anchor)
                 #expect(abs(settled - after) <= 0.01, "\(lineHeight) pt lines: settled from \(after) to \(settled)")
@@ -253,7 +256,7 @@ struct SourceModeTests {
             #expect(view.subviews.count == subviews, "the fading snapshot stays over the typed text")
             editor.display()
             let after = try editor.position(of: caret)
-            #expect(abs(after - before) <= 0.5, "\(Int(delay * 1000)) ms: moved from \(before) to \(after)")
+            #expect(abs(after - before) <= editor.pixel, "\(Int(delay * 1000)) ms: moved from \(before) to \(after), pixel \(editor.pixel)")
         }
         editor.expectTextKitUnchanged()
     }
