@@ -1,6 +1,6 @@
 import AppKit
 
-/// A markdown file, shown read-only until saving goes through the engine.
+/// A markdown file, editable but never saved until saving goes through the engine.
 final class MarkdownDocument: NSDocument {
     private(set) var text = ""
 
@@ -17,12 +17,8 @@ final class MarkdownDocument: NSDocument {
     }
 
     override func makeWindowControllers() {
-        let scrollView = NSTextView.scrollableTextView()
-        guard let textView = scrollView.documentView as? NSTextView else { return }
-        textView.isEditable = false
-        textView.font = .systemFont(ofSize: 15)
-        textView.textContainerInset = NSSize(width: 24, height: 24)
-        textView.string = text
+        let scrollView = EditorTextView.scrollView(variant: .current)
+        (scrollView.documentView as! NSTextView).string = text
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 760, height: 640),
