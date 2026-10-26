@@ -204,7 +204,10 @@ struct Pairing: Identifiable {
     let code: String
 
     var id: String { name }
-    var faces: [String] { [body, heading, code] }
+    /// Each face once, headings first.
+    var faces: [String] { [heading, body, code].reduce(into: []) { if !$0.contains($1) { $0.append($1) } } }
+    /// The catalog families among them that aren't installed yet.
+    var missing: [FontCatalog.Family] { faces.filter { !Faces.exists($0) }.compactMap(FontCatalog.family) }
 
     static let all = [
         Pairing(name: "Editorial", body: "New York", heading: "Newsreader", code: "JetBrains Mono"),
