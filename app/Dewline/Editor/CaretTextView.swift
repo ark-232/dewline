@@ -9,11 +9,9 @@ class CaretTextView: NSTextView {
     private var lastInput = DispatchTime.now()
     private var solid = false
 
-    /// Cobalt, oklch(0.50 0.20 266) in light and oklch(0.74 0.13 266) in dark, until themes land.
-    static let accent = NSColor(name: "accent") { appearance in
-        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            ? NSColor(srgbRed: 0.5182, green: 0.6583, blue: 0.9922, alpha: 1)
-            : NSColor(srgbRed: 0.1764, green: 0.3300, blue: 0.8269, alpha: 1)
+    /// The theme's accent, light and dark.
+    static var accent: NSColor {
+        ThemeStore.shared.color(.accent)
     }
 
     var indicator: NSTextInsertionIndicator? {
@@ -26,6 +24,7 @@ class CaretTextView: NSTextView {
         center.removeObserver(self, name: NSWindow.didBecomeKeyNotification, object: nil)
         center.removeObserver(self, name: NSWindow.didResignKeyNotification, object: nil)
         center.removeObserver(self, name: NSTextStorage.didProcessEditingNotification, object: nil)
+        center.removeObserver(self, name: ThemeStore.didChange, object: ThemeStore.shared)
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
         idleTimer?.cancel()
@@ -41,6 +40,7 @@ class CaretTextView: NSTextView {
         center.addObserver(self, selector: #selector(keyStateDidChange(_:)), name: NSWindow.didBecomeKeyNotification, object: window)
         center.addObserver(self, selector: #selector(keyStateDidChange(_:)), name: NSWindow.didResignKeyNotification, object: window)
         center.addObserver(self, selector: #selector(storageDidEdit(_:)), name: NSTextStorage.didProcessEditingNotification, object: textStorage)
+        center.addObserver(self, selector: #selector(accentDidChange(_:)), name: ThemeStore.didChange, object: ThemeStore.shared)
         let input: NSEvent.EventTypeMask = [.keyDown, .flagsChanged, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel, .magnify, .rotate, .swipe, .smartMagnify]
         monitor = NSEvent.addLocalMonitorForEvents(matching: input) { [weak self] event in
             if let self, event.window === self.window {
@@ -55,6 +55,10 @@ class CaretTextView: NSTextView {
     isolated deinit {
         if let monitor { NSEvent.removeMonitor(monitor) }
         idleTimer?.cancel()
+    }
+
+    @objc private func accentDidChange(_ notification: Notification) {
+        insertionPointColor = Self.accent
     }
 
     @objc private func keyStateDidChange(_ notification: Notification) {

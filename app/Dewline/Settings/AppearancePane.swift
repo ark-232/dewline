@@ -3,6 +3,7 @@ import SwiftUI
 struct AppearancePane: View {
     @Bindable var store: ThemeStore
     @Environment(\.colorScheme) private var scheme
+    @AppStorage("DewlineMotion") private var motion = Motion.calm
 
     var body: some View {
         let excerpt = Excerpt.open
@@ -40,6 +41,16 @@ struct AppearancePane: View {
                 Text("Theme")
             } footer: {
                 Text("Click a theme to use it in \(scheme == .dark ? "Dark" : "Light"). Control-click to pick the slot.")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Section {
+                Picker("Motion", selection: $motion) {
+                    Text("Off").tag(Motion.off)
+                    Text("Calm").tag(Motion.calm)
+                    Text("Lively").tag(Motion.lively)
+                }
+            } footer: {
+                Text("Calm streaks the caret to where a jump such as Find Next or Go to Line lands; Lively does it for clicks and long moves too. With Reduce Motion on, Dewline uses Off.")
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }

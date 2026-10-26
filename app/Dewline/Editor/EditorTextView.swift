@@ -76,12 +76,11 @@ final class EditorTextView: CaretTextView {
         return scrollView
     }
 
-    /// Paper, caret, selection and typing attributes from the theme, and the column at its measure.
+    /// Paper, selection and typing attributes from the theme, and the column at its measure.
     private func applyTheme() {
         let store = ThemeStore.shared
         backgroundColor = store.color(.paper)
         enclosingScrollView?.backgroundColor = backgroundColor
-        insertionPointColor = store.color(.accent)
         selectedTextAttributes = [.backgroundColor: store.color(.selection)]
         typingAttributes = styler.baseAttributes
         fitColumn(to: frame.width)
