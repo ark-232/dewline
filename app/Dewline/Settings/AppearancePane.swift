@@ -49,7 +49,7 @@ struct AppearancePane: View {
 /// A theme's thumbnail, light above the diagonal and dark below, with a ring when the current slot holds it.
 private struct ThemeCard: View {
     let theme: Theme
-    @Bindable var store: ThemeStore
+    let store: ThemeStore
     let excerpt: Excerpt
     let dark: Bool
 
@@ -99,7 +99,7 @@ private struct ThemeCard: View {
 /// Light, Dark or Auto: a swatch of the slot's theme over the mode's name.
 private struct ModeTile: View {
     let mode: ThemeStore.Appearance
-    @Bindable var store: ThemeStore
+    let store: ThemeStore
 
     var body: some View {
         let selected = store.appearance == mode
