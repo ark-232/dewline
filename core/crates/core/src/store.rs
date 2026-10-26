@@ -132,6 +132,35 @@ impl Store {
         self.write(&index)
     }
 
+    /// Empties the draft slot of the file at `path`.
+    pub fn clear_draft(&self, path: &Path) -> io::Result<()> {
+        let _lock = self.lock()?;
+        let mut index = self.index(path)?;
+        if index.draft.take().is_none() {
+            return Ok(());
+        }
+        self.write(&index)
+    }
+
+    /// Gives the newest history entry of the file at `path` that holds the
+    /// bytes `hash` names, from `from`, the origin `to`: a writer named after
+    /// its bytes were kept. False when no entry matches.
+    pub fn relabel(&self, path: &Path, hash: &Hash, from: &str, to: &str) -> io::Result<bool> {
+        let _lock = self.lock()?;
+        let mut index = self.index(path)?;
+        let Some(entry) = index
+            .history
+            .iter_mut()
+            .rev()
+            .find(|entry| entry.hash == *hash && entry.origin == from)
+        else {
+            return Ok(false);
+        };
+        entry.origin = to.to_owned();
+        self.write(&index)?;
+        Ok(true)
+    }
+
     /// Moves the snapshots of the file at `from` to `to`, its history merged
     /// by time with any history `to` already has, and gives them new ids. Its
     /// draft takes `to`'s slot, and a draft `to` held joins the history. A
@@ -678,6 +707,41 @@ mod tests {
         store.prune(hours(5), &[notes]).unwrap();
         assert!(!blobs(&store).contains(&first.hash));
         assert_eq!(blobs(&store), intact(&store));
+    }
+
+    #[test]
+    fn a_draft_clears_and_a_late_name_relabels_the_newest_match() {
+        let (_dir, store) = store();
+        let notes = Path::new(NOTES);
+        let draft = store.set_draft(notes, b"typed", "You", hours(0)).unwrap();
+        store.clear_draft(notes).unwrap();
+        store.clear_draft(notes).unwrap();
+        assert_eq!(store.draft(notes).unwrap(), None);
+        store.prune(hours(1), &[notes]).unwrap();
+        assert!(!blobs(&store).contains(&draft.hash));
+
+        let agent = blake3::hash(b"agent");
+        store.put(notes, b"agent", "Unknown app", hours(1)).unwrap();
+        store.put(notes, b"mine", "You", hours(2)).unwrap();
+        store.put(notes, b"agent", "Unknown app", hours(3)).unwrap();
+        assert!(
+            store
+                .relabel(notes, &agent, "Unknown app", "claude:s1")
+                .unwrap()
+        );
+        let origins: Vec<String> = store
+            .list(notes)
+            .unwrap()
+            .into_iter()
+            .map(|s| s.origin)
+            .collect();
+        assert_eq!(origins, ["claude:s1", "You", "Unknown app"]);
+        assert!(!store.relabel(notes, &agent, "git", "claude:s1").unwrap());
+        assert!(
+            !store
+                .relabel(Path::new(OTHER), &agent, "Unknown app", "x")
+                .unwrap()
+        );
     }
 
     #[test]
