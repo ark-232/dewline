@@ -24,10 +24,10 @@ pub struct Edit {
     pub text: String,
 }
 
-/// Lines where ours and theirs changed the same words, or where one side's
-/// insertion repeats the other's change or loses its line break to it. Ours
-/// keeps its text at `start..end`; `theirs` is the other version of those
-/// lines.
+/// Lines where ours and theirs changed the same words, where their changes
+/// meet with no blank between them, or where one side's insertion repeats
+/// the other's change. Ours keeps its text at `start..end`; `theirs` is the
+/// other version of those lines.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Conflict {
     pub start: u32,
@@ -85,7 +85,12 @@ pub fn merge3(base: &str, ours: &str, theirs: &str) -> Merge {
         let run_ours = o.slice(&(first.ours.start..last.ours.end));
         let run_theirs = t.slice(&(first.theirs.start..last.theirs.end));
         let run_base = b.slice(&(first.base.start..last.base.end));
-        let Some(words) = merge_words(run_base, run_ours, run_theirs) else {
+        let end = at + run_ours.len();
+        let outside = [
+            o.text[..at].chars().next_back(),
+            o.text[end..].chars().next(),
+        ];
+        let Some(words) = merge_words(run_base, run_ours, run_theirs, outside) else {
             conflicts.push((at..at + run_ours.len(), run_theirs.to_owned()));
             continue;
         };
@@ -148,12 +153,13 @@ pub fn merge3(base: &str, ours: &str, theirs: &str) -> Merge {
     }
 }
 
-/// Theirs's word changes as edits of `ours`, or `None` when both sides
-/// changed the same words differently.
+/// Theirs's word changes as edits of `ours`, or `None` when the sides
+/// conflict. `outside` holds the characters just before and after the texts.
 fn merge_words<'a>(
     base: &str,
     ours: &str,
     theirs: &'a str,
+    outside: [Option<char>; 2],
 ) -> Option<Vec<(Range<usize>, &'a str)>> {
     let (b, o, t) = (words(base), words(ours), words(theirs));
     let (to_ours, to_theirs) = diff3(&b, &o, &t);
@@ -162,35 +168,46 @@ fn merge_words<'a>(
         true => o.slice(&group.ours),
         false => t.slice(&group.theirs),
     };
-    let ends_line = |text: &str| text.ends_with(['\n', '\r']);
-    for pair in groups.windows(2) {
-        let (left, right) = (&pair[0], &pair[1]);
-        let one_each = left.ours_changed != left.theirs_changed
-            && right.ours_changed != right.theirs_changed
-            && left.ours_changed != right.ours_changed;
-        if !one_each || left.base.end != right.base.start {
-            continue;
-        }
-        // One side inserts at the edge of the other's change. That is a
-        // conflict when the insertion repeats the change's text there, or
-        // starts a line whose break the change took away.
-        let (left_text, right_text) = (side(left), side(right));
-        let clash = if right.base.is_empty() {
-            let broke = ends_line(b.slice(&(left.base.end - 1..left.base.end)));
-            left_text.ends_with(right_text) || (broke && !ends_line(left_text))
-        } else {
-            left.base.is_empty() && right_text.starts_with(left_text)
-        };
-        if clash {
-            return None;
-        }
-    }
     let mut edits = Vec::new();
-    for group in groups {
+    // The merged text, and the places in it where a change of one side meets
+    // a change of the other.
+    let mut merged = String::new();
+    let mut seams = Vec::new();
+    let mut done = 0;
+    for (k, group) in groups.iter().enumerate() {
         let theirs = t.slice(&group.theirs);
         if !group.ours_changed {
             edits.push((o.bytes(&group.ours), theirs));
         } else if group.theirs_changed && o.slice(&group.ours) != theirs {
+            return None;
+        }
+        merged.push_str(b.slice(&(done..group.base.start)));
+        if let Some(last) = k.checked_sub(1).map(|k| &groups[k])
+            && last.base.end == group.base.start
+            && last.ours_changed != last.theirs_changed
+            && group.ours_changed != group.theirs_changed
+            && last.ours_changed != group.ours_changed
+        {
+            // An insertion that repeats the other side's change at their edge.
+            let (left, right) = (side(last), side(group));
+            if (group.base.is_empty() && left.ends_with(right))
+                || (last.base.is_empty() && right.starts_with(left))
+            {
+                return None;
+            }
+            seams.push(merged.len());
+        }
+        merged.push_str(side(group));
+        done = group.base.end;
+    }
+    merged.push_str(b.slice(&(done..b.len() as u32)));
+    // The two sides' text meets with no blank between them and would read as
+    // one word. A pure deletion's side is the text beyond it.
+    let solid = |c: Option<char>| c.is_some_and(|c| !c.is_whitespace());
+    for seam in seams {
+        let before = merged[..seam].chars().next_back().or(outside[0]);
+        let after = merged[seam..].chars().next().or(outside[1]);
+        if solid(before) && solid(after) {
             return None;
         }
     }
@@ -620,6 +637,44 @@ mod tests {
                 "{ours:?}"
             );
         }
+    }
+
+    #[test]
+    fn text_from_both_sides_never_glues() {
+        for (base, ours, theirs) in [
+            // Typing before a line break that the other side deletes.
+            ("\n", "e\n", "1"),
+            ("\n", "3", "e\n"),
+            (
+                "# Title\n\n- item\n",
+                "# Title\nnote\n- item\n",
+                "# Title\n- item\n",
+            ),
+            (
+                "Para one.\n\nPara two.\n",
+                "Para one.\nAdded by me\nPara two.\n",
+                "Para one.\nPara two.\n\n---",
+            ),
+            ("\n\n```\n", "e\n```", "\n3\n"),
+            // Changes that touch with nothing between them.
+            ("    code block", "3    code block", "2"),
+            ("# Title", "1", "e# Title"),
+            ("Some ", "m", "Some t"),
+        ] {
+            let merge = merge3(base, ours, theirs);
+            let merged = apply(ours, &merge.edits);
+            assert!(
+                !merge.conflicts.is_empty(),
+                "{ours:?} {theirs:?} gave {merged:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_reflow_beside_typing_stays_clean() {
+        let merge = merge3("one\ntwo\n", "one typed\ntwo\n", "one two\n");
+        assert_eq!(merge.conflicts, []);
+        assert_eq!(apply("one typed\ntwo\n", &merge.edits), "one typed two\n");
     }
 
     #[test]
