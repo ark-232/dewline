@@ -2,7 +2,7 @@
 
 **Nothing changes behind your back.**
 
-A native Mac markdown editor that shows what agents changed. Open any `.md` file in place. When Claude Code, Codex, git or a sync app writes to it, Dewline marks the change, names the writer and keeps a snapshot first. Nothing is ever silently overwritten.
+A native Mac markdown editor that shows what agents changed. Open any `.md` file in place. When Claude Code, Codex, git or a sync app writes to it, Dewline marks the change, keeps a snapshot first and names the writer when it can prove who it was. Nothing is ever silently overwritten.
 
 macOS 26+ · Free · Source-available (FSL) · No account, no telemetry
 
