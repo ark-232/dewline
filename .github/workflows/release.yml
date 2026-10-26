@@ -19,9 +19,6 @@ defaults:
   run:
     shell: bash
 
-env:
-  SPARKLE_TARBALL_SHA256: c2bf58aa8387266ac179357b1415d6f2635f044da8be41042af32425dae6da0c
-
 jobs:
   verify:
     runs-on: ubuntu-24.04
@@ -75,7 +72,10 @@ jobs:
           ((build > newest)) || fail "build $build is not above the newest sparkle:version in the feed, $newest"
 
           heading=$(grep -E "^## ${version//./\\.}( |$)" CHANGELOG.md | head -1) || fail "CHANGELOG.md has no section for $version"
-          [[ -f perf/$version.json ]] && jq -e . "perf/$version.json" > /dev/null || fail "perf/$version.json is missing or invalid"
+          [[ -f perf/$version.json ]] || fail "perf/$version.json is missing (scripts/perf.sh writes it)"
+          judged=$(jq -f perf/budgets.jq "perf/$version.json") || fail "perf/$version.json is not perf.sh's JSON"
+          jq -e .pass <<< "$judged" > /dev/null \
+            || fail "perf/$version.json misses budgets: $(jq -r '[.budgets[] | select(.pass | not) | .metric] | join("; ")' <<< "$judged")"
           if gh api "repos/$GITHUB_REPOSITORY/releases/tags/v$version" > /dev/null 2>&1; then fail "v$version is already released"; fi
 
           channel=stable
@@ -313,19 +313,16 @@ jobs:
       - name: Check the DMG and fetch Sparkle's tools
         run: |
           echo "$DMG_SHA256  $RUNNER_TEMP/archives/Dewline-$VERSION.dmg" | shasum -a 256 -c -
-          curl -fsSL -o "$RUNNER_TEMP/sparkle.tar.xz" https://github.com/sparkle-project/Sparkle/releases/download/2.10.0/Sparkle-2.10.0.tar.xz
-          echo "$SPARKLE_TARBALL_SHA256  $RUNNER_TEMP/sparkle.tar.xz" | shasum -a 256 -c -
-          mkdir "$RUNNER_TEMP/sparkle"
-          tar -xf "$RUNNER_TEMP/sparkle.tar.xz" -C "$RUNNER_TEMP/sparkle"
+          scripts/sparkle-tools.sh "$RUNNER_TEMP/sparkle"
+          tools=$(plutil -extract CFBundleShortVersionString raw "$RUNNER_TEMP/sparkle/Sparkle.framework/Resources/Info.plist")
           mount=$(mktemp -d)
           hdiutil attach -nobrowse -readonly -mountpoint "$mount" "$RUNNER_TEMP/archives/Dewline-$VERSION.dmg"
           embedded=$(plutil -extract CFBundleShortVersionString raw "$mount/Dewline.app/Contents/Frameworks/Sparkle.framework/Resources/Info.plist")
           hdiutil detach "$mount"
-          [[ $embedded == 2.10.0 ]] || { echo "::error::the app embeds Sparkle $embedded, the tools are 2.10.0"; exit 1; }
+          [[ $embedded == "$tools" ]] || { echo "::error::the app embeds Sparkle $embedded, the tools are $tools"; exit 1; }
       - name: Verify the committed feed
         id: updates
         run: |
-          [[ -x scripts/verify-feed.sh ]] || { echo "::error::scripts/verify-feed.sh does not exist yet"; exit 1; }
           scripts/verify-feed.sh updates/appcast.xml "$PUBLIC_KEY"
           echo "commit=$(git -C updates rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Sign the archive and the feed
@@ -347,14 +344,6 @@ jobs:
         run: |
           feed=$RUNNER_TEMP/archives/appcast.xml
           scripts/verify-feed.sh "$feed" "$PUBLIC_KEY"
-          python3 -I - "$feed" <<'EOF'
-          import sys, xml.etree.ElementTree as ET
-          ns = "{http://www.andymatuschak.org/xml-namespaces/sparkle}"
-          for item in ET.parse(sys.argv[1]).iter("item"):
-              minimum = item.findtext(ns + "minimumSystemVersion") or ""
-              if [int(p) for p in minimum.split(".")] + [0] * (3 - len(minimum.split("."))) != [26, 0, 0]:
-                  sys.exit(f"an item has minimumSystemVersion {minimum!r}, not 26.0.0")
-          EOF
           echo "sha256=$(shasum -a 256 "$feed" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
           {
             echo "## Dewline $VERSION"
@@ -525,12 +514,12 @@ jobs:
         run: |
           echo "$FEED_SHA256  updates/appcast.xml" | sha256sum -c -
           (cd updates && npx --yes firebase-tools@15.5.1 deploy --only hosting --project dewline-updates)
-          [[ -x scripts/verify-feed.sh ]] || { echo "::error::scripts/verify-feed.sh does not exist yet"; exit 1; }
+          key=$(jq -r .SUPublicEDKey app/updater.golden.json)
           for _ in $(seq 30); do
-            if scripts/verify-feed.sh https://updates.dewline.dev/appcast.xml "$VERSION"; then exit 0; fi
+            if scripts/verify-feed.sh https://updates.dewline.dev/appcast.xml "$key" "$FEED_SHA256"; then exit 0; fi
             sleep 10
           done
-          echo "::error::the live feed does not carry $VERSION after 5 minutes"
+          echo "::error::the live feed is not the signed feed with $VERSION after 5 minutes"
           exit 1
 
   site:
@@ -595,7 +584,7 @@ jobs:
         id: still
         run: |
           base=https://raw.githubusercontent.com/ark-232/dewline-updates/main
-          if curl -fsSL "$base/pulled.txt" | grep -q "^$VERSION\b"; then echo "::notice::$VERSION was pulled"; echo "bump=false" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if curl -fsSL "$base/pulled.txt" | awk -v v="$VERSION" '$1 == v { found = 1 } END { exit !found }'; then echo "::notice::$VERSION was pulled"; echo "bump=false" >> "$GITHUB_OUTPUT"; exit 0; fi
           newest=$(curl -fsSL "$base/appcast.xml" | python3 -I -c '
           import sys, xml.etree.ElementTree as ET
           ns = "{http://www.andymatuschak.org/xml-namespaces/sparkle}"
