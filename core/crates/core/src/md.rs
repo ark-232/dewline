@@ -25,10 +25,12 @@ pub struct Span {
     pub content_end: u32,
 }
 
+const BLANK: [char; 4] = [' ', '\t', '\x0b', '\x0c'];
+
 struct Open {
     index: usize,
     range: Range<usize>,
-    content: Option<Range<usize>>,
+    child_end: usize,
 }
 
 /// Spans ordered by `start`, outer before inner.
@@ -39,39 +41,12 @@ pub fn spans(text: &str) -> Vec<Span> {
         if matches!(event, Event::End(_))
             && let Some(top) = open.pop_if(|top| top.range == range)
         {
-            let (kind, offsets) = &mut found[top.index];
-            let mut end = range.end;
-            if matches!(kind, SpanKind::Heading { .. } | SpanKind::FencedCode) {
-                let block = &text[range.clone()];
-                end -= if block.ends_with("\r\n") {
-                    2
-                } else {
-                    usize::from(block.ends_with(['\n', '\r']))
-                };
-            }
-            let content = top.content.unwrap_or_else(|| {
-                let at = match kind {
-                    SpanKind::Link => range.start + 1,
-                    SpanKind::Image => range.start + 2,
-                    SpanKind::FencedCode => text[range.start..end]
-                        .find('\n')
-                        .map_or(end, |i| range.start + i + 1),
-                    _ => end,
-                };
-                at..at
-            });
-            let content_end = content.end.min(end);
-            *offsets = [
-                range.start,
-                content.start.min(content_end),
-                content_end,
-                end,
-            ];
+            let span = &mut found[top.index];
+            span.1 = offsets(text, span.0, &range, top.child_end);
             continue;
         }
         if let Some(top) = open.last_mut() {
-            let start = top.content.as_ref().map_or(range.start, |c| c.start);
-            top.content = Some(start..range.end);
+            top.child_end = range.end;
         }
         let kind = match event {
             Event::Start(Tag::Heading { level, .. }) => SpanKind::Heading { level: level as u8 },
@@ -82,16 +57,7 @@ pub fn spans(text: &str) -> Vec<Span> {
             Event::Start(Tag::Image { .. }) => SpanKind::Image,
             Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(_))) => SpanKind::FencedCode,
             Event::Code(_) => {
-                let ticks = text[range.clone()]
-                    .bytes()
-                    .take_while(|&b| b == b'`')
-                    .count();
-                let offsets = [
-                    range.start,
-                    range.start + ticks,
-                    range.end - ticks,
-                    range.end,
-                ];
+                let offsets = offsets(text, SpanKind::InlineCode, &range, range.start);
                 found.push((SpanKind::InlineCode, offsets));
                 continue;
             }
@@ -99,8 +65,8 @@ pub fn spans(text: &str) -> Vec<Span> {
         };
         open.push(Open {
             index: found.len(),
+            child_end: range.start,
             range,
-            content: None,
         });
         found.push((kind, [0; 4]));
     }
@@ -128,6 +94,45 @@ pub fn spans(text: &str) -> Vec<Span> {
         .collect()
 }
 
+/// Byte offsets `[start, content_start, content_end, end]` of a span over
+/// `range` whose child events end at `child_end`.
+fn offsets(text: &str, kind: SpanKind, range: &Range<usize>, child_end: usize) -> [usize; 4] {
+    let source = &text[range.clone()];
+    let source = match kind {
+        SpanKind::Heading { .. } | SpanKind::FencedCode => source
+            .strip_suffix("\r\n")
+            .or_else(|| source.strip_suffix(['\n', '\r']))
+            .unwrap_or(source),
+        _ => source,
+    };
+    let (start, end) = (range.start, range.start + source.len());
+    let marker = match kind {
+        SpanKind::Emphasis | SpanKind::Link => 1,
+        SpanKind::Strong | SpanKind::Image => 2,
+        SpanKind::Strikethrough => source.len() - source.trim_start_matches('~').len(),
+        SpanKind::InlineCode => source.len() - source.trim_start_matches('`').len(),
+        // A setext heading hides only its underline.
+        SpanKind::Heading { .. } if source.contains(['\n', '\r']) => 0,
+        SpanKind::Heading { .. } => {
+            let rest = source.trim_start_matches('#').trim_start_matches(BLANK);
+            source.len() - rest.len()
+        }
+        SpanKind::FencedCode => source.find('\n').map_or(source.len(), |at| at + 1),
+    };
+    let content_start = start + marker;
+    let child_end = child_end.clamp(content_start, end);
+    let content_end = match kind {
+        SpanKind::Emphasis | SpanKind::Strong | SpanKind::Strikethrough | SpanKind::InlineCode => {
+            end - marker
+        }
+        // Text that ends at a line break leaves the next line's `>` or indent
+        // before the `]`, outside every child event.
+        SpanKind::Link | SpanKind::Image => child_end + text[child_end..end].find(']').unwrap_or(0),
+        SpanKind::Heading { .. } | SpanKind::FencedCode => child_end,
+    };
+    [start, content_start, content_end, end]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -147,6 +152,23 @@ mod tests {
         }
     }
 
+    /// Each span as its opening marker, content and closing marker.
+    fn split(text: &str) -> Vec<(SpanKind, [&str; 3])> {
+        let byte: Vec<usize> = text
+            .char_indices()
+            .flat_map(|(at, c)| [at; 2].into_iter().take(c.len_utf16()))
+            .chain([text.len()])
+            .collect();
+        spans(text)
+            .into_iter()
+            .map(|s| {
+                let [a, b, c, d] =
+                    [s.start, s.content_start, s.content_end, s.end].map(|at| byte[at as usize]);
+                (s.kind, [&text[a..b], &text[b..c], &text[c..d]])
+            })
+            .collect()
+    }
+
     #[test]
     fn heading() {
         let text = format!("{BEFORE}\n\n## {INSIDE} ##\n");
@@ -154,6 +176,16 @@ mod tests {
             spans(&text),
             [span(SpanKind::Heading { level: 2 }, 9, 12, 18, 21)]
         );
+    }
+
+    #[test]
+    fn setext_heading() {
+        let text = format!("{BEFORE}\n\n{INSIDE}\n===\n");
+        assert_eq!(
+            spans(&text),
+            [span(SpanKind::Heading { level: 1 }, 9, 9, 15, 19)]
+        );
+        assert_eq!(split(&text)[0].1[2], "\n===");
     }
 
     #[test]
@@ -208,6 +240,92 @@ mod tests {
                 span(SpanKind::Link, 8, 9, 12, 16),
                 span(SpanKind::InlineCode, 9, 10, 11, 12),
             ]
+        );
+    }
+
+    #[test]
+    fn an_escape_at_content_start_is_content() {
+        assert_eq!(
+            split(r"[\[1\]](#ref)"),
+            [(SpanKind::Link, ["[", r"\[1\]", "](#ref)"])]
+        );
+        assert_eq!(
+            split(r"**\*nix**"),
+            [(SpanKind::Strong, ["**", r"\*nix", "**"])]
+        );
+        assert_eq!(
+            split(r"# \#1 priority"),
+            [(SpanKind::Heading { level: 1 }, ["# ", r"\#1 priority", ""])]
+        );
+        assert_eq!(
+            split("\\*a\n==="),
+            [(SpanKind::Heading { level: 1 }, ["", r"\*a", "\n==="])]
+        );
+    }
+
+    #[test]
+    fn a_fence_in_a_list_or_quote_opens_with_its_own_line() {
+        assert_eq!(
+            split("- step:\n  ```sh\n  make\n  make install\n  ```"),
+            [(
+                SpanKind::FencedCode,
+                ["```sh\n", "  make\n  make install\n", "  ```"]
+            )]
+        );
+        assert_eq!(
+            split("> ```\n> a\n> b\n> ```"),
+            [(SpanKind::FencedCode, ["```\n", "> a\n> b\n", "> ```"])]
+        );
+    }
+
+    #[test]
+    fn link_text_ending_at_a_line_break_keeps_the_next_line_prefix() {
+        assert_eq!(
+            split(">~1. [\r\n>](u)"),
+            [(SpanKind::Link, ["[", "\r\n>", "](u)"])]
+        );
+        assert_eq!(
+            split("- [a\n  ](u)"),
+            [(SpanKind::Link, ["[", "a\n  ", "](u)"])]
+        );
+    }
+
+    #[test]
+    fn a_trailing_crlf_stays_out_of_block_spans() {
+        assert_eq!(
+            split("# a\r\n"),
+            [(SpanKind::Heading { level: 1 }, ["# ", "a", ""])]
+        );
+        assert_eq!(
+            split("b\r\n---\r\n"),
+            [(SpanKind::Heading { level: 2 }, ["", "b", "\r\n---"])]
+        );
+        assert_eq!(
+            split("```\r\nc\r\n```\r\n"),
+            [(SpanKind::FencedCode, ["```\r\n", "c\r\n", "```"])]
+        );
+    }
+
+    #[test]
+    fn empty_content() {
+        assert_eq!(
+            split("#"),
+            [(SpanKind::Heading { level: 1 }, ["#", "", ""])]
+        );
+        assert_eq!(
+            split("## ##"),
+            [(SpanKind::Heading { level: 2 }, ["## ", "", "##"])]
+        );
+        assert_eq!(
+            split("[](u) ![](v)"),
+            [
+                (SpanKind::Link, ["[", "", "](u)"]),
+                (SpanKind::Image, ["![", "", "](v)"]),
+            ]
+        );
+        assert_eq!(
+            split("```\n```"),
+            [(SpanKind::FencedCode, ["```\n", "", "```"])]
         );
     }
 
