@@ -298,6 +298,9 @@ pub fn rasterize_svg(svg: String, scale: f32, max_width: u32) -> Result<Raster, 
 /// `color` (0xRRGGBBAA).
 #[uniffi::export]
 pub fn render_math(tex: String, size: f32, scale: f32, color: u32) -> Result<Vec<u8>, RenderError> {
+    if tex.len() > MAX_SOURCE {
+        return Err(RenderError::TooLarge);
+    }
     within_budget(move || {
         let [r, g, b, a] = color
             .to_be_bytes()
@@ -429,6 +432,15 @@ mod tests {
         assert!(matches!(
             render_math(r"\frac{a".into(), 17.0, 2.0, 0x000000ff),
             Err(RenderError::Invalid { .. })
+        ));
+    }
+
+    #[test]
+    fn math_over_the_size_cap_is_refused() {
+        isolate();
+        assert!(matches!(
+            render_math("%\n".repeat(MAX_SOURCE), 17.0, 2.0, 0x000000ff),
+            Err(RenderError::TooLarge)
         ));
     }
 }

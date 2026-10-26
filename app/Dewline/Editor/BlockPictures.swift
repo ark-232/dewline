@@ -1,22 +1,11 @@
 import AppKit
 import ImageIO
 import MdCore
-import SwiftMath
 
 /// A rendered block's picture and its size in points.
 struct BlockPicture: Sendable {
     let image: CGImage
     let size: CGSize
-}
-
-/// The M0 math engine trial: both engines stay behind `typesetMath` until the decision record picks one.
-enum MathEngine: String, CaseIterable, Sendable {
-    case raTeX = "ratex"
-    case swiftMath = "swiftmath"
-
-    static var current: MathEngine {
-        UserDefaults.standard.string(forKey: "DewlineMath").flatMap(MathEngine.init) ?? .raTeX
-    }
 }
 
 /// What a picture depends on besides the column width, which only narrows it, so equal requests share a render.
@@ -27,7 +16,6 @@ struct PictureRequest: Hashable, Sendable {
     let scale: CGFloat
     /// The theme's colors in the view's appearance: a diagram takes them all and math the ink; an image takes none.
     let colors: DiagramColors?
-    let engine: MathEngine
 
     /// Renders off the main thread, no wider than `width` points where the renderer can narrow.
     func render(width: CGFloat) -> Result<BlockPicture, RenderFailure> {
@@ -37,7 +25,7 @@ struct PictureRequest: Hashable, Sendable {
             case .mermaid:
                 image = try mermaidImage(source, colors: colors!, scale: scale, maxWidth: Int(width * scale))
             case .math:
-                image = try typesetMath(source, engine: engine, size: 20, scale: scale, color: colors!.ink)
+                image = try ratexImage(source, size: 20, scale: scale, color: colors!.ink)
             case .image:
                 guard !source.isEmpty else { throw RenderFailure("the note is not saved in a folder yet") }
                 // Only a regular file: a pipe would hold the render queue forever.
@@ -61,30 +49,5 @@ struct PictureRequest: Hashable, Sendable {
             }
             return BlockPicture(image: image, size: CGSize(width: CGFloat(image.width) / scale, height: CGFloat(image.height) / scale))
         }
-    }
-}
-
-func typesetMath(_ tex: String, engine: MathEngine, size: CGFloat, scale: CGFloat, color: UInt32) throws(RenderFailure) -> CGImage {
-    switch engine {
-    case .raTeX:
-        return try ratexImage(tex, size: size, scale: scale, color: color)
-    case .swiftMath:
-        let channels = [24, 16, 8, 0].map { CGFloat(color >> $0 & 0xFF) / 255 }
-        let ink = NSColor(srgbRed: channels[0], green: channels[1], blue: channels[2], alpha: channels[3])
-        let (error, typeset) = MTMathImage(latex: tex, fontSize: size, textColor: ink, labelMode: .display, textAlignment: .left).asImage()
-        guard error == nil, let typeset else { throw RenderFailure(error?.localizedDescription ?? "SwiftMath made no picture") }
-        // On macOS the image draws lazily, so drawing it here is part of typesetting.
-        guard let context = CGContext(
-            data: nil, width: Int((typeset.size.width * scale).rounded(.up)), height: Int((typeset.size.height * scale).rounded(.up)),
-            bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else { throw RenderFailure("the picture is empty") }
-        context.scaleBy(x: scale, y: scale)
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
-        typeset.draw(in: CGRect(origin: .zero, size: typeset.size))
-        NSGraphicsContext.restoreGraphicsState()
-        guard let image = context.makeImage() else { throw RenderFailure("the picture is empty") }
-        return image
     }
 }

@@ -3,9 +3,9 @@ import MdCore
 import Testing
 @testable import Dewline
 
-/// Renders `corpus/mermaid` and `corpus/math` through the editor's renderers, both math engines included. Runs
-/// only with `DEWLINE_CORPUS_OUT` set (`TEST_RUNNER_DEWLINE_CORPUS_OUT` through xcodebuild) and writes every
-/// picture there with `mermaid.json` and `math-<engine>.json`. Timings mean something in a Release build.
+/// Renders `corpus/mermaid` and `corpus/math` through the editor's renderers. Runs only with `DEWLINE_CORPUS_OUT`
+/// set (`TEST_RUNNER_DEWLINE_CORPUS_OUT` through xcodebuild) and writes every picture there with `mermaid.json`
+/// and `math.json`. Timings mean something in a Release build.
 @Suite(.serialized, .enabled(if: ProcessInfo.processInfo.environment["DEWLINE_CORPUS_OUT"] != nil))
 struct BlockCorpusTests {
     static let corpus = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
@@ -47,7 +47,7 @@ struct BlockCorpusTests {
                 return !frontmatter && !line.isEmpty && line != "---" && !line.hasPrefix("%%")
             }
             let name = file.deletingPathExtension().lastPathComponent
-            let (milliseconds, picture) = Self.render(PictureRequest(kind: .mermaid, source: source, scale: 2, colors: Self.colors, engine: .raTeX))
+            let (milliseconds, picture) = Self.render(PictureRequest(kind: .mermaid, source: source, scale: 2, colors: Self.colors))
             var result: [String: Any] = ["file": name, "header": header ?? "", "ms": milliseconds]
             switch picture {
             case .success(let picture):
@@ -61,12 +61,11 @@ struct BlockCorpusTests {
         try Self.save(results, as: "mermaid.json")
     }
 
-    @Test(arguments: MathEngine.allCases)
-    func math(_ engine: MathEngine) throws {
+    @Test func math() throws {
         let formulas = try String(contentsOf: Self.corpus.appending(path: "math/formulas.tex"), encoding: .utf8)
             .split(whereSeparator: \.isNewline).map(String.init)
         #expect(formulas.count == 50)
-        let request = { (tex: String) in PictureRequest(kind: .math, source: tex, scale: 2, colors: Self.colors, engine: engine) }
+        let request = { (tex: String) in PictureRequest(kind: .math, source: tex, scale: 2, colors: Self.colors) }
         let cold = Self.render(request("x")).milliseconds
         var results: [[String: Any]] = []
         var times: [Double] = []
@@ -76,7 +75,7 @@ struct BlockCorpusTests {
             var result: [String: Any] = ["line": index + 1, "tex": tex, "ms": milliseconds]
             switch runs[0].picture {
             case .success(let picture):
-                try Self.save(picture, as: "math-\(engine.rawValue)-\(index + 1).png")
+                try Self.save(picture, as: "math-\(index + 1).png")
                 result["points"] = [picture.size.width, picture.size.height]
                 times.append(milliseconds)
             case .failure(let failure):
@@ -86,8 +85,8 @@ struct BlockCorpusTests {
         }
         times.sort()
         try Self.save([
-            "engine": engine.rawValue, "coldMs": cold, "failures": formulas.count - times.count,
+            "coldMs": cold, "failures": formulas.count - times.count,
             "p50Ms": times.isEmpty ? 0 : times[(times.count + 1) / 2 - 1], "maxMs": times.last ?? 0, "formulas": results,
-        ] as [String: Any], as: "math-\(engine.rawValue).json")
+        ] as [String: Any], as: "math.json")
     }
 }
