@@ -114,7 +114,9 @@ fn offsets(text: &str, kind: SpanKind, range: &Range<usize>, child_end: usize) -
             .strip_suffix("\r\n")
             .or_else(|| source.strip_suffix(['\n', '\r']))
             .unwrap_or(source),
-        _ => source,
+        // pulldown-cmark stretches emphasis, strong, strikethrough or code that
+        // ends an ATX heading over the heading's trailing blanks.
+        _ => source.trim_end_matches(BLANK),
     };
     let (start, end) = (range.start, range.start + source.len());
     let marker = match kind {
@@ -139,7 +141,10 @@ fn offsets(text: &str, kind: SpanKind, range: &Range<usize>, child_end: usize) -
         // Text that ends at a line break leaves the next line's `>` or indent
         // before the `]`, outside every child event.
         SpanKind::Link | SpanKind::Image => child_end + text[child_end..end].find(']').unwrap_or(0),
-        SpanKind::Heading { .. } | SpanKind::FencedCode => child_end,
+        SpanKind::Heading { .. } => {
+            content_start + text[content_start..child_end].trim_end_matches(BLANK).len()
+        }
+        SpanKind::FencedCode => child_end,
     };
     [start, content_start, content_end, end]
 }
@@ -286,6 +291,38 @@ mod tests {
         assert_eq!(
             split("> ```\n> a\n> b\n> ```"),
             [(SpanKind::FencedCode, ["```\n", "> a\n> b\n", "> ```"])]
+        );
+    }
+
+    #[test]
+    fn blanks_after_a_heading_stay_out_of_its_inline_spans() {
+        assert_eq!(
+            split("# t `c`\t"),
+            [
+                (SpanKind::Heading { level: 1 }, ["# ", "t `c`", "\t"]),
+                (SpanKind::InlineCode, ["`", "c", "`"]),
+            ]
+        );
+        assert_eq!(
+            split("# *a*\t"),
+            [
+                (SpanKind::Heading { level: 1 }, ["# ", "*a*", "\t"]),
+                (SpanKind::Emphasis, ["*", "a", "*"]),
+            ]
+        );
+        assert_eq!(
+            split("## **a**\x0b"),
+            [
+                (SpanKind::Heading { level: 2 }, ["## ", "**a**", "\x0b"]),
+                (SpanKind::Strong, ["**", "a", "**"]),
+            ]
+        );
+        assert_eq!(
+            split("### ~b~\x0c"),
+            [
+                (SpanKind::Heading { level: 3 }, ["### ", "~b~", "\x0c"]),
+                (SpanKind::Strikethrough, ["~", "b", "~"]),
+            ]
         );
     }
 
