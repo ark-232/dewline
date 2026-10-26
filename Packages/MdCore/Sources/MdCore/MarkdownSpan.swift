@@ -1,4 +1,4 @@
-import DewlineFFIBindings
+internal import DewlineFFIBindings
 import Foundation
 
 /// A markdown construct in UTF-16 offsets. The characters in `range` but

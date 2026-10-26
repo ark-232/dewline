@@ -15,6 +15,10 @@ let package = Package(
             dependencies: ["DewlineFFI"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
-        .target(name: "MdCore", dependencies: ["DewlineFFIBindings"]),
+        .target(
+            name: "MdCore",
+            dependencies: ["DewlineFFIBindings"],
+            swiftSettings: [.treatAllWarnings(as: .error)]
+        ),
     ]
 )
