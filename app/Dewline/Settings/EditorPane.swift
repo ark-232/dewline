@@ -60,6 +60,12 @@ struct EditorPane: View {
                 Text("Editorial sets the first heading as a display title and section heads in small caps. The file stays plain Markdown.")
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            Section {
+                Toggle("Smart Punctuation", isOn: $store.smartPunctuation)
+            } footer: {
+                Text("Turns straight quotes into curly ones and double hyphens into dashes as you type. Code is left alone.")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
 }

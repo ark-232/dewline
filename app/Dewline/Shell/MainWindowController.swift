@@ -14,6 +14,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     private(set) var textView: EditorTextView?
     private var outlineUpdate: Task<Void, Never>?
     private var sectionUpdate: Task<Void, Never>?
+    private var countUpdate: Task<Void, Never>?
+    /// The open file's folders, which the subtitle shows before the word count.
+    private var location = ""
 
     init(folder: Folder?) {
         self.folder = folder
@@ -103,8 +106,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         if let old = self.textView {
             NotificationCenter.default.removeObserver(self, name: NSText.didChangeNotification, object: old)
             NotificationCenter.default.removeObserver(self, name: NSView.boundsDidChangeNotification, object: old.enclosingScrollView?.contentView)
+            NotificationCenter.default.removeObserver(self, name: NSTextView.didChangeSelectionNotification, object: old)
         }
         NotificationCenter.default.addObserver(self, selector: #selector(textChanged), name: NSText.didChangeNotification, object: textView)
+        NotificationCenter.default.addObserver(self, selector: #selector(countWords), name: NSTextView.didChangeSelectionNotification, object: textView)
         NotificationCenter.default.addObserver(self, selector: #selector(scrolled), name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
         self.textView = textView
         sidebar.show(document.fileURL, text: document.text)
@@ -112,11 +117,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
             let folders = folder.flatMap { folder in
                 folder.relativePath(of: url).map { [folder.url.lastPathComponent] + $0.split(separator: "/").dropLast().map(String.init) }
             }
-            window?.subtitle = (folders ?? [FileManager.default.displayName(atPath: url.deletingLastPathComponent().path)]).joined(separator: " › ")
+            location = (folders ?? [FileManager.default.displayName(atPath: url.deletingLastPathComponent().path)]).joined(separator: " › ")
             Library.noteOpened(url)
         } else {
-            window?.subtitle = ""
+            location = ""
         }
+        window?.subtitle = location
+        countWords()
         window?.makeFirstResponder(textView)
     }
 
@@ -200,7 +207,28 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         menuItem.action != #selector(findInFiles(_:)) || folder != nil
     }
 
+    /// Shows the document's word count in the subtitle, and the selection's beside it, 250 ms after the text or the
+    /// selection last changed, counted off the main thread once the map has the whole text.
+    @objc private func countWords() {
+        countUpdate?.cancel()
+        countUpdate = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            while let map = self?.textView?.styler.map, map.parsed < (self?.textView?.textStorage?.length ?? 0), !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            guard !Task.isCancelled, let self, let textView = self.textView else { return }
+            let text = textView.string
+            let blocks = textView.styler.map.blocks(in: NSRange(location: 0, length: (text as NSString).length))
+            let selection = textView.selectedRange()
+            let count = await Task.detached(priority: .utility) { WordCount.count(text, blocks: blocks, selection: selection) }.value
+            guard !Task.isCancelled else { return }
+            let words = WordCount.label(total: count.total, selected: selection.length > 0 ? count.selected : nil)
+            self.window?.subtitle = self.location.isEmpty ? words : self.location + " · " + words
+        }
+    }
+
     @objc private func textChanged() {
+        countWords()
         outlineUpdate?.cancel()
         outlineUpdate = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(300))

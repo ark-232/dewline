@@ -24,6 +24,9 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
     /// Text not styled yet, whole paragraphs, which `styleSome` works through from the top of the view.
     private var unstyled = IndexSet()
     private var scheduled = false
+    /// The text folded blocks hide, in text order, each from the line after its block's first line. A heading's fold
+    /// holds the folds of the blocks under it.
+    private(set) var folds: [NSRange] = []
 
     var hasUnstyledText: Bool {
         !unstyled.isEmpty
@@ -88,7 +91,48 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
 
     func textViewDidChangeSelection(_ notification: Notification) {
         guard !textView!.defersStyling else { return }
+        unfoldSelection()
         updateReveal()
+    }
+
+    /// Smart quotes and dashes leave code alone.
+    func textView(
+        _ view: NSTextView, didCheckTextIn range: NSRange, types checkingTypes: NSTextCheckingTypes, options: [NSSpellChecker.OptionKey: Any],
+        results: [NSTextCheckingResult], orthography: NSOrthography, wordCount: Int
+    ) -> [NSTextCheckingResult] {
+        results.filter { ![.quote, .dash].contains($0.resultType) || !isCode($0.range) }
+    }
+
+    /// Whether `range` meets a code block, front matter, math or a code span.
+    func isCode(_ range: NSRange) -> Bool {
+        map.isCode(range) || map.blocks(touching: range).contains { block in
+            block.spans.contains { span in
+                let code = span.shifted(by: block.range.location).range
+                return span.kind == .inlineCode && code.location < NSMaxRange(range) && range.location < NSMaxRange(code)
+            }
+        }
+    }
+
+    /// Folds exactly `folds`, restyling the text whose fold changed.
+    func setFolds(_ new: [NSRange]) {
+        let changed = Set(folds).symmetricDifference(new)
+        folds = Set(new).sorted { $0.location < $1.location }
+        if let first = changed.first { restyleNow(changed.reduce(first, NSUnionRange)) }
+    }
+
+    /// The caret moving into folded text, or a selection's end landing in it, unfolds it.
+    private func unfoldSelection() {
+        let text = textView!.textStorage!.mutableString
+        let selection = textView!.selectedRanges.map(\.rangeValue)
+        let inside = { (fold: NSRange) in
+            selection.contains { range in
+                let end = NSMaxRange(range)
+                return NSLocationInRange(range.location, fold) || (range.length > 0 && fold.location < end && end < NSMaxRange(fold))
+                    // A caret at the end of a text whose last line is folded.
+                    || (range.length == 0 && end == NSMaxRange(fold) && end == text.length && ![0x0A, 0x0D].contains(text.character(at: end - 1)))
+            }
+        }
+        if folds.contains(where: inside) { setFolds(folds.filter { !inside($0) }) }
     }
 
     /// Spelling and grammar marks skip code, math, front matter, addresses, wikilink targets and HTML tags.
@@ -133,6 +177,21 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
             })
             unstyled.remove(integersIn: editedRange.location..<oldEnd)
             unstyled.shift(startingAt: oldEnd, by: delta)
+            let text = textView!.textStorage!.mutableString
+            // An edit in folded text unfolds it; an edit before a fold moves it.
+            let editEnd = NSMaxRange(edit) - delta
+            var unfolded: NSRange?
+            folds = folds.compactMap { fold in
+                if editEnd < fold.location { return NSRange(location: fold.location + delta, length: fold.length) }
+                if edit.location > NSMaxRange(fold) || (edit.location == NSMaxRange(fold) && [0x0A, 0x0D].contains(text.character(at: edit.location - 1))) {
+                    return fold
+                }
+                let start = min(fold.location, edit.location)
+                let end = NSMaxRange(fold) < editEnd ? NSMaxRange(edit) : NSMaxRange(fold) + delta
+                let shown = NSRange(location: start, length: end - start)
+                unfolded = unfolded.map { NSUnionRange($0, shown) } ?? shown
+                return nil
+            }
             // An edit whose text ends in a line break splits a paragraph, and the half after the break is a paragraph
             // the edit changed too.
             let length = textView!.textStorage!.length
@@ -149,6 +208,7 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
             LatencyProbe.end(.parse)
             blocks.textDidChange(edited: edit, delta: delta)
             range = NSUnionRange(range, changed)
+            if let unfolded { range = NSUnionRange(range, unfolded) }
             if textView!.defersStyling {
                 pending = range
             } else {
@@ -321,6 +381,14 @@ extension MarkdownStyler {
             }
         }
         blocks.style(styled, at: paragraphs.location, selection: source ? [whole] : selection)
+        for fold in folds {
+            let hidden = NSIntersectionRange(fold, paragraphs)
+            guard hidden.length > 0 else { continue }
+            let local = NSRange(location: hidden.location - paragraphs.location, length: hidden.length)
+            styled.addAttributes([
+                .dewlineBlock: BlockLine(.collapsed), .foregroundColor: NSColor.clear, .font: Self.hiddenFont, .paragraphStyle: RenderedBlocks.collapsedLines,
+            ], range: local)
+        }
         // Only runs whose styling differs are written, once each, so layout invalidates only what changed. The CF
         // accessors return a run's dictionary without bridging it to Swift, which costs more than the comparison.
         var offset = 0
