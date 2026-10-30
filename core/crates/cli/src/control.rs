@@ -1,7 +1,8 @@
 //! The app's control socket, as this command sees it. The app's side is
 //! app/Dewline/ControlSocket.swift. A connection carries one request, a JSON
 //! line; the app answers in JSON lines: `opened` or `error`, then `closed`
-//! once the document closes when the request waits.
+//! once the document closes when the request waits. A `notify` request gets
+//! no answer unless it is refused.
 
 use std::env;
 use std::fs;
@@ -22,7 +23,7 @@ pub const VERSION: u32 = 1;
 /// The longest line either side reads, newline included.
 pub const MAX_LINE: usize = 16 * 1024;
 const BUNDLE_ID: &str = "dev.arkwerx.dewline";
-const CONNECT_TIMEOUT: Duration = Duration::from_millis(50);
+pub const CONNECT_TIMEOUT: Duration = Duration::from_millis(50);
 /// How long a launched app has to start listening.
 const LAUNCH_TIMEOUT: Duration = Duration::from_secs(10);
 /// How long the app has to show a file it was asked for.
@@ -48,6 +49,11 @@ impl Socket {
             path: home.join("Library/Application Support/dev.arkwerx.dewline/run/control.sock"),
             launches: true,
         })
+    }
+
+    /// Connects without ever starting the app.
+    pub fn reach(&self) -> io::Result<UnixStream> {
+        connect(&self.path, euid())
     }
 
     /// Asks the app to open `target`, starting the app when nothing listens.
@@ -184,7 +190,7 @@ fn connect(path: &Path, uid: u32) -> io::Result<UnixStream> {
 
 /// macOS refuses socket options (EINVAL) once the app has closed its end,
 /// which the next read reports, so that refusal is not an error here.
-fn set_timeout(stream: &UnixStream, timeout: Option<Duration>) -> io::Result<()> {
+pub fn set_timeout(stream: &UnixStream, timeout: Option<Duration>) -> io::Result<()> {
     for result in [
         stream.set_read_timeout(timeout),
         stream.set_write_timeout(timeout),
