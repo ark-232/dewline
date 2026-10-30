@@ -87,7 +87,9 @@ struct EditRestyleTests {
         storage.replaceCharacters(in: NSRange(location: 8, length: 0), with: "\n")
         let text = storage.mutableString
         let tail = text.paragraphRange(for: NSRange(location: 9, length: 0))
-        let markers = SpikeTokenizer.spans(in: text, line: tail).flatMap(\.markers)
+        let markers = editor.view.styler.map.blocks(in: tail)
+            .flatMap { block in block.spans.flatMap { $0.shifted(by: block.range.location).markers } }
+            .filter { NSIntersectionRange($0, tail).length > 0 }
         try #require(!markers.isEmpty)
         for marker in markers {
             #expect(storage.attribute(.dewlineMarkerFont, at: marker.location, effectiveRange: nil) != nil, "marker at \(marker.location)")

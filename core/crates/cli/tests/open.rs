@@ -263,7 +263,8 @@ fn help_and_version() {
         format!("dewline {}\n", env!("CARGO_PKG_VERSION"))
     );
     let help = String::from_utf8_lossy(&fixture.run(&["--help"]).stdout).into_owned();
-    assert!(help.contains("open  Open files in Dewline"), "{help}");
+    assert!(help.contains("open    Open files in Dewline"), "{help}");
+    assert!(help.contains("notify  Tell Dewline which file"), "{help}");
     let open = String::from_utf8_lossy(&fixture.run(&["open", "--help"]).stdout).into_owned();
     assert!(
         open.contains("FILE[:LINE[:COLUMN]]") && open.contains("--wait"),

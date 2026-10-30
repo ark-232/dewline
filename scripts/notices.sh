@@ -1,7 +1,8 @@
 #!/bin/bash
 # Writes THIRD_PARTY_NOTICES.md from what ships in Dewline.app: the Rust crates the app and the CLI link (normal
 # dependencies in core/Cargo.lock, without build scripts' or proc macros' own trees), the Swift packages pinned in
-# Package.resolved, and the bundled fonts. Run it after any dependency change; release builds bundle its output.
+# Package.resolved, the bundled fonts, and code ported from other projects. Run it after any dependency change;
+# release builds bundle its output.
 # Usage: scripts/notices.sh [Swift package checkouts, default: the release build's DerivedData]
 set -euo pipefail
 
@@ -60,6 +61,7 @@ for pin in resolved["pins"]:
         sys.exit(f"notices.sh: no checkout at {folder}; run scripts/build-release.sh first")
     add(folder.name, version, "MIT and the notices in its LICENSE", pin["location"], license_files(folder))
 add("JetBrains Mono", "2.304", "OFL-1.1", "https://github.com/JetBrains/JetBrainsMono", [root / "app/Dewline/Fonts/JetBrainsMono-OFL.txt"])
+add("OpenAI Codex apply-patch (ported)", "970111f6", "Apache-2.0", "https://github.com/openai/codex", [root / "docs/licenses/Codex-LICENSE"])
 
 uniffi = sorted({f"{p['name']} {p['version']}" for p in crates if p["name"].startswith("uniffi")})
 print("# Third-party notices\n")
@@ -68,6 +70,10 @@ print("`Package.resolved` and the bundled fonts; edit the script, not this file.
 print("## MPL-2.0: UniFFI\n")
 print(f"The UniFFI runtime ({', '.join(uniffi)}) is under the Mozilla Public License 2.0 and ships in the app")
 print("unmodified. Its source is at https://github.com/mozilla/uniffi-rs and on crates.io under the versions named here.\n")
+print("## Apache-2.0: OpenAI Codex\n")
+print("`core/crates/cli/src/patch.rs` ports the patch parser and line matching of Codex's apply-patch")
+print("(codex-rs/apply-patch at 970111f6 in https://github.com/openai/codex) under the Apache License 2.0, whose text is")
+print("below. Its NOTICE reads: OpenAI Codex, Copyright 2025 OpenAI.\n")
 print("## Components\n")
 print("| Component | Version | License | Source |\n|---|---|---|---|")
 for name, version, license, source in rows:

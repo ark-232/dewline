@@ -1,4 +1,5 @@
 import AppKit
+import MdCore
 
 /// One tab: the sidebar beside the open file, or beside an empty page in a folder window until a file opens.
 final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NSMenuItemValidation {
@@ -68,6 +69,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         crumbs.action = #selector(crumbClicked(_:))
         crumbs.setContentHuggingPriority(.defaultLow, for: .horizontal)
         crumbs.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        sidebar.reveal = { [weak self] url, match, newTab in self?.reveal(match, in: url, newTab: newTab) }
         Self.all.insert(self)
         if let folder {
             window.title = FileManager.default.displayName(atPath: folder.url.path)
@@ -265,6 +267,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         switch menuItem.action {
         case #selector(goBack(_:)): history.canGoBack
         case #selector(goForward(_:)): history.canGoForward
+        case #selector(findInFiles(_:)): folder != nil
         default: true
         }
     }
@@ -377,6 +380,23 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
             }
             selected?.window?.makeKeyAndOrderFront(nil)
         }
+    }
+
+    /// Opens `url` as the sidebar does and selects `match` where the file's text still holds it.
+    private func reveal(_ match: TextMatch?, in url: URL, newTab: Bool) {
+        open(url, newTab: newTab)
+        guard let match, let tab = NSDocumentController.shared.document(for: url)?.windowControllers.first as? MainWindowController,
+            let textView = tab.textView
+        else { return }
+        let text = textView.string as NSString
+        let found = (match.preview as NSString).substring(with: match.previewRange)
+        guard NSMaxRange(match.range) <= text.length, text.substring(with: match.range) == found else { return }
+        tab.window?.makeFirstResponder(textView)
+        textView.jump(to: match.range)
+    }
+
+    @objc func findInFiles(_ sender: Any?) {
+        sidebar.showSearch()
     }
 
     @objc private func textChanged() {
