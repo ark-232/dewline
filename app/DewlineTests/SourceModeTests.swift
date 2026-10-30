@@ -117,10 +117,8 @@ struct SourceModeTests {
             let font = value as! NSFont
             #expect(font.isFixedPitch && font.pointSize == size, "\(font) at \(run)")
         }
-        var markers: [NSRange] = []
-        text.enumerateSubstrings(in: NSRange(location: 0, length: text.length), options: [.byParagraphs, .substringNotRequired]) { _, line, _, _ in
-            markers += SpikeTokenizer.spans(in: text, line: line).flatMap(\.markers)
-        }
+        let markers = editor.view.styler.map.blocks(in: NSRange(location: 0, length: text.length))
+            .flatMap { block in block.spans.flatMap { $0.shifted(by: block.range.location).markers } }
         #expect(markers.count == 13)
         for marker in markers {
             let width = editor.rect(marker.location, marker.length).width
