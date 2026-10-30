@@ -1,4 +1,5 @@
 import AppKit
+import MdCore
 import os
 
 @main
@@ -27,8 +28,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Before AppKit decides whether to show the launch window, which it shows only when nothing reopened.
     func applicationWillFinishLaunching(_ notification: Notification) {
+        NotificationCenter.default.addObserver(self, selector: #selector(prune), name: NSApplication.didFinishRestoringWindowsNotification, object: nil)
         guard !isTestHost, let session = Session.load(from: defaults) else { return }
         MainWindowController.resume(session)
+    }
+
+    /// Only the app prunes snapshots, once, with the last session's documents open again.
+    @objc private func prune() {
+        NotificationCenter.default.removeObserver(self, name: NSApplication.didFinishRestoringWindowsNotification, object: nil)
+        guard let engine = MarkdownDocument.sharedEngine else { return }
+        DispatchQueue.global(qos: .utility).async {
+            do throws(ChangeEngine.Failure) {
+                try engine.prune()
+            } catch {
+                Logger(subsystem: "dev.arkwerx.dewline", category: "engine")
+                    .error("Snapshots were not pruned: \(String(describing: error), privacy: .public)")
+            }
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -41,7 +57,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Opened before AppKit asks for an untitled file, so the guide shows in place of the launch window.
             showWelcomeGuide(nil)
         }
-        let control = ControlSocket(path: ControlSocket.standardPath) { [weak self] request, connection in
+        let engine = MarkdownDocument.sharedEngine
+        let control = ControlSocket(path: ControlSocket.standardPath, notify: { claim in
+            if let engine { LiveFile.claim(claim, engine: engine) }
+        }) { [weak self] request, connection in
             self?.open(request, for: connection)
         }
         do {
@@ -61,13 +80,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Opens a file for the `dewline` command as Markdown, whatever its extension (git's COMMIT_EDITMSG has none),
     /// with the caret at the line and column asked for.
     func open(_ request: ControlSocket.Open, for connection: ControlSocket.Connection) {
-        let document: MarkdownDocument
-        do {
-            document = try openMarkdown(at: URL(fileURLWithPath: request.path))
-        } catch {
-            connection.reply(.refused(.cannotOpen, message: error.localizedDescription))
-            return
+        let url = URL(fileURLWithPath: request.path)
+        let controller = NSDocumentController.shared
+        if let open = controller.document(for: url) as? MarkdownDocument {
+            return show(open, for: request, connection)
         }
+        Task {
+            let document: MarkdownDocument
+            do {
+                document = try await MarkdownDocument.open(url)
+            } catch {
+                connection.reply(.refused(.cannotOpen, message: error.localizedDescription))
+                return
+            }
+            // Another request may have opened it while this one read.
+            if let open = controller.document(for: url) as? MarkdownDocument {
+                document.close()
+                return show(open, for: request, connection)
+            }
+            controller.addDocument(document)
+            controller.noteNewRecentDocumentURL(url)
+            document.makeWindowControllers()
+            show(document, for: request, connection)
+        }
+    }
+
+    private func show(_ document: MarkdownDocument, for request: ControlSocket.Open, _ connection: ControlSocket.Connection) {
+        document.showWindows()
         if let line = request.line {
             (document.windowControllers.first as? MainWindowController)?.textView?.jump(toLine: line, column: request.column ?? 1)
         }

@@ -94,6 +94,10 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
         undoManager
     }
 
+    func textViewWritingToolsDidEnd(_ textView: NSTextView) {
+        self.textView?.inputEnded?()
+    }
+
     func textViewDidChangeSelection(_ notification: Notification) {
         guard !textView!.defersStyling else { return }
         unfoldSelection()
@@ -171,6 +175,7 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
         LatencyProbe.begin(.attributes)
         defer { LatencyProbe.end(.attributes) }
         MainActor.assumeIsolated {
+            textView!.storageDidEdit(editedRange, delta: delta)
             // A landing outside the edit is left from an approved edit that never came. Undo and redo come without
             // shouldChangeText and leave the caret at the end of the text they put back.
             let caret = landing.flatMap { editedRange.location <= $0 && $0 <= NSMaxRange(editedRange) ? $0 : nil }
@@ -409,6 +414,15 @@ extension MarkdownStyler {
             ], range: local)
         }
         highlights.update(map.blocks(in: paragraphs), in: paragraphs, text: storage.mutableString)
+        // Removed text and a conflict's other version hang under their paragraph, in space added below it.
+        for (anchor, height) in textView?.marks.space(in: paragraphs) ?? [] {
+            let paragraph = text.paragraphRange(for: NSRange(location: anchor - paragraphs.location, length: 0))
+            guard styled.attribute(.dewlineBlock, at: paragraph.location, effectiveRange: nil) == nil else { continue }
+            let style = (styled.attribute(.paragraphStyle, at: paragraph.location, effectiveRange: nil) as? NSParagraphStyle ?? .default)
+                .mutableCopy() as! NSMutableParagraphStyle
+            style.paragraphSpacing += height
+            styled.addAttribute(.paragraphStyle, value: style, range: paragraph)
+        }
         // Only runs whose styling differs are written, once each, so layout invalidates only what changed. The CF
         // accessors return a run's dictionary without bridging it to Swift, which costs more than the comparison.
         var offset = 0

@@ -6,7 +6,8 @@
 //!
 //! Calls that read or write files or the snapshot store take a document's
 //! own lock, so they run one at a time per document; `commit`, `decide` and
-//! `claim` never touch a file or wait behind one that does.
+//! `claim` never wait behind one that does, and touch no file but the
+//! decisions log, which `decide` appends one line to.
 
 use std::collections::HashMap;
 use std::ffi::OsStr;
@@ -21,6 +22,7 @@ use blake3::Hash;
 
 use crate::agents::AgentFiles;
 use crate::claims::{Chain, Claim, Claims, Refused, Vendor};
+use crate::decisions;
 use crate::file::{self, SaveError};
 use crate::git::{self, Entry, Repo};
 use crate::merge::{self, Conflict, Edit};
@@ -328,6 +330,8 @@ impl State {
 
 pub struct Engine {
     store: Store,
+    /// The store folder, which holds the decisions log.
+    root: PathBuf,
     clock: Clock,
     agents: &'static AgentFiles,
     state: Mutex<State>,
@@ -347,6 +351,7 @@ impl Engine {
     pub fn new(root: &Path, clock: Clock) -> io::Result<Engine> {
         Ok(Engine {
             store: Store::open(root)?,
+            root: root.to_owned(),
             clock,
             agents: AgentFiles::builtin(),
             state: Mutex::default(),
@@ -884,7 +889,8 @@ impl Engine {
 
     /// Decides a pending change or conflict, given the text of its live
     /// range, and returns the text that replaces that range, or None when
-    /// the buffer stays as it is.
+    /// the buffer stays as it is. An agent's change goes in the decisions
+    /// log, kept or reverted.
     pub fn decide(
         &self,
         doc: DocId,
@@ -892,21 +898,57 @@ impl Engine {
         decision: Decision,
         current: &str,
     ) -> Option<String> {
-        let mut state = self.state();
-        let d = state.docs.get_mut(&doc)?;
-        let at = d.changes.iter().position(|pending| pending.id == change)?;
-        if let (Kind::Edit { original, landed }, Decision::Other) = (&d.changes[at].kind, decision)
+        let (replacement, logged) = {
+            let mut state = self.state();
+            let d = state.docs.get_mut(&doc)?;
+            let at = d.changes.iter().position(|pending| pending.id == change)?;
+            let reverted = match (&d.changes[at].kind, decision) {
+                // A revert that would drop text typed inside the change leaves it pending.
+                (Kind::Edit { original, landed }, Decision::Other) => {
+                    Some(revert(original, landed, current)?)
+                }
+                _ => None,
+            };
+            let decided = d.changes.remove(at);
+            let kept = !matches!(
+                (&decided.kind, decision),
+                (Kind::Edit { .. }, Decision::Other) | (Kind::Conflict { .. }, Decision::Keep)
+            );
+            let excerpt = match &decided.kind {
+                Kind::Edit { landed, .. } => landed.clone(),
+                Kind::Conflict { theirs } => theirs.clone(),
+            };
+            let logged = match &decided.origin {
+                Origin::Agent { .. } if !d.private => {
+                    Some((decided.origin.label(), d.path.clone(), kept, excerpt))
+                }
+                _ => None,
+            };
+            let replacement = match (decided.kind, decision) {
+                (Kind::Edit { .. }, Decision::Other) => reverted,
+                (_, Decision::Keep) | (Kind::Edit { .. }, _) => None,
+                (Kind::Conflict { theirs }, Decision::Other) => Some(theirs),
+                (Kind::Conflict { theirs }, Decision::Both) => Some(both(current, &theirs)),
+            };
+            (replacement, logged)
+        };
+        if let Some((label, path, kept, excerpt)) = logged
+            && let Some((vendor, session)) = label.split_once(':')
         {
-            // A revert that would drop text typed inside the change leaves it pending.
-            let reverted = revert(original, landed, current)?;
-            d.changes.remove(at);
-            return Some(reverted);
+            // The decision stands without its line; only the agent's next read misses it.
+            let _ = decisions::append(
+                &self.root,
+                &decisions::Decision {
+                    vendor,
+                    session,
+                    file: &path,
+                    time: (self.clock)().1,
+                    kept,
+                    excerpt: &excerpt,
+                },
+            );
         }
-        match (d.changes.remove(at).kind, decision) {
-            (_, Decision::Keep) | (Kind::Edit { .. }, _) => None,
-            (Kind::Conflict { theirs }, Decision::Other) => Some(theirs),
-            (Kind::Conflict { theirs }, Decision::Both) => Some(both(current, &theirs)),
-        }
+        replacement
     }
 
     /// The text of `snapshot`, to replace the buffer as one undoable edit.

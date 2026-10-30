@@ -45,6 +45,9 @@ enum MainMenu {
         menu.addItem(.separator())
         menu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         menu.addItem(withTitle: "Save", action: #selector(NSDocument.save(_:)), keyEquivalent: "s")
+        let snapshots = NSMenu(title: "Snapshots")
+        snapshots.delegate = SnapshotsMenu.shared
+        menu.addItem(withTitle: "Snapshots", action: nil, keyEquivalent: "").submenu = snapshots
         menu.addItem(.separator())
         let html = menu.addItem(withTitle: "Export as HTML…", action: #selector(MarkdownDocument.exportDocument(_:)), keyEquivalent: "")
         html.tag = Export.Format.html.rawValue
@@ -69,6 +72,10 @@ enum MainMenu {
         menu.addItem(withTitle: "Smart Punctuation", action: #selector(EditorTextView.toggleSmartPunctuation(_:)), keyEquivalent: "")
         menu.addItem(format(.moveLineUp, "[", [.command, .option]))
         menu.addItem(format(.moveLineDown, "]", [.command, .option]))
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Keep Change", action: #selector(EditorTextView.keepChange(_:)), keyEquivalent: "\r")
+        let revert = menu.addItem(withTitle: "Revert Change", action: #selector(EditorTextView.revertChange(_:)), keyEquivalent: "\u{8}")
+        revert.keyEquivalentModifierMask = [.command, .option]
         return menu
     }
 
@@ -116,6 +123,9 @@ enum MainMenu {
     private static func viewMenu() -> NSMenu {
         let menu = NSMenu(title: "View")
         menu.addItem(withTitle: "Command Palette…", action: #selector(AppDelegate.showCommandPalette(_:)), keyEquivalent: "P")
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Review Changes", action: #selector(ReviewPanel.toggleReview(_:)), keyEquivalent: "R").target = ReviewPanel.shared
+        menu.addItem(withTitle: "Follow Changes", action: #selector(ReviewPanel.toggleFollow(_:)), keyEquivalent: "").target = ReviewPanel.shared
         menu.addItem(.separator())
         let sidebar = menu.addItem(withTitle: "Show Sidebar", action: #selector(NSSplitViewController.toggleSidebar(_:)), keyEquivalent: "s")
         sidebar.keyEquivalentModifierMask = [.command, .control]

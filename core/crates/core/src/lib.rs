@@ -1,9 +1,9 @@
 pub mod agents;
 pub mod claims;
+pub mod decisions;
 pub mod engine;
 pub mod export;
 pub mod file;
-pub mod export;
 pub mod git;
 pub mod highlight;
 pub mod md;
