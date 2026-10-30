@@ -40,6 +40,19 @@ public func mermaidImage(_ source: String, colors: DiagramColors, scale: Double,
     return image
 }
 
+/// `text` as a standalone HTML page with `css` inlined, images inside `folder` inlined, and diagrams and math in
+/// `colors`, with a second picture in `dark` colors for a dark page; raw HTML in the source shows as text.
+public func exportPage(
+    _ text: String, title: String, css: String, folder: URL?, colors: DiagramColors, dark: DiagramColors?, mathSize: Double
+) -> String {
+    func engine(_ colors: DiagramColors) -> DewlineFFIBindings.DiagramColors {
+        .init(paper: colors.paper, ink: colors.ink, ink2: colors.ink2, accent: colors.accent, rule: colors.rule, fill: colors.fill)
+    }
+    return exportHtml(
+        text: text, title: title, css: css, folder: folder?.path, colors: engine(colors), dark: dark.map(engine), mathSize: Float(mathSize)
+    )
+}
+
 /// Display math typeset by RaTeX at `size` points and `scale` pixels per point, in `color` (0xRRGGBBAA).
 public func ratexImage(_ tex: String, size: Double, scale: Double, color: UInt32) throws(RenderFailure) -> CGImage {
     let png = try engine { try renderMath(tex: tex, size: Float(size), scale: Float(scale), color: color) }
