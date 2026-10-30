@@ -5,7 +5,7 @@ enum MainMenu {
     static func build() -> NSMenu {
         let main = NSMenu()
         let window = windowMenu()
-        for menu in [appMenu(), fileMenu(), editMenu(), viewMenu(), window] {
+        for menu in [appMenu(), fileMenu(), editMenu(), formatMenu(), viewMenu(), window] {
             let item = NSMenuItem()
             item.submenu = menu
             main.addItem(item)
@@ -58,7 +58,38 @@ enum MainMenu {
         menu.addItem(.separator())
         menu.addItem(withTitle: "Find", action: nil, keyEquivalent: "").submenu = findMenu()
         menu.addItem(withTitle: "Go to Line…", action: #selector(CaretTextView.goToLine(_:)), keyEquivalent: "l")
+        menu.addItem(.separator())
+        menu.addItem(format(.moveLineUp, "[", [.command, .option]))
+        menu.addItem(format(.moveLineDown, "]", [.command, .option]))
         return menu
+    }
+
+    private static func formatMenu() -> NSMenu {
+        let menu = NSMenu(title: "Format")
+        for (command, key, modifiers): (MarkdownFormat, String, NSEvent.ModifierFlags) in [
+            (.bold, "b", .command), (.italic, "i", .command), (.strikethrough, "X", .command), (.highlight, "H", .command),
+            (.code, "C", .command), (.link, "k", .command),
+        ] {
+            menu.addItem(format(command, key, modifiers))
+        }
+        menu.addItem(.separator())
+        for (command, key) in zip([MarkdownFormat.heading1, .heading2, .heading3, .heading4, .heading5, .heading6, .body], ["1", "2", "3", "4", "5", "6", "0"]) {
+            menu.addItem(format(command, key, .command))
+        }
+        menu.addItem(.separator())
+        for (command, key, modifiers): (MarkdownFormat, String, NSEvent.ModifierFlags) in [
+            (.quote, "'", .command), (.bulletedList, "8", [.command, .shift]), (.numberedList, "7", [.command, .shift]), (.task, "9", [.command, .shift]),
+        ] {
+            menu.addItem(format(command, key, modifiers))
+        }
+        return menu
+    }
+
+    private static func format(_ command: MarkdownFormat, _ key: String, _ modifiers: NSEvent.ModifierFlags) -> NSMenuItem {
+        let item = NSMenuItem(title: command.name, action: #selector(EditorTextView.format(_:)), keyEquivalent: key)
+        item.keyEquivalentModifierMask = modifiers
+        item.tag = command.rawValue
+        return item
     }
 
     private static func findMenu() -> NSMenu {
