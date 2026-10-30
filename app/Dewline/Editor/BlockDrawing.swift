@@ -1,11 +1,11 @@
 import AppKit
 
 /// How one line of a rendered block lays out and draws: the value of `.dewlineBlock`. The picture's line reserves
-/// its height, the block's other lines collapse, and a failed block's last line carries the error below it. A laid-out
-/// table row draws its column rules, and a task item its box.
+/// its height, the block's other lines collapse, a failed block's last line carries the error below it, and folded
+/// front matter's first line draws its summary. A laid-out table row draws its column rules, and a task item its box.
 final class BlockLine: NSObject {
     enum Role {
-        case picture(BlockPicture, label: String), collapsed, error(String), table(TableRule), task(TaskMark)
+        case picture(BlockPicture, label: String), collapsed, error(String), table(TableRule), task(TaskMark), summary(NSAttributedString)
     }
 
     let role: Role
@@ -23,6 +23,7 @@ final class BlockLine: NSObject {
         case let (.error(message), .error(other)?): message == other
         case let (.table(rule), .table(other)?): rule == other
         case let (.task(task), .task(other)?): task == other
+        case let (.summary(line), .summary(other)?): line.isEqual(to: other)
         default: false
         }
     }
@@ -34,6 +35,7 @@ final class BlockLine: NSObject {
         case .error(let message): message.hashValue
         case .table(let rule): rule.columns.count
         case .task(let task): task.at
+        case .summary(let line): line.string.hashValue
         }
     }
 }
@@ -100,6 +102,7 @@ final class BlockFragment: NSTextLayoutFragment {
         case .table(let rule):
             super.renderingSurfaceBounds.union(CGRect(x: 0, y: 0, width: textStart + rule.width + 1, height: layoutFragmentFrame.height))
         case .task: super.renderingSurfaceBounds
+        case .summary(let line): CGRect(origin: .zero, size: CGSize(width: line.size().width + 16, height: layoutFragmentFrame.height))
         case .error:
             // The error is wider than the line it hangs under.
             super.renderingSurfaceBounds.union(CGRect(
@@ -118,6 +121,11 @@ final class BlockFragment: NSTextLayoutFragment {
             context.restoreGState()
         case .collapsed:
             break
+        case .summary(let line):
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+            line.draw(at: CGPoint(x: point.x + (textLayoutManager?.textContainer?.lineFragmentPadding ?? 0), y: point.y + (layoutFragmentFrame.height - line.size().height) / 2))
+            NSGraphicsContext.restoreGraphicsState()
         case .error(let message):
             super.draw(at: point, in: context)
             NSGraphicsContext.saveGraphicsState()

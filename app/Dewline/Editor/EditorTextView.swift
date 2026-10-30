@@ -35,6 +35,13 @@ final class EditorTextView: CaretTextView {
             centerCaretSoon()
         }
     }
+    /// Where wikilinks resolve: the window's folder, else the document's.
+    var noteFolder: URL?
+    /// Opens a note a link points to, at a heading.
+    var openNote: ((URL, String?) -> Void)?
+    /// Runs Find in Files for a tag; until there is one, Cmd-clicking a tag beeps.
+    var findInFiles: ((String) -> Void)?
+    var footnotePopover: NSPopover?
 
     var defersStyling: Bool {
         composing || hasMarkedText()
@@ -154,6 +161,7 @@ final class EditorTextView: CaretTextView {
         func line(at index: Int) -> NSRect {
             convert(window.convertFromScreen(firstRect(forCharacterRange: NSRange(location: index, length: 0), actualRange: nil)), from: nil)
         }
+        drawCallouts(in: visible, line: line(at:))
         ThemeStore.shared.color(.quoteRule).setFill()
         storage.enumerateAttribute(.dewlineQuote, in: visible) { value, range, _ in
             guard value != nil else { return }
@@ -429,10 +437,11 @@ final class EditorTextView: CaretTextView {
         ThemeStore.shared.smartPunctuation.toggle()
     }
 
-    /// A click in the margin beside a foldable block folds or unfolds it; a click on a task box toggles it and leaves the
-    /// caret where it was.
+    /// Cmd-click follows a link, wikilink, embed, footnote or tag. A click in the margin beside a foldable block folds or
+    /// unfolds it; a click on a task box toggles it and leaves the caret where it was.
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+        if event.modifierFlags.contains(.command), follow(at: point) { return }
         if let box = taskBox(at: point) { return toggleTask(at: box) }
         guard point.x < textContainerOrigin.x, let (block, _) = foldable(at: point) else { return super.mouseDown(with: event) }
         let anchor = NSMaxRange(textStorage!.mutableString.lineRange(for: NSRange(location: block.range.location, length: 0)))
@@ -453,6 +462,7 @@ final class EditorTextView: CaretTextView {
     override func mouseMoved(with event: NSEvent) {
         super.mouseMoved(with: event)
         let point = convert(event.locationInWindow, from: nil)
+        hoverFootnote(at: point)
         let hovered = point.x < textContainerOrigin.x + (textContainer?.size.width ?? 0) ? foldable(at: point)?.block.range.location : nil
         guard hovered != hoveredFold else { return }
         hoveredFold = hovered
