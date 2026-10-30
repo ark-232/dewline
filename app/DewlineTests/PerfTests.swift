@@ -59,11 +59,9 @@ private struct Editor {
         let text = view.textStorage!.mutableString
         let visible = view.visibleRect
         let end = view.characterIndexForInsertion(at: NSPoint(x: visible.maxX, y: visible.maxY))
-        var spans: [SyntaxSpan] = []
-        text.enumerateSubstrings(in: NSRange(location: 0, length: end), options: [.byParagraphs, .substringNotRequired]) { _, line, _, _ in
-            spans += SpikeTokenizer.spans(in: text, line: line).filter { $0.kind == .strong }
+        return view.styler.map.blocks(in: NSRange(location: 0, length: min(end, text.length))).flatMap { block in
+            block.spans.filter { $0.kind == .strong }.map { $0.shifted(by: block.range.location) }
         }
-        return spans
     }
 
     /// Milliseconds from a key down sent through the window to the first committed display, and to the display
@@ -102,12 +100,10 @@ private struct Editor {
     var middleSpan: SyntaxSpan {
         let text = view.textStorage!.mutableString
         let middle = text.paragraphRange(for: NSRange(location: text.length / 2, length: 0)).location
-        var span: SyntaxSpan?
-        text.enumerateSubstrings(in: NSRange(location: middle, length: text.length - middle), options: [.byParagraphs, .substringNotRequired]) { _, line, _, stop in
-            span = SpikeTokenizer.spans(in: text, line: line).first { $0.kind == .strong }
-            stop.pointee = ObjCBool(span != nil)
-        }
-        return span!
+        let block = view.styler.map.blocks(in: NSRange(location: middle, length: text.length - middle)).first {
+            $0.spans.contains { $0.kind == .strong }
+        }!
+        return block.spans.first { $0.kind == .strong }!.shifted(by: block.range.location)
     }
 
     /// Empties the view first: a closed window's text system stays alive for a while, still holding the text.
