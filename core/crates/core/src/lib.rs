@@ -1,5 +1,6 @@
 pub mod agents;
 pub mod claims;
+pub mod engine;
 pub mod file;
 pub mod git;
 pub mod md;
