@@ -722,8 +722,90 @@ fn walk(source: &str, table: &Labels) -> Walk {
         }
         nests
     });
-    walk.tokens = tokens;
+    walk.tokens = quote_markers(source, tokens);
     walk
+}
+
+/// `tokens` with a quote token for each later line's `>` of every quote, with one blank after it and no content:
+/// pulldown-cmark reports a quote's marker on its first line only. A quote nested in `n` quotes takes the line's
+/// `n + 1`th `>`; a lazy line has none, and a `>` inside another token's markers stays theirs.
+fn quote_markers(
+    source: &str,
+    tokens: Vec<(TokenKind, [usize; 4])>,
+) -> Vec<(TokenKind, [usize; 4])> {
+    let bytes = source.as_bytes();
+    let mut added = Vec::new();
+    // The ends of the quotes around the one in hand.
+    let mut quotes: Vec<usize> = Vec::new();
+    for (kind, [start, .., end]) in &tokens {
+        if *kind != TokenKind::Quote {
+            continue;
+        }
+        while quotes.last().is_some_and(|&outer| outer <= *start) {
+            quotes.pop();
+        }
+        quotes.push(*end);
+        let mut line = line_after(source, *start);
+        while line < *end {
+            let mut seen = 0;
+            let mut at = line;
+            while at < *end && matches!(bytes[at], b' ' | b'\t' | b'>') {
+                if bytes[at] == b'>' {
+                    seen += 1;
+                    if seen == quotes.len() {
+                        let after = at
+                            + 1
+                            + usize::from(
+                                matches!(bytes.get(at + 1), Some(b' ' | b'\t')) && at + 1 < *end,
+                            );
+                        added.push((TokenKind::Quote, [at, after, after, after]));
+                        break;
+                    }
+                }
+                at += 1;
+            }
+            line = line_after(source, line);
+        }
+    }
+    if added.is_empty() {
+        return tokens;
+    }
+    let order = |(_, [start, .., end]): &(TokenKind, [usize; 4])| (*start, std::cmp::Reverse(*end));
+    added.sort_by_key(order);
+    let mut all: Vec<((TokenKind, [usize; 4]), bool)> =
+        tokens.into_iter().map(|token| (token, false)).collect();
+    all.extend(added.into_iter().map(|token| (token, true)));
+    // Stable: a parsed token keeps its place before an added one with the same key.
+    all.sort_by_key(|(token, _)| order(token));
+    // Where the next parsed token at or after each index starts.
+    let mut next = vec![usize::MAX; all.len() + 1];
+    for index in (0..all.len()).rev() {
+        next[index] = if all[index].1 {
+            next[index + 1]
+        } else {
+            all[index].0.1[0]
+        };
+    }
+    let mut parents: Vec<[usize; 4]> = Vec::new();
+    let mut kept = Vec::with_capacity(all.len());
+    for (index, ((kind, offsets), marker)) in all.into_iter().enumerate() {
+        let [start, .., end] = offsets;
+        while parents.last().is_some_and(|parent| parent[3] <= start) {
+            parents.pop();
+        }
+        if marker {
+            let nests = parents
+                .last()
+                .is_none_or(|parent| parent[1] <= start && end <= parent[2]);
+            if !nests || next[index + 1] < end {
+                continue;
+            }
+        } else {
+            parents.push(offsets);
+        }
+        kept.push((kind, offsets));
+    }
+    kept
 }
 
 impl Walk {
@@ -2256,6 +2338,7 @@ mod tests {
             [
                 (TokenKind::Quote, ["> ", "[!warning]- Careful\n> body", ""]),
                 (TokenKind::Callout, ["[!", "warning", "]-"]),
+                (TokenKind::Quote, ["> ", "", ""]),
                 (TokenKind::Quote, ["> ", "[!NOTE]", ""]),
                 (TokenKind::Callout, ["[!", "NOTE", "]"]),
                 (TokenKind::Quote, ["> ", "plain [!note]", ""]),
@@ -2266,6 +2349,36 @@ mod tests {
             [BlockKind::Callout, BlockKind::Callout, BlockKind::Quote]
         );
         check(text);
+    }
+
+    #[test]
+    fn each_line_of_a_quote_has_its_marker() {
+        assert_eq!(
+            show("> a\n>b\nlazy\n>\n> > c\n> > d\r\n>\te"),
+            [
+                (
+                    TokenKind::Quote,
+                    ["> ", "a\n>b\nlazy\n>\n> > c\n> > d\r\n>\te", ""]
+                ),
+                (TokenKind::Quote, [">", "", ""]),
+                (TokenKind::Quote, [">", "", ""]),
+                (TokenKind::Quote, ["> ", "", ""]),
+                (TokenKind::Quote, ["> ", "c\n> > d\r\n>\te", ""]),
+                (TokenKind::Quote, ["> ", "", ""]),
+                (TokenKind::Quote, ["> ", "", ""]),
+                (TokenKind::Quote, [">\t", "", ""]),
+            ]
+        );
+        assert_eq!(
+            show("> [!tip]\n> one\n> two"),
+            [
+                (TokenKind::Quote, ["> ", "[!tip]\n> one\n> two", ""]),
+                (TokenKind::Callout, ["[!", "tip", "]"]),
+                (TokenKind::Quote, ["> ", "", ""]),
+                (TokenKind::Quote, ["> ", "", ""]),
+            ]
+        );
+        check("> - a\n>   b\n> ```\n> c\n> ```\n> d\n> ===\n\n- > e\n  > f");
     }
 
     #[test]

@@ -23,6 +23,9 @@ final class BlockMap {
     /// `core::md`'s `WINDOW_LIMIT` in UTF-8 bytes, which a window's UTF-16 length cannot pass without its bytes passing.
     private static let windowLimit = 4096
 
+    /// Posted once a whole parse replaces the map.
+    static let didParse = Notification.Name("DewlineBlockMapDidParse")
+
     /// Receives the ranges whose blocks a whole parse changed, once it replaces the map.
     var merged: ([NSRange]) -> Void = { _ in }
     /// Whether blocks may differ from a whole parse's until the next one lands.
@@ -129,13 +132,31 @@ final class BlockMap {
         blocks(touching: range).flatMap { block in block.rendered.map { $0.shifted(by: block.range.location) } }
     }
 
-    /// Whether `range` meets fenced or indented code, front matter or a math block.
-    func isCode(_ range: NSRange) -> Bool {
-        blocks(in: range).contains { block in
-            let local = NSRange(location: range.location - block.range.location, length: range.length)
-            return block.kind == .code || block.kind == .frontMatter
-                || block.spans.contains { $0.kind == .fencedCode && NSIntersectionRange($0.content, local).length > 0 }
-                || block.rendered.contains { $0.kind == .math && NSIntersectionRange($0.range, local).length > 0 }
+    /// The code, math, front matter, HTML, link destinations, definitions and wikilink targets in the blocks `range`
+    /// meets: the text spelling and Writing Tools leave alone.
+    func literals(in range: NSRange) -> [NSRange] {
+        blocks(in: range).flatMap { block -> [NSRange] in
+            let at = block.range.location
+            if block.kind == .code || block.kind == .frontMatter || block.kind == .html { return [block.range] }
+            let spans = block.spans.compactMap { span -> NSRange? in
+                let close = NSRange(location: NSMaxRange(span.content), length: NSMaxRange(span.range) - NSMaxRange(span.content))
+                switch span.kind {
+                case .fencedCode, .inlineCode, .definition, .html:
+                    return span.range
+                // An autolink is all address.
+                case .link where text.character(at: at + span.range.location) == 0x3C:
+                    return span.range
+                case .link, .image:
+                    return close
+                // The target, before an alias's `|` or as the content.
+                case .wikiLink, .embed:
+                    let open = NSRange(location: span.range.location, length: span.content.location - span.range.location)
+                    return open.length > (span.kind == .embed ? 3 : 2) ? open : span.range
+                default:
+                    return nil
+                }
+            }
+            return (spans + block.rendered.filter { $0.kind == .math }.map(\.range)).map { NSRange(location: $0.location + at, length: $0.length) }
         }
     }
 
@@ -330,6 +351,7 @@ final class BlockMap {
         unparsed = nil
         isProvisional = false
         merged(result.changed)
+        NotificationCenter.default.post(name: Self.didParse, object: self)
     }
 
     /// A whole parse's blocks split at `gap`, and the ranges where they differ from `old`.
@@ -386,11 +408,64 @@ final class BlockMap {
             }
             guard block.range.location >= skip else { continue }
             let range = NSRange(location: block.range.location - skip + offset, length: block.range.length)
-            // Mermaid, `$$` math and lone images, found by the scanner until its rules move into core::md.
-            let rendered = block.kind == .frontMatter ? [] : BlockScanner.scan(text.substring(with: range) as NSString).blocks
-            found.append(Block(kind: block.kind, range: range, spans: spans, rendered: rendered))
+            found.append(Block(kind: block.kind, range: range, spans: spans, rendered: rendered(spans, in: range, of: text)))
         }
         return found
+    }
+
+    /// The block's fenced Mermaid diagrams, `$$` formulas and images, each on lines of its own with at most three
+    /// spaces before it, an image also alone between blank lines; in offsets from `block.location`.
+    private nonisolated static func rendered(_ spans: [SyntaxSpan], in block: NSRange, of text: NSString) -> [RenderedBlock] {
+        func line(_ offset: Int) -> (start: Int, end: Int, contentsEnd: Int) {
+            var (start, end, contentsEnd) = (0, 0, 0)
+            text.getLineStart(&start, end: &end, contentsEnd: &contentsEnd, for: NSRange(location: offset, length: 0))
+            return (start, end, contentsEnd)
+        }
+        func blank(_ range: NSRange) -> Bool {
+            text.substring(with: range).allSatisfy(\.isWhitespace)
+        }
+        var found: [RenderedBlock] = []
+        for span in spans where [.fencedCode, .displayMath, .image].contains(span.kind) {
+            let range = NSRange(location: span.range.location + block.location, length: span.range.length)
+            let content = NSRange(location: span.content.location + block.location, length: span.content.length)
+            let first = line(range.location)
+            let last = line(max(NSMaxRange(range) - 1, range.location))
+            guard range.location - first.start <= 3, text.substring(with: NSRange(location: first.start, length: range.location - first.start)).allSatisfy({ $0 == " " }) else { continue }
+            let lines = NSRange(location: first.start, length: last.contentsEnd - first.start)
+            let after = NSRange(location: NSMaxRange(range), length: max(last.contentsEnd - NSMaxRange(range), 0))
+            switch span.kind {
+            case .fencedCode:
+                let opening = text.substring(with: NSRange(location: range.location, length: first.contentsEnd - range.location))
+                // An unclosed fence has no closing marker.
+                guard NSMaxRange(content) < NSMaxRange(range),
+                    opening.drop(while: { $0 == "`" || $0 == "~" }).trimmingCharacters(in: .whitespaces).split(separator: " ").first == "mermaid"
+                else { continue }
+                var code = content
+                if code.length > 0, text.character(at: NSMaxRange(code) - 1) == 0x0A { code.length -= 1 }
+                if code.length > 0, text.character(at: NSMaxRange(code) - 1) == 0x0D { code.length -= 1 }
+                let source = text.substring(with: code)
+                let label = source.split(whereSeparator: \.isNewline).first { !$0.allSatisfy(\.isWhitespace) }.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+                found.append(RenderedBlock(kind: .mermaid, range: lines, content: code, source: source, label: label))
+            case .displayMath where blank(after):
+                let tex = text.substring(with: content).trimmingCharacters(in: .whitespacesAndNewlines)
+                found.append(RenderedBlock(kind: .math, range: lines, content: content, source: tex, label: tex))
+            case .image where blank(after):
+                let above = first.start > block.location ? line(first.start - 1) : nil
+                let below = first.end < NSMaxRange(block) ? line(first.end) : nil
+                let close = text.substring(with: NSRange(location: NSMaxRange(content), length: NSMaxRange(range) - NSMaxRange(content)))
+                // A relative path: no scheme, no leading `/`, no title.
+                guard above.map({ blank(NSRange(location: $0.start, length: $0.contentsEnd - $0.start)) }) ?? true,
+                    below.map({ blank(NSRange(location: $0.start, length: $0.contentsEnd - $0.start)) }) ?? true,
+                    close.hasPrefix("]("), close.hasSuffix(")"), close.count > 3
+                else { continue }
+                let path = String(close.dropFirst(2).dropLast())
+                guard path.first != "/", !path.contains(where: { $0.isWhitespace || $0 == ")" || $0 == ":" }) else { continue }
+                found.append(RenderedBlock(kind: .image, range: lines, content: lines, source: path, label: text.substring(with: content)))
+            default:
+                continue
+            }
+        }
+        return found.map { $0.shifted(by: -block.location) }
     }
 
     /// The whole lines holding `range`, each with its line break, as `core::md` breaks lines: at `\n`, `\r` or `\r\n`.

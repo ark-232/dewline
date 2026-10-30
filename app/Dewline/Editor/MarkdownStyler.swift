@@ -136,13 +136,15 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
         if folds.contains(where: inside) { setFolds(folds.filter { !inside($0) }) }
     }
 
-    /// Spelling and grammar marks skip code, math, front matter, addresses, wikilink targets and HTML tags.
+    /// Spelling and grammar marks skip code, math, front matter, HTML, addresses and wikilink targets.
     func textView(_ textView: NSTextView, shouldSetSpellingState value: Int, range affectedCharRange: NSRange) -> Int {
         guard value != 0 else { return value }
-        let text = textView.textStorage!.mutableString
-        let literal = map.isCode(affectedCharRange)
-            || SpikeTokenizer.literals(in: text, line: text.lineRange(for: affectedCharRange)).contains { NSIntersectionRange($0, affectedCharRange).length > 0 }
-        return literal ? 0 : value
+        return map.literals(in: affectedCharRange).contains { NSIntersectionRange($0, affectedCharRange).length > 0 } ? 0 : value
+    }
+
+    /// Writing Tools leave the same text alone.
+    func textView(_ textView: NSTextView, writingToolsIgnoredRangesInEnclosingRange enclosingRange: NSRange) -> [NSValue] {
+        map.literals(in: enclosingRange).map { NSValue(range: NSIntersectionRange($0, enclosingRange)) }.filter { $0.rangeValue.length > 0 }
     }
 
     nonisolated func textStorage(

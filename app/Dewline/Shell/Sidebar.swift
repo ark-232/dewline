@@ -185,12 +185,12 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     }
 
     /// Shows `url` as the open file: reveals and selects its row and lists its headings.
-    func show(_ url: URL?, text: String) {
+    func show(_ url: URL?, headings: [Heading]) {
         fileNode?.children = nil
         fileNode = url.flatMap(treeNode(for:))
         showsAllHeadings = false
         section = nil
-        updateOutline(text)
+        updateOutline(headings)
         if let fileNode {
             outlineView.expandItem(fileNode)
             let row = outlineView.row(forItem: fileNode)
@@ -201,8 +201,8 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         }
     }
 
-    func updateOutline(_ text: String) {
-        headings = outline(of: text)
+    func updateOutline(_ headings: [Heading]) {
+        self.headings = headings
         listHeadings()
     }
 
