@@ -1,7 +1,8 @@
 import AppKit
+import MdCore
 
 /// One tab: the sidebar beside the open file, or beside an empty page in a folder window until a file opens.
-final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolbarDelegate {
+final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NSMenuItemValidation {
     /// Every tab, kept here because a folder window has no document to own its controller.
     private static var all: Set<MainWindowController> = []
 
@@ -53,6 +54,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         window.delegate = self
         sidebar.open = { [weak self] url, newTab in self?.open(url, newTab: newTab) }
         sidebar.jump = { [weak self] heading in self?.jump(to: heading) }
+        sidebar.reveal = { [weak self] url, match, newTab in self?.reveal(match, in: url, newTab: newTab) }
         Self.all.insert(self)
         if let folder {
             window.title = FileManager.default.displayName(atPath: folder.url.path)
@@ -177,6 +179,27 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         textView.setSelectedRange(NSRange(location: heading.location, length: 0))
         textView.scroll(NSPoint(x: 0, y: baseline - scrollView.contentInsets.top - 56))
         window?.makeFirstResponder(textView)
+    }
+
+    /// Opens `url` as the sidebar does and selects `match` where the file's text still holds it.
+    private func reveal(_ match: TextMatch?, in url: URL, newTab: Bool) {
+        open(url, newTab: newTab)
+        guard let match, let tab = NSDocumentController.shared.document(for: url)?.windowControllers.first as? MainWindowController,
+            let textView = tab.textView
+        else { return }
+        let text = textView.string as NSString
+        let found = (match.preview as NSString).substring(with: match.previewRange)
+        guard NSMaxRange(match.range) <= text.length, text.substring(with: match.range) == found else { return }
+        tab.window?.makeFirstResponder(textView)
+        textView.jump(to: match.range)
+    }
+
+    @objc func findInFiles(_ sender: Any?) {
+        sidebar.showSearch()
+    }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        menuItem.action != #selector(findInFiles(_:)) || folder != nil
     }
 
     /// Lists the headings 300 ms after typing stops, or once a whole parse lands.

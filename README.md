@@ -14,7 +14,7 @@ macOS 26+ · Free · Source-available (FSL) · No account, no telemetry
 |---|---|
 | `app/` | The Mac app: Swift 6 and AppKit. The Xcode project is generated from `app/project.yml`. |
 | `core/` | The Rust engine and the `dewline` command-line tool. |
-| `docs/` | [Architecture](docs/architecture.md), [roadmap](docs/roadmap.md), [research](docs/research.md), [decisions](docs/decisions/). |
+| `docs/` | [Architecture](docs/architecture.md), [roadmap](docs/roadmap.md), [research](docs/research.md), [decisions](docs/decisions/), [agent hooks](docs/hooks.md). |
 
 ## Build
 
