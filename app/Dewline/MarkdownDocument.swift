@@ -21,6 +21,13 @@ final class MarkdownDocument: NSDocument {
         waiters.contains(where: \.isOpen)
     }
 
+    /// Save As moves where the editor saves pasted images.
+    override var fileURL: URL? {
+        didSet {
+            MainActor.assumeIsolated { (windowControllers.first as? MainWindowController)?.textView?.documentFolder = fileURL?.deletingLastPathComponent() }
+        }
+    }
+
     override class var autosavesInPlace: Bool {
         false
     }

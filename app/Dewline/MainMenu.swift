@@ -58,6 +58,8 @@ enum MainMenu {
         menu.addItem(.separator())
         menu.addItem(withTitle: "Find", action: nil, keyEquivalent: "").submenu = findMenu()
         menu.addItem(withTitle: "Go to Line…", action: #selector(CaretTextView.goToLine(_:)), keyEquivalent: "l")
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Smart Punctuation", action: #selector(EditorTextView.toggleSmartPunctuation(_:)), keyEquivalent: "")
         return menu
     }
 
@@ -84,6 +86,18 @@ enum MainMenu {
         menu.addItem(.separator())
         let source = menu.addItem(withTitle: "Show Source", action: #selector(EditorTextView.toggleSource(_:)), keyEquivalent: "u")
         source.keyEquivalentModifierMask = [.command, .option]
+        menu.addItem(withTitle: "Focus", action: #selector(EditorTextView.toggleFocusMode(_:)), keyEquivalent: "D")
+        menu.addItem(withTitle: "Typewriter", action: #selector(EditorTextView.toggleTypewriterMode(_:)), keyEquivalent: "T")
+        menu.addItem(.separator())
+        let left = String(UnicodeScalar(NSLeftArrowFunctionKey)!)
+        let right = String(UnicodeScalar(NSRightArrowFunctionKey)!)
+        for (title, action, key, shift) in [
+            ("Fold", #selector(EditorTextView.foldBlock(_:)), left, false), ("Unfold", #selector(EditorTextView.unfoldBlock(_:)), right, false),
+            ("Fold All", #selector(EditorTextView.foldAll(_:)), left, true), ("Unfold All", #selector(EditorTextView.unfoldAll(_:)), right, true),
+        ] {
+            let item = menu.addItem(withTitle: title, action: action, keyEquivalent: key)
+            item.keyEquivalentModifierMask = shift ? [.command, .option, .shift] : [.command, .option]
+        }
         return menu
     }
 
