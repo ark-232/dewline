@@ -263,7 +263,11 @@ fn help_and_version() {
         format!("dewline {}\n", env!("CARGO_PKG_VERSION"))
     );
     let help = String::from_utf8_lossy(&fixture.run(&["--help"]).stdout).into_owned();
-    assert!(help.contains("open  Open files in Dewline"), "{help}");
+    for command in ["open", "capture", "export", "mcp", "doctor"] {
+        assert!(help.contains(&format!("\n  {command} ")), "{help}");
+    }
+    let export = String::from_utf8_lossy(&fixture.run(&["export", "--help"]).stdout).into_owned();
+    assert!(export.contains("PDF needs the Dewline app"), "{export}");
     let open = String::from_utf8_lossy(&fixture.run(&["open", "--help"]).stdout).into_owned();
     assert!(
         open.contains("FILE[:LINE[:COLUMN]]") && open.contains("--wait"),
@@ -277,5 +281,5 @@ fn help_and_version() {
         stderr(&bare)
     );
     assert_eq!(fixture.run(&["open"]).status.code(), Some(2));
-    assert_eq!(fixture.run(&["capture"]).status.code(), Some(2));
+    assert_eq!(fixture.run(&["export", "plan.md"]).status.code(), Some(2));
 }

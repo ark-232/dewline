@@ -1,11 +1,17 @@
 mod control;
+mod doctor;
+mod export;
+mod mcp;
 mod target;
 
 use std::env;
 use std::ffi::OsString;
+use std::io::{self, Read};
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
+use dewline_core::inbox;
 
 use control::Socket;
 
@@ -34,11 +40,45 @@ enum Command {
         #[arg(long)]
         wait: bool,
     },
+    /// Add a dated entry to the inbox, ~/Documents/Dewline/Inbox.md
+    Capture {
+        /// The entry's text; without it, stdin is read
+        text: Vec<String>,
+    },
+    /// Export a markdown file as HTML or PDF
+    #[command(long_about = "Export a markdown file as HTML or PDF.\n\n\
+                      HTML is written here, with images in the file's folder inlined; diagrams and math keep \
+                      their source. PDF needs the Dewline app: this command hands the file to it.")]
+    Export {
+        file: PathBuf,
+        #[arg(long, value_enum)]
+        to: export::Format,
+        /// Where the export goes; beside FILE with the format's extension by default
+        #[arg(short = 'o')]
+        out: Option<PathBuf>,
+    },
+    /// Serve a folder's notes to an agent over stdio (MCP): read, search, backlinks and append_to_inbox
+    Mcp {
+        /// The folder served; never your home folder or above it, ~/Library, or a folder holding .ssh
+        root: PathBuf,
+    },
+    /// Check the app's version, the agent hooks and the companion tools
+    Doctor {
+        /// Merge Dewline's hooks into Claude Code's and Codex's settings, asking first
+        #[arg(long)]
+        install_hooks: bool,
+    },
 }
 
 fn main() -> ExitCode {
-    let Command::Open { files, wait } = Cli::parse().command;
-    match open(&files, wait) {
+    let result = match Cli::parse().command {
+        Command::Open { files, wait } => open(&files, wait),
+        Command::Capture { text } => capture(text),
+        Command::Export { file, to, out } => export::run(&file, to, out.as_deref()),
+        Command::Mcp { root } => mcp::run(&root),
+        Command::Doctor { install_hooks } => doctor::run(install_hooks),
+    };
+    match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(message) => {
             for line in message.lines() {
@@ -78,6 +118,27 @@ fn open(files: &[OsString], wait: bool) -> Result<(), String> {
     Ok(())
 }
 
+fn capture(words: Vec<String>) -> Result<(), String> {
+    let text = if words.is_empty() {
+        let mut text = String::new();
+        io::stdin()
+            .read_to_string(&mut text)
+            .map_err(|error| format!("stdin: {error}"))?;
+        text
+    } else {
+        words.join(" ")
+    };
+    let path = inbox_path()?;
+    inbox::append(&path, "cli", &text).map_err(|error| format!("{}: {error}", path.display()))
+}
+
+/// The inbox file every capture appends to.
+fn inbox_path() -> Result<PathBuf, String> {
+    env::home_dir()
+        .map(|home| inbox::default_path(&home))
+        .ok_or_else(|| "there is no home folder for the inbox".into())
+}
+
 /// Paths and the app's messages with control characters replaced, so a
 /// hostile name can't drive the terminal.
 fn printable(text: &str) -> String {
@@ -92,8 +153,10 @@ mod tests {
     use clap::CommandFactory;
 
     fn parse(args: &[&str]) -> Result<(Vec<OsString>, bool), clap::Error> {
-        let Command::Open { files, wait } = Cli::try_parse_from(args)?.command;
-        Ok((files, wait))
+        match Cli::try_parse_from(args)?.command {
+            Command::Open { files, wait } => Ok((files, wait)),
+            _ => Err(clap::Error::new(clap::error::ErrorKind::InvalidSubcommand)),
+        }
     }
 
     #[test]
@@ -120,6 +183,35 @@ mod tests {
     }
 
     #[test]
+    fn the_other_commands_parse() {
+        let command = |args: &[&str]| Cli::try_parse_from(args).map(|cli| cli.command);
+        assert!(matches!(
+            command(&["dewline", "capture", "buy", "milk"]),
+            Ok(Command::Capture { text }) if text == ["buy", "milk"]
+        ));
+        assert!(
+            matches!(command(&["dewline", "capture"]), Ok(Command::Capture { text }) if text.is_empty())
+        );
+        assert!(matches!(
+            command(&["dewline", "export", "a.md", "--to", "pdf", "-o", "b.pdf"]),
+            Ok(Command::Export {
+                to: export::Format::Pdf,
+                out: Some(_),
+                ..
+            })
+        ));
+        assert!(command(&["dewline", "export", "a.md"]).is_err());
+        assert!(command(&["dewline", "export", "a.md", "--to", "docx"]).is_err());
+        assert!(command(&["dewline", "mcp"]).is_err());
+        assert!(matches!(
+            command(&["dewline", "doctor", "--install-hooks"]),
+            Ok(Command::Doctor {
+                install_hooks: true
+            })
+        ));
+    }
+
+    #[test]
     fn printable_keeps_text_and_drops_escapes() {
         assert_eq!(
             printable("café \u{1b}]0;title\u{7}\r"),
@@ -128,14 +220,13 @@ mod tests {
     }
 
     #[test]
-    fn open_is_the_only_command() {
+    fn open_needs_a_file() {
         for args in [
             &["dewline"][..],
             &["dewline", "open"],
             &["dewline", "open", "--wait"],
             &["dewline", "open", "--line", "3", "plan.md"],
             &["dewline", "help"],
-            &["dewline", "capture"],
             &["dewline", "plan.md"],
         ] {
             assert!(parse(args).is_err(), "{args:?}");
