@@ -5,6 +5,7 @@ all-features = true
 yanked = "deny"
 ignore = [
     { id = "RUSTSEC-2026-0374", reason = "basic-toml is unmaintained; askama uses it only inside uniffi-bindgen, a build tool that never ships. Remove it once a uniffi bump takes basic-toml out of Cargo.lock" },
+    { id = "RUSTSEC-2025-0141", reason = "bincode is unmaintained; syntect reads only the syntax dump the app bundles with it, a file we build. Remove it once syntect drops bincode" },
     { id = "RUSTSEC-2026-0192", reason = "ttf-parser is unmaintained; mermaid-rs-renderer and RaTeX read fonts with it directly. Remove it once both move to skrifa" },
 ]
 

@@ -4,6 +4,7 @@ pub mod engine;
 pub mod export;
 pub mod file;
 pub mod git;
+pub mod highlight;
 pub mod md;
 pub mod merge;
 pub mod search;

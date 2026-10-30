@@ -41,6 +41,7 @@ targets:
           - Fonts
           - Specimens
           - Welcome.md
+          - Syntaxes.packdump
       - path: Dewline/Welcome.md
         buildPhase: resources
       - path: Dewline/Fonts
@@ -48,6 +49,8 @@ targets:
         buildPhase: resources
       - path: Dewline/Specimens
         type: folder
+        buildPhase: resources
+      - path: Dewline/Syntaxes.packdump
         buildPhase: resources
       - path: ../THIRD_PARTY_NOTICES.md
         buildPhase: resources
