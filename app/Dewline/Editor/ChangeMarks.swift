@@ -382,9 +382,7 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
     }
 
     private func revert(_ id: UInt64) {
-        guard let change = changes[id] else { return }
         live?.decide(id, .other)
-        textView?.undoManager?.setActionName("Revert \(Writer(change.origin).dashed ? "Outside" : Writer(change.origin).possessive) Change")
     }
 
     /// One announcement per marked landing.

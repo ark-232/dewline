@@ -89,6 +89,12 @@ public final class ChangeEngine: Sendable {
         public let change: UInt64
         public let range: NSRange
         public let text: String
+
+        public init(change: UInt64 = 0, range: NSRange, text: String) {
+            self.change = change
+            self.range = range
+            self.text = text
+        }
     }
 
     /// Lines both sides changed: yours stay at `range`, `theirs` is the other version.
@@ -250,6 +256,18 @@ public final class ChangeEngine: Sendable {
         }
         let mapped = try? mapOffset(edits: edits, offset: UInt32(offset), bias: bias == .before ? .before : .after)
         return mapped.map(Int.init) ?? offset
+    }
+
+    /// Moves an undo history, oldest entry first, each the edits that undo one action, past `edits` the engine made.
+    /// The first entry from the newest that the engine touched is dropped with everything older.
+    public static func mapUndo(_ undo: [[Edit]], through edits: [Edit]) -> [[Edit]] {
+        func ffi(_ edits: [Edit]) -> [DewlineFFIBindings.Edit] {
+            edits.map { DewlineFFIBindings.Edit(start: UInt32($0.range.location), end: UInt32(NSMaxRange($0.range)), text: $0.text) }
+        }
+        guard let mapped = try? DewlineFFIBindings.mapUndo(undo: undo.map(ffi), edits: ffi(edits)) else { return [] }
+        return mapped.map { entry in
+            entry.map { Edit(range: NSRange(location: Int($0.start), length: Int($0.end - $0.start)), text: $0.text) }
+        }
     }
 
     private static func call<T>(_ body: () throws -> T) throws(Failure) -> T {

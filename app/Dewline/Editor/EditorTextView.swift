@@ -5,6 +5,8 @@ final class EditorTextView: CaretTextView {
     let styler = MarkdownStyler()
     /// The change engine's marks, painted under the text.
     let marks = ChangeMarks()
+    /// Your edits' undo history, which landings move instead of clearing.
+    lazy var history = UndoHistory(undoManager: styler.undoManager)
     private let blockFragments = BlockFragments()
     private var composing = false
     private var toggleWaits = false
@@ -39,10 +41,12 @@ final class EditorTextView: CaretTextView {
         textLayoutManager?.delegate = blockFragments
         styler.textView = self
         styler.blocks.textView = self
+        history.textView = self
         delegate = styler
         textStorage?.delegate = styler
         isRichText = false
-        allowsUndo = true
+        // The history records edits itself, so a landing can move them.
+        allowsUndo = false
         isAutomaticQuoteSubstitutionEnabled = false
         isAutomaticDashSubstitutionEnabled = false
         isAutomaticTextReplacementEnabled = false
@@ -143,7 +147,10 @@ final class EditorTextView: CaretTextView {
     }
 
     override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        // A composition is one undo entry, from its first marked text to its commit.
+        if !hasMarkedText() { history.breakCoalescing() }
         composing = true
+        history.composing = true
         super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
         composing = false
         if !hasMarkedText() { compositionEnded() }
@@ -152,7 +159,9 @@ final class EditorTextView: CaretTextView {
     override func insertText(_ string: Any, replacementRange: NSRange) {
         let commits = hasMarkedText()
         composing = commits
+        history.typing = true
         super.insertText(string, replacementRange: replacementRange)
+        history.typing = false
         composing = false
         if commits { compositionEnded() }
     }
@@ -162,6 +171,38 @@ final class EditorTextView: CaretTextView {
         super.unmarkText()
         composing = false
         compositionEnded()
+    }
+
+    /// Keys that edit, such as Delete, coalesce with typing.
+    override func doCommand(by selector: Selector) {
+        let before = version
+        history.typing = true
+        super.doCommand(by: selector)
+        history.typing = false
+        // A key that moves the caret ends the typing.
+        if version == before { history.breakCoalescing() }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        history.breakCoalescing()
+        super.mouseDown(with: event)
+    }
+
+    override func breakUndoCoalescing() {
+        super.breakUndoCoalescing()
+        history.breakCoalescing()
+    }
+
+    override func cut(_ sender: Any?) {
+        history.perform("Cut") { super.cut(sender) }
+    }
+
+    override func paste(_ sender: Any?) {
+        history.perform("Paste") { super.paste(sender) }
+    }
+
+    override func pasteAsPlainText(_ sender: Any?) {
+        history.perform("Paste") { super.pasteAsPlainText(sender) }
     }
 
     override func layout() {
@@ -186,10 +227,13 @@ final class EditorTextView: CaretTextView {
 
     func storageDidEdit(_ range: NSRange, delta: Int) {
         version += 1
+        history.didEdit(range, delta: delta)
         edited?(range, delta)
     }
 
     private func compositionEnded() {
+        history.composing = false
+        history.breakCoalescing()
         styler.flush()
         inputEnded?()
         if toggleWaits {
@@ -289,6 +333,9 @@ final class EditorTextView: CaretTextView {
     /// The one-range form calls this one, and Find's replace calls only this one.
     override func shouldChangeText(inRanges affectedRanges: [NSValue], replacementStrings: [String]?) -> Bool {
         let changes = super.shouldChangeText(inRanges: affectedRanges, replacementStrings: replacementStrings)
+        if changes, let replacementStrings {
+            history.willEdit(affectedRanges.map(\.rangeValue), with: replacementStrings)
+        }
         if changes, affectedRanges.count == 1, let string = replacementStrings?.first {
             styler.landing = affectedRanges[0].rangeValue.location + string.utf16.count
         } else {
@@ -298,17 +345,18 @@ final class EditorTextView: CaretTextView {
     }
 
     override func didChangeText() {
+        history.didChangeText()
         snapshot?.removeFromSuperview()
         super.didChangeText()
     }
 
-    /// Replaces `range` with `text` as one undoable edit of its own.
-    func replaceAsOneEdit(_ range: NSRange, with text: String) {
-        breakUndoCoalescing()
-        guard shouldChangeText(in: range, replacementString: text) else { return }
-        textStorage!.replaceCharacters(in: range, with: text)
-        didChangeText()
-        breakUndoCoalescing()
+    /// Replaces `range` with `text` as one undoable edit of its own, named `name` in the Edit menu.
+    func replaceAsOneEdit(_ range: NSRange, with text: String, named name: String = "") {
+        history.perform(name) {
+            guard shouldChangeText(in: range, replacementString: text) else { return }
+            textStorage!.replaceCharacters(in: range, with: text)
+            didChangeText()
+        }
     }
 
     /// The baseline of the line holding the character at `index`, in this view's coordinates.

@@ -150,6 +150,8 @@ final class MarkdownDocument: NSDocument {
     /// The engine wrote `text`.
     func saved(_ text: String, token: Any) {
         self.text = text
+        // Typing after a save is a new undo entry, which makes the document edited again.
+        textView?.breakUndoCoalescing()
         updateChangeCount(withToken: token, for: .saveOperation)
         if let fileURL, let date = try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.modificationDate] as? Date {
             fileModificationDate = date
@@ -232,6 +234,7 @@ final class MarkdownDocument: NSDocument {
             do throws(SaveFailure) {
                 baseHash = try saveFile(bytes, to: url, base: baseHash)
                 text = shown
+                textView?.breakUndoCoalescing()
             } catch .conflict {
                 throw SaveConflict(document: self, name: url.lastPathComponent)
             } catch .io(let reason) {

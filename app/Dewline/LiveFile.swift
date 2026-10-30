@@ -339,11 +339,14 @@ final class LiveFile {
         // Removed text shows struck under its line once the change is marked, so it is read before the edit.
         let removed = edits.map { storage.mutableString.substring(with: $0.range) }
         applying = true
-        storage.beginEditing()
-        for edit in (landing.covering.map { [$0] } ?? edits).reversed() {
-            storage.replaceCharacters(in: edit.range, with: edit.text)
+        // Undo entries move past the hunks, so undo never touches the landed text.
+        textView.history.land(edits) {
+            storage.beginEditing()
+            for edit in (landing.covering.map { [$0] } ?? edits).reversed() {
+                storage.replaceCharacters(in: edit.range, with: edit.text)
+            }
+            storage.endEditing()
         }
-        storage.endEditing()
         applying = false
 
         let mapped = selection.map { range in
@@ -353,9 +356,6 @@ final class LiveFile {
         }
         textView.setSelectedRanges(mapped.map { NSValue(range: $0) }, affinity: .downstream, stillSelecting: false)
         if let offset { textView.hold(map(anchor, .before), at: offset) }
-        // Undo entries from before the landing would put back the wrong text.
-        textView.breakUndoCoalescing()
-        textView.undoManager?.removeAllActions()
 
         changes = changes.filter { $0.value.marked || $0.value.conflict }.mapValues { change in
             var change = change
@@ -416,9 +416,20 @@ final class LiveFile {
             return
         }
         changes[change] = nil
-        if let replacement { textView.replaceAsOneEdit(pending.range, with: replacement) }
+        if let replacement { textView.replaceAsOneEdit(pending.range, with: replacement, named: Self.name(decision, pending)) }
         if pending.conflict, !changes.values.contains(where: \.conflict), autosaveRefused {
             Task { await autosave() }
+        }
+    }
+
+    /// The Edit menu's name for a decision: "Undo Revert Claude's Change".
+    private static func name(_ decision: ChangeEngine.Decision, _ change: Change) -> String {
+        let writer = Writer(change.origin)
+        return switch (decision, change.conflict) {
+        case (.other, false): "Revert \(writer.dashed ? "Outside" : writer.possessive) Change"
+        case (.other, true): "Use \(writer.dashed ? "Other" : writer.possessive) Version"
+        case (.both, _): "Keep Both Versions"
+        case (.keep, _): "Keep Your Version"
         }
     }
 
@@ -447,8 +458,7 @@ final class LiveFile {
         switch result {
         case .success(let text):
             guard !closed, document?.textView === textView else { return }
-            textView.replaceAsOneEdit(NSRange(location: 0, length: (textView.string as NSString).length), with: text)
-            textView.undoManager?.setActionName("Restore Snapshot")
+            textView.replaceAsOneEdit(NSRange(location: 0, length: (textView.string as NSString).length), with: text, named: "Restore Snapshot")
         case .failure(let error):
             Self.log.error("A snapshot did not restore: \(String(describing: error), privacy: .public)")
         }

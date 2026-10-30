@@ -119,18 +119,17 @@ struct LiveFileTests {
     }
 
     @Test func revertTakesTheChangeOutAsOneUndo() async throws {
-        let file = try OpenFile("# Plan\n\nShip on Friday.\n")
+        let file = try OpenFile("# Plan\n\nShip on Friday.\n", events: true)
         defer { file.close() }
-        file.textView.insertText("!", replacementRange: NSRange(location: 6, length: 0))
+        file.type("!", at: 6)
         try Data("# Plan\n\nShip on Friday.\n\nAgent note.\n".utf8).write(to: file.url, options: .atomic)
         await file.live.refresh()
         let (id, change) = try #require(file.live.changes.first { $0.value.marked })
         file.textView.setSelectedRange(NSRange(location: change.range.location + 1, length: 0))
-        file.textView.revertChange(nil)
+        file.event { file.textView.revertChange(nil) }
         #expect(file.textView.string == "# Plan!\n\nShip on Friday.\n")
         #expect(file.live.changes[id] == nil)
-        try await Task.sleep(for: .milliseconds(50))
-        file.textView.undoManager?.undo()
+        file.undo()
         #expect(file.textView.string == "# Plan!\n\nShip on Friday.\n\nAgent note.\n")
     }
 
@@ -198,7 +197,7 @@ struct LiveFileTests {
     }
 
     @Test func restoringASnapshotIsOneUndo() async throws {
-        let file = try OpenFile("# Plan\n")
+        let file = try OpenFile("# Plan\n", events: true)
         defer { file.close() }
         try Data("# Plan\n\nAgent note.\n".utf8).write(to: file.url)
         await file.live.refresh()
@@ -206,12 +205,11 @@ struct LiveFileTests {
         let snapshots = file.live.snapshots
         let oldest = try #require(snapshots.last)
         #expect(snapshots.map(\.time) == snapshots.map(\.time).sorted(by: >))
-        await file.live.restore(oldest)
+        await file.event { await file.live.restore(oldest) }
         #expect(file.textView.string == "# Plan\n")
         // Restoring writes nothing to the file.
         #expect(try String(contentsOf: file.url, encoding: .utf8) == "# Plan\n\nAgent note.\n")
-        try await Task.sleep(for: .milliseconds(50))
-        file.textView.undoManager?.undo()
+        file.undo()
         #expect(file.textView.string == "# Plan\n\nAgent note.\n")
     }
 
@@ -292,6 +290,120 @@ struct LiveFileTests {
         #expect(file.textView.string == "# Plan!に\n")
     }
 
+    // MARK: Undo
+
+    @Test func undoAfterALandingElsewhereTakesOutOnlyYourTyping() async throws {
+        let file = try OpenFile("# Plan\n\nShip on Friday.\n", events: true)
+        defer { file.close() }
+        file.type(" Then rest.", at: file.location(of: "Friday.") + 7)
+        try Data("Agent note.\n\n# Plan\n\nShip on Friday.\n".utf8).write(to: file.url, options: .atomic)
+        await file.live.refresh()
+        #expect(file.textView.string == "Agent note.\n\n# Plan\n\nShip on Friday. Then rest.\n")
+        file.undo()
+        #expect(file.textView.string == "Agent note.\n\n# Plan\n\nShip on Friday.\n")
+        #expect(!file.undoManager.canUndo)
+        file.redo()
+        #expect(file.textView.string == "Agent note.\n\n# Plan\n\nShip on Friday. Then rest.\n")
+    }
+
+    @Test func undoStopsAtAnEntryALandingTouched() async throws {
+        let file = try OpenFile("# Plan\n\nShip on Friday.\n", events: true)
+        defer { file.close() }
+        file.type("!", at: 6)
+        try await file.save()
+        file.type(" Then rest.", at: file.location(of: "Friday.") + 7)
+        // The agent changes the "!" you typed, which is on disk now.
+        try Data("# Plan?\n\nShip on Friday.\n".utf8).write(to: file.url, options: .atomic)
+        await file.live.refresh()
+        #expect(file.textView.string == "# Plan?\n\nShip on Friday. Then rest.\n")
+        file.undo()
+        #expect(file.textView.string == "# Plan?\n\nShip on Friday.\n")
+        // Undoing the "!" would take out the agent's text, so the history ends there.
+        #expect(!file.undoManager.canUndo)
+    }
+
+    @Test func aLandingClearsRedo() async throws {
+        let file = try OpenFile("# Plan\n\nShip on Friday.\n", events: true)
+        defer { file.close() }
+        file.type("!", at: 6)
+        file.undo()
+        #expect(file.undoManager.canRedo)
+        try Data("# Plan\n\nShip on Friday.\n\nAgent note.\n".utf8).write(to: file.url, options: .atomic)
+        await file.live.refresh()
+        #expect(file.textView.string == "# Plan\n\nShip on Friday.\n\nAgent note.\n")
+        #expect(!file.undoManager.canRedo)
+    }
+
+    @Test func typingUndoesByWordAndACompositionAsOne() async throws {
+        let file = try OpenFile("# Plan\n", events: true)
+        defer { file.close() }
+        file.textView.setSelectedRange(NSRange(location: 6, length: 0))
+        for character in " ship it" {
+            file.event { file.textView.insertText(String(character), replacementRange: file.textView.selectedRange()) }
+        }
+        for marked in ["k", "か"] {
+            file.event {
+                file.textView.setMarkedText(marked, selectedRange: NSRange(location: 1, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))
+            }
+        }
+        file.event { file.textView.insertText("漢", replacementRange: NSRange(location: NSNotFound, length: 0)) }
+        #expect(file.textView.string == "# Plan ship it漢\n")
+        // The composition, each word with the space after it, and the space before the first word.
+        for expected in ["# Plan ship it\n", "# Plan ship \n", "# Plan \n", "# Plan\n"] {
+            file.undo()
+            #expect(file.textView.string == expected)
+            #expect(file.undoManager.redoMenuItemTitle == "Redo Typing")
+        }
+    }
+
+    @Test func revertAndRestoreUndoUnderTheirNames() async throws {
+        let file = try OpenFile("# Plan\n\nShip on Friday.\n", events: true)
+        defer { file.close() }
+        file.type("!", at: 6)
+        let after = "# Plan\n\nShip on Friday.\n\nAgent note.\n"
+        file.claim(.preToolUse(.init(id: "toolu_1", tool: .write, path: file.realpath, hash: Self.hex("# Plan\n\nShip on Friday.\n"), declared: Self.hex(after))))
+        try Data(after.utf8).write(to: file.url, options: .atomic)
+        file.claim(.postToolUse(.init(id: "toolu_1", tool: .write, path: file.realpath, hash: Self.hex(after), declared: nil)))
+        await file.live.refresh()
+        let (_, change) = try #require(file.live.changes.first { $0.value.marked })
+        try await until { file.live.changes.values.contains { $0.origin == .agent(.claude, session: "s1") } }
+        file.textView.setSelectedRange(NSRange(location: change.range.location + 1, length: 0))
+        file.event { file.textView.revertChange(nil) }
+        #expect(file.undoManager.undoMenuItemTitle == "Undo Revert Claude's Change")
+        file.undo()
+        #expect(file.textView.string == "# Plan!\n\nShip on Friday.\n\nAgent note.\n")
+        // Your "!" from before the landing still undoes.
+        file.undo()
+        #expect(file.textView.string == "# Plan\n\nShip on Friday.\n\nAgent note.\n")
+
+        try await until { !file.live.snapshots.isEmpty }
+        let oldest = try #require(file.live.snapshots.last)
+        await file.event { await file.live.restore(oldest) }
+        #expect(file.undoManager.undoMenuItemTitle == "Undo Restore Snapshot")
+    }
+
+    @Test func onlyLandingsSinceASaveLeaveTheDocumentClean() async throws {
+        let file = try OpenFile("# Plan\n\nShip on Friday.\n", events: true)
+        defer { file.close() }
+        file.type("!", at: 6)
+        #expect(file.document.isDocumentEdited)
+        try await file.save()
+        #expect(!file.document.isDocumentEdited)
+        try Data("# Plan!\n\nShip on Friday.\n\nAgent note.\n".utf8).write(to: file.url, options: .atomic)
+        await file.live.refresh()
+        #expect(file.textView.string == "# Plan!\n\nShip on Friday.\n\nAgent note.\n")
+        #expect(!file.document.isDocumentEdited)
+        // Typing right after the save is a new edit.
+        file.type("?", at: 7)
+        #expect(file.document.isDocumentEdited)
+        file.undo()
+        #expect(!file.document.isDocumentEdited)
+        // Undoing the saved "!" leaves the buffer unlike the file.
+        file.undo()
+        #expect(file.textView.string == "# Plan\n\nShip on Friday.\n\nAgent note.\n")
+        #expect(file.document.isDocumentEdited)
+    }
+
     private func until(within limit: Duration = .seconds(5), _ condition: () -> Bool) async throws {
         let deadline = ContinuousClock.now + limit
         while !condition() {
@@ -311,12 +423,12 @@ struct LiveFileTests {
         let textView: EditorTextView
         let live: LiveFile
 
-        init(_ text: String, git: Bool = false) throws {
-            try self.init(Data(text.utf8), git: git)
+        init(_ text: String, git: Bool = false, events: Bool = false) throws {
+            try self.init(Data(text.utf8), git: git, events: events)
         }
 
-        /// With `git`, the file's folder is a new repository.
-        init(_ bytes: Data, git: Bool = false) throws {
+        /// With `git`, the file's folder is a new repository; with `events`, edits are grouped by `event`.
+        init(_ bytes: Data, git: Bool = false, events: Bool = false) throws {
             folder = FileManager.default.temporaryDirectory.appending(path: "dewline-live-\(UUID().uuidString)")
             let files = folder.appending(path: "files")
             try FileManager.default.createDirectory(at: files, withIntermediateDirectories: true)
@@ -337,6 +449,7 @@ struct LiveFileTests {
             document.makeWindowControllers()
             textView = try #require(document.textView)
             live = try #require(document.live)
+            if events { textView.history.undoManager.groupsByEvent = false }
         }
 
         /// The file's realpath, as hooks name it.
@@ -347,6 +460,43 @@ struct LiveFileTests {
         /// A Claude Code hook's claim in session s1, as `dewline notify` sends it.
         func claim(_ event: ControlSocket.Claim.Event) {
             LiveFile.claim(ControlSocket.Claim(vendor: .claude, session: "s1", event: event), engine: document.engine!)
+        }
+
+        var undoManager: UndoManager {
+            textView.history.undoManager
+        }
+
+        /// Types `text` at `location` as one keystroke, after a click there.
+        func type(_ text: String, at location: Int) {
+            textView.breakUndoCoalescing()
+            textView.setSelectedRange(NSRange(location: location, length: 0))
+            event { textView.insertText(text, replacementRange: textView.selectedRange()) }
+        }
+
+        /// One event's undo group, which the app's run loop opens at an edit and closes; a file opened with
+        /// `events` groups by hand, which leaves an empty group where an edit joined the last entry.
+        func event(_ body: () -> Void) {
+            undoManager.beginUndoGrouping()
+            body()
+            undoManager.endUndoGrouping()
+        }
+
+        func event(_ body: () async -> Void) async {
+            undoManager.beginUndoGrouping()
+            await body()
+            undoManager.endUndoGrouping()
+        }
+
+        /// Cmd-Z, past the empty groups.
+        func undo() {
+            let text = textView.string
+            repeat {
+                textView.window!.tryToPerform(Selector(("undo:")), with: nil)
+            } while textView.string == text && undoManager.canUndo
+        }
+
+        func redo() {
+            textView.window!.tryToPerform(Selector(("redo:")), with: nil)
         }
 
         func location(of text: String) -> Int {

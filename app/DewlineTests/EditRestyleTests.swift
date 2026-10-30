@@ -162,11 +162,10 @@ struct EditRestyleTests {
                 case 7: if undo.canUndo { undo.undo() }
                 case 8: if undo.canRedo { undo.redo() }
                 case 9:
-                    // Writes into the storage register no undo, so the history before them no longer applies.
+                    // Writes into the storage register no undo; the history moves past them, as past a landing.
                     let location = offset(upTo: storage.length)
                     let length = min(Int(random.next() % 4), storage.length - location)
                     storage.replaceCharacters(in: NSRange(location: location, length: length), with: pick(fragments))
-                    undo.removeAllActions()
                 case 10:
                     grouped {
                         view.setMarkedText("か", selectedRange: NSRange(location: 1, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))
