@@ -1,10 +1,11 @@
 import AppKit
 
 /// How one line of a rendered block lays out and draws: the value of `.dewlineBlock`. The picture's line reserves
-/// its height, the block's other lines collapse, and a failed block's last line carries the error below it.
+/// its height, the block's other lines collapse, and a failed block's last line carries the error below it. A laid-out
+/// table row draws its column rules, and a task item its box.
 final class BlockLine: NSObject {
     enum Role {
-        case picture(BlockPicture, label: String), collapsed, error(String)
+        case picture(BlockPicture, label: String), collapsed, error(String), table(TableRule), task(TaskMark)
     }
 
     let role: Role
@@ -20,6 +21,8 @@ final class BlockLine: NSObject {
             picture.image === other.image && picture.size == other.size && label == otherLabel
         case (.collapsed, .collapsed?): true
         case let (.error(message), .error(other)?): message == other
+        case let (.table(rule), .table(other)?): rule == other
+        case let (.task(task), .task(other)?): task == other
         default: false
         }
     }
@@ -29,8 +32,29 @@ final class BlockLine: NSObject {
         case .picture(let picture, _): ObjectIdentifier(picture.image).hashValue
         case .collapsed: 0
         case .error(let message): message.hashValue
+        case .table(let rule): rule.columns.count
+        case .task(let task): task.at
         }
     }
+}
+
+/// A table line's rules, in points from where its text starts: one between each pair of columns, and for the
+/// delimiter row one across them all.
+struct TableRule: Equatable {
+    let columns: [CGFloat]
+    let width: CGFloat
+    let across: Bool
+    let color: NSColor
+}
+
+/// A task item's box over its hidden `[ ]`, which starts `at` characters into the line.
+struct TaskMark: Equatable {
+    let at: Int
+    let checked: Bool
+    let label: String
+    let stroke: NSColor
+    let fill: NSColor
+    let check: NSColor
 }
 
 extension NSAttributedString.Key {
@@ -73,6 +97,9 @@ final class BlockFragment: NSTextLayoutFragment {
         switch line.role {
         case .picture(let picture, _): CGRect(origin: .zero, size: picture.size)
         case .collapsed: .zero
+        case .table(let rule):
+            super.renderingSurfaceBounds.union(CGRect(x: 0, y: 0, width: textStart + rule.width + 1, height: layoutFragmentFrame.height))
+        case .task: super.renderingSurfaceBounds
         case .error:
             // The error is wider than the line it hangs under.
             super.renderingSurfaceBounds.union(CGRect(
@@ -99,6 +126,62 @@ final class BlockFragment: NSTextLayoutFragment {
                 .font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.secondaryLabelColor,
             ]).draw(at: CGPoint(x: point.x, y: point.y + textBottom + 3))
             NSGraphicsContext.restoreGraphicsState()
+        case .table(let rule):
+            super.draw(at: point, in: context)
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+            rule.color.setFill()
+            let left = point.x + textStart
+            for x in rule.columns {
+                NSRect(x: left + x - 0.5, y: point.y, width: 1, height: layoutFragmentFrame.height).fill()
+            }
+            if rule.across {
+                NSRect(x: left, y: point.y + (layoutFragmentFrame.height / 2).rounded() - 0.5, width: rule.width, height: 1).fill()
+            }
+            NSGraphicsContext.restoreGraphicsState()
+        case .task(let task):
+            super.draw(at: point, in: context)
+            guard let box = taskBoxRect?.offsetBy(dx: point.x, dy: point.y) else { return }
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+            let outline = NSBezierPath(roundedRect: box.insetBy(dx: 0.75, dy: 0.75), xRadius: box.width * 0.22, yRadius: box.width * 0.22)
+            outline.lineWidth = 1.5
+            if task.checked {
+                task.fill.setFill()
+                outline.fill()
+                let mark = NSBezierPath()
+                mark.move(to: NSPoint(x: box.minX + box.width * 0.25, y: box.minY + box.height * 0.52))
+                mark.line(to: NSPoint(x: box.minX + box.width * 0.43, y: box.minY + box.height * 0.7))
+                mark.line(to: NSPoint(x: box.minX + box.width * 0.76, y: box.minY + box.height * 0.3))
+                mark.lineWidth = 1.75
+                mark.lineCapStyle = .round
+                mark.lineJoinStyle = .round
+                task.check.setStroke()
+                mark.stroke()
+            } else {
+                task.stroke.setStroke()
+                outline.stroke()
+            }
+            NSGraphicsContext.restoreGraphicsState()
         }
+    }
+
+    /// Where the first line's text starts, in this fragment's coordinates.
+    private var textStart: CGFloat {
+        guard let line = textLineFragments.first else { return 0 }
+        return line.typographicBounds.minX + line.locationForCharacter(at: line.characterRange.location).x
+    }
+
+    /// A task's box, in this fragment's coordinates: a square over the `[ ]` that sits on the baseline.
+    var taskBoxRect: CGRect? {
+        guard case .task(let task) = line.role,
+            let text = textLineFragments.first(where: { NSLocationInRange(task.at, $0.characterRange) })
+        else { return nil }
+        let start = text.locationForCharacter(at: task.at).x
+        let end = text.locationForCharacter(at: task.at + 3).x
+        let bounds = text.typographicBounds
+        let side = min(end - start, bounds.height * 0.6).rounded()
+        let baseline = bounds.minY + text.glyphOrigin.y
+        return CGRect(x: bounds.minX + start + ((end - start - side) / 2).rounded(), y: (baseline + 1 - side).rounded(), width: side, height: side)
     }
 }
