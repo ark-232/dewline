@@ -3,6 +3,7 @@ pub mod claims;
 pub mod export;
 pub mod file;
 pub mod git;
+pub mod jail;
 pub mod md;
 pub mod merge;
 pub mod store;

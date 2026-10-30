@@ -2,12 +2,12 @@
 
 use std::collections::HashMap;
 use std::fmt::Write;
-use std::fs::{self, File};
 use std::io::Read;
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Component, Path};
 
 use pulldown_cmark::{Alignment, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+
+use crate::jail::Jail;
 
 /// What the page needs beyond the markdown.
 pub struct ExportOptions<'a> {
@@ -96,16 +96,7 @@ fn inline_image(folder: &Path, path: &str) -> Option<String> {
     {
         return None;
     }
-    let root = fs::canonicalize(folder).ok()?;
-    let target = fs::canonicalize(root.join(relative)).ok()?;
-    if !target.starts_with(&root) {
-        return None;
-    }
-    let file = File::options()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(&target)
-        .ok()?;
+    let (file, target) = Jail::new(folder).ok()?.open(relative).ok()?;
     let info = file.metadata().ok()?;
     if !info.is_file() || info.len() > MAX_IMAGE {
         return None;
@@ -417,6 +408,7 @@ fn code<'t>(events: &mut impl Iterator<Item = Event<'t>>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     fn export(text: &str) -> String {
         html(
