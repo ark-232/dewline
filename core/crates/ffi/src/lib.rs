@@ -12,6 +12,7 @@ mod engine;
 mod markdown;
 mod save;
 mod search;
+mod sync;
 
 uniffi::setup_scaffolding!();
 

@@ -10,6 +10,11 @@ ignore = [
     { id = "RUSTSEC-2026-0398", reason = "zstd-safe's seekable decompression; the seekable feature is off. Remove with the zstd 0.14.3 upgrade on 30 Oct" },
     { id = "RUSTSEC-2026-0403", reason = "decompressing legacy zstd frames; the legacy feature is off, so the bundled library builds without legacy support. Remove with the zstd 0.14.3 upgrade on 30 Oct" },
     { id = "RUSTSEC-2026-0410", reason = "zstd-sys's allocator shim on wasm32; Dewline builds only for macOS. Remove with the zstd 0.14.3 upgrade on 30 Oct" },
+    { id = "RUSTSEC-2026-0248", reason = "im is unmaintained; loro-internal keeps Loro's state in its persistent maps (the sync crate, record 0009). No fixed release exists. Remove when Loro drops im" },
+    { id = "RUSTSEC-2026-0247", reason = "bitmaps is unmaintained; im uses it, under loro-internal. Remove with RUSTSEC-2026-0248" },
+    { id = "RUSTSEC-2026-0251", reason = "sized-chunks is unmaintained; im uses it, under loro-internal. Remove with RUSTSEC-2026-0248" },
+    { id = "RUSTSEC-2023-0089", reason = "atomic-polyfill is unmaintained; heapless 0.7 under postcard (iroh, iroh-gossip) uses it only on targets without native atomics, never on macOS" },
+    { id = "RUSTSEC-2024-0436", reason = "paste is unmaintained; a proc macro in netlink-packet-core, which iroh's netwatch builds only on Linux" },
 ]
 
 [licenses]
@@ -29,6 +34,19 @@ exceptions = [
     { allow = ["Zlib"], crate = "slotmap" },
     { allow = ["Zlib"], crate = "foldhash" },
     { allow = ["OFL-1.1"], crate = "ratex-katex-fonts" },
+    # Loro's persistent collections (record 0009), linked as a library without changes.
+    { allow = ["MPL-2.0"], crate = "im" },
+    { allow = ["MPL-2.0"], crate = "bitmaps" },
+    { allow = ["MPL-2.0"], crate = "sized-chunks" },
+    # Boost's permissive license, for Loro's hashing.
+    { allow = ["BSL-1.0"], crate = "xxhash-rust" },
+    # Mozilla's root certificates as data, which iroh's relay client trusts.
+    { allow = ["CDLA-Permissive-2.0"], crate = "webpki-roots" },
+    { allow = ["CDLA-Permissive-2.0"], crate = "webpki-root-certs" },
+    # iroh-relay's browser WebSocket client, built only for wasm32 and never for macOS.
+    { allow = ["Unlicense"], crate = "ws_stream_wasm" },
+    { allow = ["Unlicense"], crate = "async_io_stream" },
+    { allow = ["Unlicense"], crate = "pharos" },
 ]
 
 # The crate says MIT, but the KaTeX fonts it embeds are under the SIL Open Font License.

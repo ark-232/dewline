@@ -85,7 +85,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
-            if (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
+            if url.scheme == "dewline" {
+                if url.host == "join" { Collaboration.join(link: url.absoluteString) }
+            } else if (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
                 openFolder(at: url)
             } else {
                 NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { _, _, error in
