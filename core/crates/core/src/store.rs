@@ -48,7 +48,7 @@ pub struct Store {
     root: PathBuf,
     /// False skips every sync, for tests of the rules rather than of durability.
     #[cfg(test)]
-    sync: bool,
+    pub(crate) sync: bool,
 }
 
 impl Store {

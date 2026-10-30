@@ -2186,7 +2186,9 @@ mod tests {
 
     impl Run {
         fn new() -> Run {
-            let fx = fixture();
+            let mut fx = fixture();
+            // The rules, not durability, which the store's own tests check.
+            fx.engine.store.sync = false;
             let repo = fx.root.join("repo");
             let text = "# Notes\n\nalpha one\n\nbeta two\n\ngamma three\n";
             let path = fx.file("repo/notes.md", text);
@@ -2772,7 +2774,6 @@ mod tests {
         }
     }
 
-    /// Store writes sync four times each, so cases are few until the store
-    /// can skip syncs in tests; nightly sets PROPTEST_CASES.
-    const CASES: u32 = 32;
+    /// Nightly sets PROPTEST_CASES.
+    const CASES: u32 = 256;
 }
