@@ -163,15 +163,25 @@ final class EditorTextView: CaretTextView {
         }
     }
 
-    /// The text's children plus one image per rendered block, labeled with its source.
+    /// The text's children plus one image per rendered block, labeled with its source, and one checkbox per task box.
     override func accessibilityChildren() -> [Any]? {
         var children = super.accessibilityChildren() ?? []
         let storage = textStorage!
         storage.enumerateAttribute(.dewlineBlock, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
-            guard case .picture(let picture, let label)? = (value as? BlockLine)?.role else { return }
-            let line = firstRect(forCharacterRange: NSRange(location: range.location, length: 0), actualRange: nil)
-            let frame = NSRect(x: line.minX, y: line.maxY - picture.size.height, width: picture.size.width, height: picture.size.height)
-            children.append(NSAccessibilityElement.element(withRole: .image, frame: frame, label: label, parent: self))
+            switch (value as? BlockLine)?.role {
+            case .picture(let picture, let label)?:
+                let line = firstRect(forCharacterRange: NSRange(location: range.location, length: 0), actualRange: nil)
+                let frame = NSRect(x: line.minX, y: line.maxY - picture.size.height, width: picture.size.width, height: picture.size.height)
+                children.append(NSAccessibilityElement.element(withRole: .image, frame: frame, label: label, parent: self))
+            case .task(let task)?:
+                let box = range.location + task.at
+                let frame = firstRect(forCharacterRange: NSRange(location: box, length: 3), actualRange: nil)
+                children.append(TaskBoxElement(frame: frame, label: task.label, checked: task.checked, parent: self) { [weak self] in
+                    self?.toggleTask(at: box + 1)
+                })
+            default:
+                break
+            }
         }
         return children
     }
@@ -419,8 +429,11 @@ final class EditorTextView: CaretTextView {
         ThemeStore.shared.smartPunctuation.toggle()
     }
 
+    /// A click in the margin beside a foldable block folds or unfolds it; a click on a task box toggles it and leaves the
+    /// caret where it was.
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+        if let box = taskBox(at: point) { return toggleTask(at: box) }
         guard point.x < textContainerOrigin.x, let (block, _) = foldable(at: point) else { return super.mouseDown(with: event) }
         let anchor = NSMaxRange(textStorage!.mutableString.lineRange(for: NSRange(location: block.range.location, length: 0)))
         if styler.folds.contains(where: { $0.location == anchor }) {
