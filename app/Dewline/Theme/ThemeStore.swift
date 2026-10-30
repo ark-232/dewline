@@ -2,7 +2,8 @@ import AppKit
 import Observation
 
 /// The owner's look, kept in user defaults: a theme for the light slot and one for the dark, which appearance windows
-/// take, and the page's faces, size, leading, measure and heading style. Posts `didChange` after every change.
+/// take, the page's faces, size, leading, measure and heading style, and Smart Punctuation. Posts `didChange` after
+/// every change.
 @MainActor @Observable
 final class ThemeStore {
     enum Appearance: String, CaseIterable, Identifiable {
@@ -51,6 +52,8 @@ final class ThemeStore {
     var columnWidth: Double { didSet { save(columnWidth, "ColumnWidth") } }
     var headingStyle: HeadingStyle { didSet { save(headingStyle.rawValue, "HeadingStyle") } }
     var vimMode: Bool { didSet { save(vimMode, "VimMode") } }
+    /// The system's smart quotes and dashes, outside code; off by default.
+    var smartPunctuation: Bool { didSet { save(smartPunctuation, "SmartPunctuation") } }
 
     init(defaults: UserDefaults) {
         self.defaults = defaults
@@ -70,6 +73,7 @@ final class ThemeStore {
         columnWidth = number("ColumnWidth", in: Self.columnWidths) ?? 68
         headingStyle = string("HeadingStyle").flatMap(HeadingStyle.init) ?? .standard
         vimMode = defaults.bool(forKey: "DewlineVimMode")
+        smartPunctuation = defaults.bool(forKey: "DewlineSmartPunctuation")
     }
 
     private func save(_ value: Any, _ key: String) {

@@ -10,7 +10,7 @@ final class EditorTextView: CaretTextView {
     private weak var snapshot: NSView?
     /// When the last toggle committed its first frame and started the fade.
     private(set) var fadeStarted: ContinuousClock.Instant?
-    /// Where images in the document resolve from.
+    /// Where images in the document resolve from, and where pasted images go; nil until the document is saved.
     var documentFolder: URL?
     /// Vim's keys, while Vim mode is on.
     var vim: VimEngine? {
@@ -20,6 +20,21 @@ final class EditorTextView: CaretTextView {
         }
     }
     private var vimStatus: NSTextField?
+    /// The foldable block under the pointer, by its location.
+    private(set) var hoveredFold: Int?
+    private var centering = false
+    private var dimmed = false
+    /// Focus dims every block but the caret's.
+    var focusMode = false {
+        didSet { updateFocus() }
+    }
+    /// Typewriter keeps the caret's line in the middle of the view.
+    var typewriterMode = false {
+        didSet {
+            fitColumn(to: frame.width)
+            centerCaretSoon()
+        }
+    }
 
     var defersStyling: Bool {
         composing || hasMarkedText()
@@ -43,8 +58,6 @@ final class EditorTextView: CaretTextView {
         textStorage?.delegate = styler
         isRichText = false
         allowsUndo = true
-        isAutomaticQuoteSubstitutionEnabled = false
-        isAutomaticDashSubstitutionEnabled = false
         isAutomaticTextReplacementEnabled = false
         isContinuousSpellCheckingEnabled = true
         usesFindBar = true
@@ -90,8 +103,11 @@ final class EditorTextView: CaretTextView {
         selectedTextAttributes = [.backgroundColor: store.color(.selection)]
         typingAttributes = styler.baseAttributes
         vimStatus?.textColor = store.color(.ink2)
+        isAutomaticQuoteSubstitutionEnabled = store.smartPunctuation
+        isAutomaticDashSubstitutionEnabled = store.smartPunctuation
         fitColumn(to: frame.width)
         if store.vimMode != (vim != nil) { vim = store.vimMode ? VimEngine() : nil }
+        updateFocus()
     }
 
     @objc private func themeDidChange(_ notification: Notification) {
@@ -110,18 +126,21 @@ final class EditorTextView: CaretTextView {
         super.setFrameSize(newSize)
     }
 
-    /// Centers the column at the measure, with margins of at least 32 pt; a narrower view fills.
+    /// Centers the column at the measure, with margins of at least 32 pt; a narrower view fills. Typewriter lets the
+    /// first and last lines scroll to the middle.
     private func fitColumn(to width: CGFloat) {
         let padding = textContainer?.lineFragmentPadding ?? 0
         let margin = max(32, ((width - ThemeStore.shared.measure) / 2 - padding).rounded(.down))
-        if textContainerInset.width != margin {
-            textContainerInset = NSSize(width: margin, height: 24)
+        let height = typewriterMode ? max(24, ((enclosingScrollView?.contentView.bounds.height ?? 0) / 2).rounded()) : 24
+        if textContainerInset != NSSize(width: margin, height: height) {
+            textContainerInset = NSSize(width: margin, height: height)
         }
     }
 
-    /// Draws each quote's rule at the column's left edge.
+    /// Draws the fold disclosures and each quote's rule at the column's left edge.
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
+        drawDisclosures(in: rect)
         let storage = textStorage!
         guard !styler.showsSource, storage.length > 0, let window else { return }
         let first = characterIndexForInsertion(at: NSPoint(x: rect.minX, y: max(rect.minY, textContainerOrigin.y)))
@@ -322,6 +341,119 @@ final class EditorTextView: CaretTextView {
     override func didChangeText() {
         snapshot?.removeFromSuperview()
         super.didChangeText()
+        updateFocus()
+    }
+
+    override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
+        super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
+        guard !stillSelecting else { return }
+        updateFocus()
+        centerCaretSoon()
+    }
+
+    override func insertNewline(_ sender: Any?) {
+        guard hasMarkedText() || !continueList() else { return }
+        super.insertNewline(sender)
+    }
+
+    override func insertTab(_ sender: Any?) {
+        guard hasMarkedText() || !indentItems(outdent: false) else { return }
+        super.insertTab(sender)
+    }
+
+    override func insertBacktab(_ sender: Any?) {
+        guard hasMarkedText() || !indentItems(outdent: true) else { return }
+        super.insertBacktab(sender)
+    }
+
+    /// Dims, by color alone, the text outside the caret's block, without touching the storage.
+    private func updateFocus() {
+        guard focusMode || dimmed, let layout = textLayoutManager, let content = layout.textContentManager else { return }
+        layout.removeRenderingAttribute(.foregroundColor, for: content.documentRange)
+        dimmed = false
+        let length = textStorage?.length ?? 0
+        guard focusMode, length > 0 else { return }
+        dimmed = true
+        let caret = selectedRange().location
+        let focus = styler.map.blocks(in: NSRange(location: caret, length: 0)).first?.range
+            ?? textStorage!.mutableString.paragraphRange(for: NSRange(location: min(caret, length), length: 0))
+        let dim = ThemeStore.shared.color(.syntax)
+        for part in [NSRange(location: 0, length: focus.location), NSRange(location: NSMaxRange(focus), length: length - NSMaxRange(focus))] where part.length > 0 {
+            guard let start = content.location(content.documentRange.location, offsetBy: part.location),
+                let end = content.location(start, offsetBy: part.length), let range = NSTextRange(location: start, end: end)
+            else { continue }
+            layout.addRenderingAttribute(.foregroundColor, value: dim, for: range)
+        }
+    }
+
+    /// Centers the caret's line after the event in hand has laid the text out. The view snaps there: edits and caret
+    /// moves never animate, so Reduce Motion needs no other path.
+    private func centerCaretSoon() {
+        guard typewriterMode, !centering else { return }
+        centering = true
+        RunLoop.main.perform(inModes: [.common]) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.centering = false
+                let length = self.textStorage!.length
+                guard self.typewriterMode, length > 0 else { return }
+                self.hold(min(self.selectedRange().location, length - 1), at: self.visibleRect.height / 2 + MarkdownStyler.bodyFont.capHeight / 2)
+            }
+        }
+    }
+
+    @objc func toggleFocusMode(_ sender: Any?) {
+        focusMode.toggle()
+    }
+
+    @objc func toggleTypewriterMode(_ sender: Any?) {
+        typewriterMode.toggle()
+    }
+
+    @objc func toggleSmartPunctuation(_ sender: Any?) {
+        ThemeStore.shared.smartPunctuation.toggle()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        guard point.x < textContainerOrigin.x, let (block, _) = foldable(at: point) else { return super.mouseDown(with: event) }
+        let anchor = NSMaxRange(textStorage!.mutableString.lineRange(for: NSRange(location: block.range.location, length: 0)))
+        if styler.folds.contains(where: { $0.location == anchor }) {
+            styler.setFolds(styler.folds.filter { $0.location != anchor })
+        } else {
+            fold(block)
+        }
+        needsDisplay = true
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas where area.owner === self && area.userInfo?["fold"] != nil { removeTrackingArea(area) }
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self, userInfo: ["fold": true]))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        let point = convert(event.locationInWindow, from: nil)
+        let hovered = point.x < textContainerOrigin.x + (textContainer?.size.width ?? 0) ? foldable(at: point)?.block.range.location : nil
+        guard hovered != hoveredFold else { return }
+        hoveredFold = hovered
+        setNeedsDisplay(NSRect(x: 0, y: visibleRect.minY, width: textContainerOrigin.x, height: visibleRect.height))
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        guard hoveredFold != nil else { return }
+        hoveredFold = nil
+        setNeedsDisplay(NSRect(x: 0, y: visibleRect.minY, width: textContainerOrigin.x, height: visibleRect.height))
+    }
+
+    override var readablePasteboardTypes: [NSPasteboard.PasteboardType] {
+        super.readablePasteboardTypes + [.png, .tiff, .fileURL].filter { !super.readablePasteboardTypes.contains($0) }
+    }
+
+    override func readSelection(from pboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
+        insertImages(from: pboard) || super.readSelection(from: pboard, type: type)
     }
 
     /// The baseline of the line holding the character at `index`, in this view's coordinates.
@@ -337,8 +469,14 @@ final class EditorTextView: CaretTextView {
     }
 
     override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        guard menuItem.action == #selector(toggleSource(_:)) else { return super.validateMenuItem(menuItem) }
-        menuItem.state = styler.showsSource ? .on : .off
+        switch menuItem.action {
+        case #selector(toggleSource(_:)): menuItem.state = styler.showsSource ? .on : .off
+        case #selector(toggleFocusMode(_:)): menuItem.state = focusMode ? .on : .off
+        case #selector(toggleTypewriterMode(_:)): menuItem.state = typewriterMode ? .on : .off
+        case #selector(toggleSmartPunctuation(_:)): menuItem.state = ThemeStore.shared.smartPunctuation ? .on : .off
+        case #selector(unfoldBlock(_:)), #selector(unfoldAll(_:)): return !styler.folds.isEmpty
+        default: return super.validateMenuItem(menuItem)
+        }
         return true
     }
 }

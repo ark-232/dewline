@@ -61,6 +61,12 @@ struct EditorPane: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             Section {
+                Toggle("Smart Punctuation", isOn: $store.smartPunctuation)
+            } footer: {
+                Text("Turns straight quotes into curly ones and double hyphens into dashes as you type. Code is left alone.")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Section {
                 Toggle("Vim mode", isOn: $store.vimMode)
             } footer: {
                 Text("Normal, insert and visual modes, with the mode at the window's lower right. :w saves and :q closes.")

@@ -102,6 +102,17 @@ final class BlockMap {
         blocks(after: range.location - 1, before: NSMaxRange(range) + 1)
     }
 
+    /// The blocks from the one that ends after `offset` on, or the ones that end at or before it backwards, until
+    /// `body` returns false.
+    func walk(from offset: Int, backward: Bool = false, _ body: (Block) -> Bool) {
+        let start = index(endingAfter: offset)
+        if backward {
+            for index in stride(from: start - 1, through: 0, by: -1) where !body(block(index)) { return }
+        } else {
+            for index in start..<count where !body(block(index)) { return }
+        }
+    }
+
     /// `range` and the blocks it meets.
     func covering(_ range: NSRange) -> NSRange {
         blocks(in: range).reduce(range) { NSUnionRange($0, $1.range) }

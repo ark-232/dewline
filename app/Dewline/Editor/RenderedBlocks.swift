@@ -15,7 +15,7 @@ final class RenderedBlocks {
     private let queue = DispatchQueue(label: "dev.arkwerx.dewline.pictures", qos: .utility)
 
     private static let sourceLines = lines(20)
-    private static let collapsedLines = lines(0.01)
+    static let collapsedLines = lines(0.01)
 
     init(map: BlockMap) {
         self.map = map
