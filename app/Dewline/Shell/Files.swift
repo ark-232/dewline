@@ -181,19 +181,20 @@ struct Heading: Equatable {
     let line: Int
 }
 
-/// The H1 to H3 headings of `text`, with their 1-based line numbers.
+/// The H1 to H3 headings of `text`, with their 1-based line numbers; none when the parser panics.
 func outline(of text: String) -> [Heading] {
+    guard let parse = try? MarkdownParser().parse(text) else { return [] }
     let string = text as NSString
     var line = 1
     var counted = 0
-    return markdownSpans(in: text).compactMap { span in
-        guard case .heading(let level) = span.kind, level <= 3 else { return nil }
-        for index in counted..<span.range.location where string.character(at: index) == 0x0A {
+    return parse.tokens.compactMap { token in
+        guard case .heading(let level) = token.kind, level <= 3 else { return nil }
+        for index in counted..<token.range.location where string.character(at: index) == 0x0A {
             line += 1
         }
-        counted = span.range.location
-        let title = plainInline(string.substring(with: span.content))
-        return title.isEmpty ? nil : Heading(level: level, title: title, location: span.range.location, line: line)
+        counted = token.range.location
+        let title = plainInline(string.substring(with: token.content))
+        return title.isEmpty ? nil : Heading(level: level, title: title, location: token.range.location, line: line)
     }
 }
 
