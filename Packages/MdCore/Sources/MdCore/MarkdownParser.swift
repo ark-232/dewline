@@ -108,7 +108,7 @@ public struct MarkdownParse: Sendable {
 /// A unit the editor reparses: a top-level block, a top-level list item, or a top-level table's head or one of its
 /// rows. `range` is whole lines: the last line's terminator is in, blank lines after it are out.
 public struct MarkdownBlock: Equatable, Sendable {
-    public enum Kind: Equatable, Sendable {
+    public enum Kind: Hashable, Sendable {
         case paragraph, heading(level: Int), thematicBreak, quote, callout, code, html, item, tableHead, tableRow
         case footnoteDefinition, definition, frontMatter
 
@@ -139,7 +139,7 @@ public struct MarkdownBlock: Equatable, Sendable {
 
 /// A markdown construct. The characters in `range` but outside `content` are its markers.
 public struct MarkdownToken: Equatable, Sendable {
-    public enum Kind: Equatable, Sendable {
+    public enum Kind: Hashable, Sendable {
         case heading(level: Int), emphasis, strong, strikethrough, inlineCode, link, image, fencedCode, quote, callout
         case item, taskBox(checked: Bool), tableHead, tableRow, tableCell, footnoteReference, footnoteDefinition
         case definition, inlineMath, displayMath, wikiLink, embed, highlight, comment, tag, frontMatter, html

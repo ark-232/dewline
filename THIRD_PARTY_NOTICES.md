@@ -151,9 +151,9 @@ unmodified. Its source is at https://github.com/mozilla/uniffi-rs and on crates.
 | xmlwriter | 0.1.0 | MIT | https://github.com/RazrFalcon/xmlwriter |
 | zlib-rs | 0.6.8 | Zlib | https://github.com/trifectatechfoundation/zlib-rs |
 | zmij | 1.0.23 | MIT | https://github.com/dtolnay/zmij |
-| zstd | 0.14.2 | BSD-3-Clause | https://github.com/gyscos/zstd-rs |
-| zstd-safe | 8.1.0 | BSD-3-Clause | https://github.com/gyscos/zstd-rs |
-| zstd-sys | 2.1.1+zstd.1.5.7 | BSD-3-Clause | https://github.com/gyscos/zstd-rs |
+| zstd | 0.14.3 | BSD-3-Clause | https://github.com/gyscos/zstd-rs |
+| zstd-safe | 8.2.0 | BSD-3-Clause | https://github.com/gyscos/zstd-rs |
+| zstd-sys | 2.1.2+zstd.1.5.7 | BSD-3-Clause | https://github.com/gyscos/zstd-rs |
 | Sparkle | 2.10.0 | MIT and the notices in its LICENSE | https://github.com/sparkle-project/Sparkle |
 | JetBrains Mono | 2.304 | OFL-1.1 | https://github.com/JetBrains/JetBrainsMono |
 
@@ -6837,7 +6837,7 @@ freely, subject to the following restrictions:
 3. This notice may not be removed or altered from any source distribution.
 ```
 
-### zstd 0.14.2 (LICENSE), zstd-safe 8.1.0 (LICENSE), zstd-sys 2.1.1+zstd.1.5.7 (LICENSE)
+### zstd 0.14.3 (LICENSE), zstd-safe 8.2.0 (LICENSE), zstd-sys 2.1.2+zstd.1.5.7 (LICENSE)
 
 ```text
 BSD 3-Clause License
@@ -6870,7 +6870,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-### zstd-sys 2.1.1+zstd.1.5.7 (LICENSE.BSD-3-Clause)
+### zstd-sys 2.1.2+zstd.1.5.7 (LICENSE.BSD-3-Clause)
 
 ```text
 The auto-generated bindings are under the 3-clause BSD license:

@@ -11,6 +11,7 @@ use resvg::{tiny_skia, usvg};
 mod engine;
 mod markdown;
 mod save;
+mod search;
 
 uniffi::setup_scaffolding!();
 
