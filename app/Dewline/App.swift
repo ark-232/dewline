@@ -26,6 +26,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Updates.shared.start()
         // The test host leaves the real socket alone; ControlSocketTests make their own.
         guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
+        Preferences.shared.keepWindows()
+        if !UserDefaults.standard.bool(forKey: Welcome.shownKey) {
+            UserDefaults.standard.set(true, forKey: Welcome.shownKey)
+            // Opened before AppKit asks for an untitled file, so the guide shows in place of the launch window.
+            showWelcomeGuide(nil)
+        }
         let control = ControlSocket(path: ControlSocket.standardPath) { [weak self] request, connection in
             self?.open(request, for: connection)
         }
@@ -45,28 +51,65 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Opens a file for the `dewline` command as Markdown, whatever its extension (git's COMMIT_EDITMSG has none),
     /// with the caret at the line and column asked for.
     func open(_ request: ControlSocket.Open, for connection: ControlSocket.Connection) {
-        let url = URL(fileURLWithPath: request.path)
-        let controller = NSDocumentController.shared
         let document: MarkdownDocument
-        if let open = controller.document(for: url) as? MarkdownDocument {
-            document = open
-        } else {
-            do {
-                document = try MarkdownDocument(contentsOf: url, ofType: "net.daringfireball.markdown")
-            } catch {
-                connection.reply(.refused(.cannotOpen, message: error.localizedDescription))
-                return
-            }
-            controller.addDocument(document)
-            controller.noteNewRecentDocumentURL(url)
-            document.makeWindowControllers()
+        do {
+            document = try openMarkdown(at: URL(fileURLWithPath: request.path))
+        } catch {
+            connection.reply(.refused(.cannotOpen, message: error.localizedDescription))
+            return
         }
-        document.showWindows()
         if let line = request.line {
             (document.windowControllers.first as? MainWindowController)?.textView?.jump(toLine: line, column: request.column ?? 1)
         }
         if request.wait { document.answerWhenClosed(connection) }
         connection.reply(.opened)
+    }
+
+    /// Opens the file at `url` as Markdown, whatever its extension, or brings its window forward.
+    @discardableResult
+    private func openMarkdown(at url: URL) throws -> MarkdownDocument {
+        let controller = NSDocumentController.shared
+        let document: MarkdownDocument
+        if let open = controller.document(for: url) as? MarkdownDocument {
+            document = open
+        } else {
+            document = try MarkdownDocument(contentsOf: url, ofType: "net.daringfireball.markdown")
+            controller.addDocument(document)
+            controller.noteNewRecentDocumentURL(url)
+            document.makeWindowControllers()
+        }
+        document.showWindows()
+        return document
+    }
+
+    /// Help > Welcome to Dewline: the reader's copy of the guide.
+    @objc func showWelcomeGuide(_ sender: Any?) {
+        do {
+            try openMarkdown(at: Welcome.copy())
+        } catch {
+            NSApp.presentError(error)
+        }
+    }
+
+    /// Help > Watch a Change Land: opens the guide, then writes a Demo note into it from outside, as an agent would.
+    @objc func runWelcomeDemo(_ sender: Any?) {
+        let url: URL
+        do {
+            url = try Welcome.copy()
+            try openMarkdown(at: url)
+        } catch {
+            NSApp.presentError(error)
+            return
+        }
+        // Long enough to see the page before the note arrives.
+        Task {
+            try? await Task.sleep(for: .milliseconds(600))
+            do {
+                try Welcome.writeDemo(to: url)
+            } catch {
+                NSApp.presentError(error)
+            }
+        }
     }
 
     // AppKit asks at launch when nothing opens or restores, and when the Dock icon is clicked with no windows.
