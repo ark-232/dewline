@@ -141,8 +141,8 @@ pub enum Refused {
     /// The `tool_use_id` already has this half or both, or was spent or
     /// closed. A replay that differs from the first closes the id.
     Replayed,
-    /// The two halves of a `tool_use_id` name different sessions, tools or
-    /// files. The id is closed.
+    /// The two halves of a `tool_use_id` on one file name different sessions
+    /// or tools. The id is closed.
     Mismatched,
 }
 
@@ -201,6 +201,7 @@ impl Claim {
 pub struct Chain {
     pub vendor: Vendor,
     pub session: Id,
+    path: PathBuf,
     uses: Vec<Id>,
 }
 
@@ -248,7 +249,9 @@ struct Hold {
 /// The engine consults it; it changes no bytes.
 #[derive(Default)]
 pub struct Claims {
-    uses: HashMap<(Vendor, Id), Use>,
+    /// Keyed by file too: a Codex patch sends one pair per file it names,
+    /// all with the call's one `tool_use_id`.
+    uses: HashMap<(Vendor, Id, PathBuf), Use>,
     holds: Vec<Hold>,
     /// When each session that holds a file last sent a hook event.
     heard: HashMap<Writer, Instant>,
@@ -309,7 +312,7 @@ impl Claims {
         if half.tool == Tool::Read {
             return Ok(());
         }
-        let key = (vendor, id);
+        let key = (vendor, id, half.path.clone());
         let (entry, result) = match self.uses.remove(&key) {
             None => (Use::Half { pre, half, at: now }, Ok(())),
             Some(Use::Half {
@@ -338,9 +341,7 @@ impl Claims {
                 } else {
                     ((first, first_at), (half, now))
                 };
-                if (&before.session, before.tool, &before.path)
-                    == (&after.session, after.tool, &after.path)
-                {
+                if (&before.session, before.tool) == (&after.session, after.tool) {
                     let link = Link {
                         session: before.session,
                         path: before.path,
@@ -421,7 +422,7 @@ impl Claims {
             return None;
         }
         let mut writers: BTreeMap<(Vendor, &Id), Vec<(&Id, &Link)>> = BTreeMap::new();
-        for ((vendor, id), entry) in &self.uses {
+        for ((vendor, id, _), entry) in &self.uses {
             if let Use::Pair { link, .. } = entry
                 && link.declared.is_some()
                 && link.declared == link.to
@@ -444,6 +445,7 @@ impl Claims {
                 found = Some(Chain {
                     vendor,
                     session: session.clone(),
+                    path: path.to_path_buf(),
                     uses,
                 });
             }
@@ -455,7 +457,8 @@ impl Claims {
     /// explain, so no later change can use them.
     pub fn spend(&mut self, chain: &Chain, now: Instant) {
         for id in &chain.uses {
-            if let Some(entry) = self.uses.get_mut(&(chain.vendor, id.clone())) {
+            let key = (chain.vendor, id.clone(), chain.path.clone());
+            if let Some(entry) = self.uses.get_mut(&key) {
                 *entry = Use::Closed { at: now };
             }
         }
@@ -763,8 +766,8 @@ mod tests {
             ("a claim for another file is Unknown",
                 vec![(pre("s1", "t1", "Edit", Q, "A", "B"), Ok(())), (post("s1", "t1", "Edit", Q, "B"), Ok(()))],
                 (P, "A", "B"), None),
-            ("halves on two files link neither",
-                vec![(pre("s1", "t1", "Edit", P, "A", "B"), Ok(())), (post("s1", "t1", "Edit", Q, "B"), Err(Refused::Mismatched))],
+            ("halves on two files are two calls and link neither",
+                vec![(pre("s1", "t1", "Edit", P, "A", "B"), Ok(())), (post("s1", "t1", "Edit", Q, "B"), Ok(()))],
                 (P, "A", "B"), None),
             ("halves from two sessions link nothing",
                 vec![(pre("s1", "t1", "Edit", P, "A", "B"), Ok(())), (post("s2", "t1", "Edit", P, "B"), Err(Refused::Mismatched))],
@@ -803,6 +806,7 @@ mod tests {
             let expected = expected.map(|(vendor, session, uses)| Chain {
                 vendor,
                 session: Id::new(session).unwrap(),
+                path: PathBuf::from(path),
                 uses: ids(uses),
             });
             assert_eq!(chain, expected, "{name}");
@@ -910,6 +914,32 @@ mod tests {
     }
 
     #[test]
+    fn a_patch_naming_two_files_keeps_a_call_per_file() {
+        let t0 = Instant::now();
+        let mut ledger = Claims::default();
+        for (path, before, after) in [(P, "A0", "A1"), (Q, "B0", "B1")] {
+            let claim = pre_by("codex", "c1", "call_1", "apply_patch", path, before, after);
+            assert_eq!(ledger.record(claim, t0), Ok(()));
+        }
+        assert!(ledger.open_call(Path::new(P), t0) && ledger.open_call(Path::new(Q), t0));
+        let claim = post_by("codex", "c1", "call_1", "apply_patch", P, "A1");
+        assert_eq!(ledger.record(claim, t0), Ok(()));
+        assert!(!ledger.open_call(Path::new(P), t0) && ledger.open_call(Path::new(Q), t0));
+        let claim = post_by("codex", "c1", "call_1", "apply_patch", Q, "B1");
+        assert_eq!(ledger.record(claim, t0), Ok(()));
+        assert!(!ledger.open_call(Path::new(Q), t0));
+        let a = ledger.chain(Path::new(P), &h("A0"), &h("A1"), t0).unwrap();
+        assert_eq!(
+            (a.vendor, a.uses.clone()),
+            (Vendor::Codex, ids(&["call_1"]))
+        );
+        // Spending one file's pair leaves the other's.
+        ledger.spend(&a, t0);
+        assert!(ledger.chain(Path::new(P), &h("A0"), &h("A1"), t0).is_none());
+        assert!(ledger.chain(Path::new(Q), &h("B0"), &h("B1"), t0).is_some());
+    }
+
+    #[test]
     fn the_open_call_table() {
         let t0 = Instant::now();
         let secs = |n: u64| t0 + Duration::from_secs(n);
@@ -961,7 +991,7 @@ mod tests {
             ("a hold from each session needs each Stop",
                 vec![pre("s1", "t1", "Edit", P, "A", "B"), pre("s2", "t2", "Edit", P, "A", "B"), bare("Stop", "s1")],
                 P, true),
-            ("a refused Post doesn't release it",
+            ("a Post on another file doesn't release it",
                 vec![pre("s1", "t1", "Edit", P, "A", "B"), post("s1", "t1", "Edit", Q, "B")], P, true),
             ("InstructionsLoaded holds past Stop", vec![loaded("s1", P), bare("Stop", "s1")], P, true),
             ("until SessionEnd", vec![loaded("s1", P), bare("SessionEnd", "s1")], P, false),
@@ -1028,7 +1058,7 @@ mod tests {
         assert_eq!(ledger.uses.len(), CAPACITY);
         assert_eq!(ledger.holds.len(), CAPACITY);
         assert_eq!(ledger.heard.len(), CAPACITY);
-        let key = |id: &str| (Vendor::Claude, Id::new(id).unwrap());
+        let key = |id: &str| (Vendor::Claude, Id::new(id).unwrap(), PathBuf::from(P));
         assert!(!ledger.uses.contains_key(&key("t0")));
         assert!(
             ledger
@@ -1078,7 +1108,7 @@ mod tests {
                     let chain = ledger.chain(Path::new(P), &h(&state(i)), &h(&state(j)), seen);
                     let uses: Vec<String> = (i..j).map(|k| format!("toolu_{k}")).collect();
                     let uses: Vec<&str> = uses.iter().map(String::as_str).collect();
-                    let expected = Chain { vendor: Vendor::Claude, session: Id::new("s1").unwrap(), uses: ids(&uses) };
+                    let expected = Chain { vendor: Vendor::Claude, session: Id::new("s1").unwrap(), path: PathBuf::from(P), uses: ids(&uses) };
                     prop_assert_eq!(chain, Some(expected));
                     prop_assert_eq!(ledger.chain(Path::new(P), &h(&state(j)), &h(&state(i)), seen), None);
                 }

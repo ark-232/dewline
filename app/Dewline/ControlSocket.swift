@@ -6,6 +6,9 @@ import Synchronization
 /// "wait":true}`. The answers are JSON lines too: `{"reply":"opened","v":1}`, then `{"reply":"closed","v":1}` once
 /// the document closes or the app quits if the request waits, or `{"error":"not_a_file","reply":"error","v":1}`.
 /// Only absolute paths of existing regular files get through, and nothing that arrives here writes to a file.
+/// `dewline notify` sends a hook's claim, such as `{"v":1,"op":"notify","event":"PreToolUse","vendor":"claude",
+/// "session":"s1","tool_use_id":"toolu_1","tool":"Edit","path":"/Users/me/plan.md","hash":"…","declared":"…"}`;
+/// a valid one gets no answer, only the close.
 final class ControlSocket: @unchecked Sendable {
     struct Open: Sendable, Equatable {
         let path: String
@@ -24,6 +27,48 @@ final class ControlSocket: @unchecked Sendable {
         case notFound = "not_found"
         case notAFile = "not_a_file"
         case cannotOpen = "cannot_open"
+    }
+
+    enum Request: Sendable, Equatable {
+        case open(Open)
+        case notify(Claim)
+    }
+
+    /// A hook's report, checked as core/crates/core/src/claims.rs checks one. It carries ids, a path and hashes,
+    /// never content, and only labels.
+    struct Claim: Sendable, Equatable {
+        enum Vendor: String, Sendable {
+            case claude, codex
+        }
+
+        enum Tool: String, Sendable {
+            case read = "Read", edit = "Edit", multiEdit = "MultiEdit", write = "Write", applyPatch = "apply_patch"
+        }
+
+        /// A tool use's file as one hook saw it: before the tool at PreToolUse, after it at PostToolUse.
+        struct ToolUse: Sendable, Equatable {
+            let id: String
+            let tool: Tool
+            /// The file's realpath.
+            let path: String
+            /// BLAKE3 hex of the file's bytes; nil when there was no file.
+            let hash: String?
+            /// PreToolUse only: BLAKE3 hex of the bytes the tool's declared change makes of them.
+            let declared: String?
+        }
+
+        enum Event: Sendable, Equatable {
+            case preToolUse(ToolUse)
+            case postToolUse(ToolUse)
+            case instructionsLoaded(path: String)
+            /// Stop, StopFailure, or UserPromptSubmit, the first hook after an interrupt.
+            case turnEnd
+            case sessionEnd
+        }
+
+        let vendor: Vendor
+        let session: String
+        let event: Event
     }
 
     enum Reply: Sendable, Equatable {
@@ -57,16 +102,22 @@ final class ControlSocket: @unchecked Sendable {
     let path: String
     private let uid: uid_t
     private let handler: @MainActor @Sendable (Open, Connection) -> Void
+    private let notify: @MainActor @Sendable (Claim) -> Void
     private let queue = DispatchQueue(label: "dev.arkwerx.dewline.control")
     // Touched only on `queue`.
     private var listener: DispatchSourceRead?
     private var connections: [ObjectIdentifier: Connection] = [:]
     private var socketFile: (device: dev_t, inode: ino_t)?
 
-    /// Only `uid` may connect. The handler gets each valid request on the main actor and must reply to it.
-    init(path: String, uid: uid_t = geteuid(), handler: @escaping @MainActor @Sendable (Open, Connection) -> Void) {
+    /// Only `uid` may connect. The handler gets each valid open request on the main actor and must reply to it;
+    /// `notify` gets each valid claim on the main actor.
+    init(
+        path: String, uid: uid_t = geteuid(), notify: @escaping @MainActor @Sendable (Claim) -> Void = { _ in },
+        handler: @escaping @MainActor @Sendable (Open, Connection) -> Void
+    ) {
         self.path = path
         self.uid = uid
+        self.notify = notify
         self.handler = handler
     }
 
@@ -123,8 +174,9 @@ final class ControlSocket: @unchecked Sendable {
         }
     }
 
-    /// The request in `line`, without its newline, when it is well formed and names an absolute path.
-    static func parse(_ line: Data) -> Result<Open, Failure> {
+    /// The request in `line`, without its newline, when it is well formed: an open request naming an absolute path,
+    /// or a claim claims.rs would take.
+    static func parse(_ line: Data) -> Result<Request, Failure> {
         struct Wire: Decodable {
             let v: Int
             let op: String
@@ -132,15 +184,28 @@ final class ControlSocket: @unchecked Sendable {
             let line: Int?
             let col: Int?
             let wait: Bool?
+            let event: String?
+            let vendor: String?
+            let session: String?
+            let tool_use_id: String?
+            let tool: String?
+            let hash: String?
+            let declared: String?
         }
         guard let wire = try? JSONDecoder().decode(Wire.self, from: line) else { return .failure(.malformed) }
         guard wire.v == version else { return .failure(.version) }
+        if wire.op == "notify" {
+            let claim = Claim(
+                event: wire.event, vendor: wire.vendor, session: wire.session, toolUseId: wire.tool_use_id,
+                tool: wire.tool, path: wire.path, hash: wire.hash, declared: wire.declared)
+            return claim.map { .success(.notify($0)) } ?? .failure(.malformed)
+        }
         guard wire.op == "open" else { return .failure(.unknownOp) }
         guard let path = wire.path, !path.utf8.contains(0), path.utf8.count < PATH_MAX,
             wire.line ?? 1 >= 1, wire.col ?? 1 >= 1, wire.line != nil || wire.col == nil
         else { return .failure(.malformed) }
         guard path.hasPrefix("/") else { return .failure(.notAbsolute) }
-        return .success(Open(path: path, line: wire.line, column: wire.col, wait: wire.wait ?? false))
+        return .success(.open(Open(path: path, line: wire.line, column: wire.col, wait: wire.wait ?? false)))
     }
 
     /// Why `path` can't be opened, or nil when it names an existing regular file.
@@ -219,7 +284,11 @@ final class ControlSocket: @unchecked Sendable {
         switch Self.parse(Data(connection.buffer[..<end])) {
         case .failure(let failure):
             send(.refused(failure), to: connection)
-        case .success(let open):
+        case .success(.notify(let claim)):
+            drop(connection)
+            let notify = notify
+            Task { @MainActor in notify(claim) }
+        case .success(.open(let open)):
             connection.request = open
             connection.buffer = []
             let handler = handler
@@ -282,6 +351,50 @@ final class ControlSocket: @unchecked Sendable {
             guard let socket else { return }
             socket.queue.async { socket.send(reply, to: self) }
         }
+    }
+}
+
+extension ControlSocket.Claim {
+    /// Session and tool use ids are 1 to this many printable ASCII characters.
+    static let maxId = 128
+    /// PATH_MAX: no realpath is longer.
+    static let maxPath = 1024
+
+    /// The claim a notify line's fields make, or nil where claims.rs would refuse them. A path also may not hold a
+    /// NUL, which no file's path can.
+    init?(
+        event: String?, vendor: String?, session: String?, toolUseId: String?, tool: String?, path: String?,
+        hash: String?, declared: String?
+    ) {
+        guard let vendor = vendor.flatMap(Vendor.init(rawValue:)), let session, Self.isId(session) else { return nil }
+        let realpath = path.flatMap { $0.hasPrefix("/") && $0.utf8.count <= Self.maxPath && !$0.utf8.contains(0) ? $0 : nil }
+        func toolUse() -> ToolUse? {
+            guard let toolUseId, Self.isId(toolUseId), let tool = tool.flatMap(Tool.init(rawValue:)),
+                (tool == .applyPatch) == (vendor == .codex), let realpath, hash.map(Self.isHash) ?? true,
+                declared.map(Self.isHash) ?? true
+            else { return nil }
+            return ToolUse(id: toolUseId, tool: tool, path: realpath, hash: hash, declared: declared)
+        }
+        let parsed: Event? =
+            switch event ?? "" {
+            case "PreToolUse": toolUse().map(Event.preToolUse)
+            case "PostToolUse": toolUse().map(Event.postToolUse)
+            case "InstructionsLoaded": realpath.map { Event.instructionsLoaded(path: $0) }
+            case "Stop", "StopFailure", "UserPromptSubmit": .turnEnd
+            case "SessionEnd": .sessionEnd
+            default: nil
+            }
+        guard let parsed else { return nil }
+        self.init(vendor: vendor, session: session, event: parsed)
+    }
+
+    private static func isId(_ id: String) -> Bool {
+        (1...maxId).contains(id.utf8.count) && id.utf8.allSatisfy { (0x20...0x7E).contains($0) }
+    }
+
+    /// BLAKE3 hex: 64 hex digits of either case.
+    private static func isHash(_ hex: String) -> Bool {
+        hex.utf8.count == 64 && hex.utf8.allSatisfy { (0x30...0x39).contains($0) || (0x41...0x46).contains($0) || (0x61...0x66).contains($0) }
     }
 }
 
