@@ -52,6 +52,14 @@ struct OKLCH: Hashable, Sendable {
         return (max(a, b) + 0.05) / (min(a, b) + 0.05)
     }
 
+    /// The distance to `other` in OKLab, times 100, so 1 is about the smallest difference anyone sees.
+    func deltaE(_ other: OKLCH) -> Double {
+        let (a0, b0) = (c * cos(h * .pi / 180), c * sin(h * .pi / 180))
+        let (a1, b1) = (other.c * cos(other.h * .pi / 180), other.c * sin(other.h * .pi / 180))
+        let (dl, da, db) = (l - other.l, a0 - a1, b0 - b1)
+        return (dl * dl + da * da + db * db).squareRoot() * 100
+    }
+
     func lightened(by delta: Double) -> OKLCH {
         OKLCH(l: l + delta, c: c, h: h)
     }
@@ -70,13 +78,40 @@ struct OKLCH: Hashable, Sendable {
     }
 }
 
+extension OKLCH {
+    /// Reads an AppKit color through extended sRGB, so a Display P3 color keeps the part outside sRGB.
+    init?(_ color: NSColor) {
+        guard let rgb = color.usingColorSpace(.extendedSRGB) else { return nil }
+        let linear = [rgb.redComponent, rgb.greenComponent, rgb.blueComponent].map { (v: CGFloat) -> Double in
+            let x = abs(Double(v))
+            let y = x <= 0.04045 ? x / 12.92 : pow((x + 0.055) / 1.055, 2.4)
+            return v < 0 ? -y : y
+        }
+        let l = cbrt(0.4122214708 * linear[0] + 0.5363325363 * linear[1] + 0.0514459929 * linear[2])
+        let m = cbrt(0.2119034982 * linear[0] + 0.6806995451 * linear[1] + 0.1073969566 * linear[2])
+        let s = cbrt(0.0883024619 * linear[0] + 0.2817188376 * linear[1] + 0.6299787005 * linear[2])
+        let a = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s
+        let b = 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s
+        let hue = atan2(b, a) * 180 / .pi
+        self.init(l: 0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s, c: (a * a + b * b).squareRoot(), h: hue < 0 ? hue + 360 : hue)
+    }
+}
+
 /// A theme's named colors (synthesis 2.1).
 enum Token: String, CaseIterable, Sendable {
     case paper, ink, ink2, syntax, heading, accent, link, selection, sidebarTint, codeBackground, quoteRule
     /// The sky behind the glass, zenith and horizon; only Dusk and Nightwatch have one.
     case sky1, sky2
+    /// Code colors. A dev theme authors them from its editor's palette; Dewline's themes derive them (synthesis 2.1).
+    case codeKeyword, codeString, codeType, codeComment
 
-    static let required = allCases.filter { $0 != .sky1 && $0 != .sky2 }
+    static let code: [Token] = [.codeKeyword, .codeString, .codeType, .codeComment]
+    static let required = allCases.filter { $0 != .sky1 && $0 != .sky2 && !code.contains($0) }
+
+    /// The name in words: "code keyword", "ink 2".
+    var label: String {
+        rawValue.replacing(/[A-Z0-9]/) { " " + $0.output.lowercased() }
+    }
 }
 
 /// One of Dewline's named themes: its tokens for a light and a dark appearance, authored in OKLCH and converted to
@@ -106,14 +141,31 @@ struct Theme: Identifiable, Hashable, Sendable {
             light[token] = OKLCH(l: values[0], c: values[1], h: values[2])
             dark[token] = OKLCH(l: values[3], c: values[4], h: values[5])
         }
+        light = Self.derivingCode(light)
+        dark = Self.derivingCode(dark)
         self.name = name
         self.summary = summary
         self.light = light
         self.dark = dark
         lightColors = light.mapValues(\.color)
         darkColors = dark.mapValues(\.color)
-        increasedLightColors = Self.increased(light, dark: false).mapValues(\.color)
-        increasedDarkColors = Self.increased(dark, dark: true).mapValues(\.color)
+        // A dark-only port carries its dark block in the light slot too, so contrast rises away from the paper.
+        increasedLightColors = Self.increased(light, dark: light[.paper]!.l < 0.5).mapValues(\.color)
+        increasedDarkColors = Self.increased(dark, dark: dark[.paper]!.l < 0.5).mapValues(\.color)
+    }
+
+    /// `tokens` with code colors derived where the theme authors none: keywords in the heading color, strings and
+    /// types at the link's lightness in green and azure (swapped when the accent is green), comments in syntax.
+    static func derivingCode(_ tokens: [Token: OKLCH]) -> [Token: OKLCH] {
+        guard tokens[.codeKeyword] == nil else { return tokens }
+        var tokens = tokens
+        let link = tokens[.link]!
+        let green = (130...170).contains(tokens[.accent]!.h)
+        tokens[.codeKeyword] = tokens[.heading]
+        tokens[.codeString] = OKLCH(l: link.l, c: 0.11, h: green ? 232 : 150)
+        tokens[.codeType] = OKLCH(l: link.l, c: 0.10, h: green ? 150 : 232)
+        tokens[.codeComment] = tokens[.syntax]
+        return tokens
     }
 
     /// `tokens` under Increase Contrast (synthesis 2.1): ink at L 0.15 or 0.97, ink2 at 7:1 on paper and syntax with it,
@@ -157,10 +209,16 @@ struct Theme: Identifiable, Hashable, Sendable {
     }
 
     static func named(_ name: String) -> Theme? {
-        all.first { $0.name == name }
+        (all + devPack).first { $0.name == name }
     }
 
     static let all = [tidewater, aurora, dawnline, dusk, nightwatch, carbon]
+
+    /// Ports of editor themes, code colors included, from each original palette. Nord has no light version, so its
+    /// dark one fills both slots.
+    static let devPack = [solarized, gruvbox, nord, tokyoNight]
+
+    var isDarkOnly: Bool { light[.paper]!.l < 0.5 }
 
     static let tidewater = Theme("Tidewater", "Cool white paper, cobalt for what you can act on, deep-cobalt headings.", """
         paper           0.99  0.006 250   0.20  0.02  262
@@ -248,5 +306,77 @@ struct Theme: Identifiable, Hashable, Sendable {
         sidebarTint     0.94  0.004 250   0.215 0.003 260
         codeBackground  0.94  0.004 250   0.225 0.003 260
         quoteRule       0.62  0.10  258   0.60  0.09  258
+        """)
+
+    static let solarized = Theme("Solarized", "Ethan Schoonover's sixteen colors: base3 paper by day, base03 at night.", """
+        paper           0.974 0.026 90    0.267 0.049 220
+        ink             0.523 0.028 219   0.654 0.02  205
+        ink2            0.568 0.029 222   0.568 0.029 222
+        syntax          0.698 0.016 197   0.523 0.028 219
+        heading         0.309 0.052 220   0.698 0.016 197
+        accent          0.615 0.139 245   0.615 0.139 245
+        link            0.615 0.139 245   0.615 0.139 245
+        selection       0.931 0.026 92    0.309 0.052 220
+        sidebarTint     0.931 0.026 92    0.309 0.052 220
+        codeBackground  0.931 0.026 92    0.309 0.052 220
+        quoteRule       0.698 0.016 197   0.523 0.028 219
+        codeKeyword     0.644 0.151 119   0.644 0.151 119
+        codeString      0.644 0.102 187   0.644 0.102 187
+        codeType        0.654 0.134 86    0.654 0.134 86
+        codeComment     0.698 0.016 197   0.523 0.028 219
+        """)
+
+    static let gruvbox = Theme("Gruvbox", "Retro groove: warm parchment by day, charcoal and cream at night.", """
+        paper           0.956 0.055 96    0.277 0     0
+        ink             0.344 0.007 49    0.894 0.057 89
+        ink2            0.55  0.023 63    0.69  0.035 76
+        syntax          0.619 0.029 67    0.619 0.029 67
+        heading         0.513 0.162 39    0.731 0.182 52
+        accent          0.471 0.082 216   0.693 0.042 170
+        link            0.471 0.082 216   0.693 0.042 170
+        selection       0.825 0.051 85    0.411 0.012 52
+        sidebarTint     0.894 0.057 89    0.344 0.007 49
+        codeBackground  0.922 0.055 93    0.311 0.003 49
+        quoteRule       0.534 0.082 155   0.756 0.108 138
+        codeKeyword     0.437 0.179 28    0.66  0.218 30
+        codeString      0.546 0.112 106   0.765 0.158 111
+        codeType        0.618 0.128 71    0.832 0.159 83
+        codeComment     0.619 0.029 67    0.619 0.029 67
+        """)
+
+    static let nord = Theme("Nord", "Arctic: Polar Night paper, Snow Storm ink, Frost accents. Dark only.", """
+        paper           0.324 0.023 264   0.324 0.023 264
+        ink             0.899 0.016 263   0.899 0.016 263
+        ink2            0.739 0.022 262   0.739 0.022 262
+        syntax          0.537 0.044 264   0.537 0.044 264
+        heading         0.775 0.062 217   0.775 0.062 217
+        accent          0.775 0.062 217   0.775 0.062 217
+        link            0.697 0.059 249   0.697 0.059 249
+        selection       0.416 0.032 264   0.416 0.032 264
+        sidebarTint     0.379 0.029 266   0.379 0.029 266
+        codeBackground  0.379 0.029 266   0.379 0.029 266
+        quoteRule       0.594 0.077 254   0.594 0.077 254
+        codeKeyword     0.697 0.059 249   0.697 0.059 249
+        codeString      0.768 0.075 131   0.768 0.075 131
+        codeType        0.763 0.048 194   0.763 0.048 194
+        codeComment     0.537 0.044 264   0.537 0.044 264
+        """)
+
+    static let tokyoNight = Theme("Tokyo Night", "Downtown Tokyo after dark; Tokyo Night Day for the light slot.", """
+        paper           0.913 0.007 277   0.226 0.021 280
+        ink             0.512 0.156 264   0.846 0.061 275
+        ink2            0.565 0.098 271   0.767 0.054 275
+        syntax          0.649 0.062 276   0.496 0.068 274
+        heading         0.6   0.18  258   0.719 0.132 264
+        accent          0.514 0.103 231   0.82  0.105 236
+        link            0.573 0.105 174   0.822 0.1   182
+        selection       0.809 0.05  274   0.332 0.064 268
+        sidebarTint     0.873 0.02  270   0.204 0.016 285
+        codeBackground  0.873 0.02  270   0.204 0.016 285
+        quoteRule       0.732 0.045 278   0.409 0.055 274
+        codeKeyword     0.604 0.225 299   0.751 0.134 299
+        codeString      0.525 0.093 130   0.795 0.139 130
+        codeType        0.553 0.091 213   0.754 0.124 213
+        codeComment     0.649 0.062 276   0.496 0.068 274
         """)
 }
