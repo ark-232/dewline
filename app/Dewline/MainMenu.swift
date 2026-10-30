@@ -66,6 +66,10 @@ enum MainMenu {
         let previous = menu.addItem(withTitle: "Find Previous", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "G")
         previous.tag = NSTextFinder.Action.previousMatch.rawValue
         menu.addItem(withTitle: "Go to Line…", action: #selector(CaretTextView.goToLine(_:)), keyEquivalent: "l")
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Keep Change", action: #selector(EditorTextView.keepChange(_:)), keyEquivalent: "\r")
+        let revert = menu.addItem(withTitle: "Revert Change", action: #selector(EditorTextView.revertChange(_:)), keyEquivalent: "\u{8}")
+        revert.keyEquivalentModifierMask = [.command, .option]
         return menu
     }
 

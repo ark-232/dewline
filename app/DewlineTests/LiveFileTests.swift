@@ -65,9 +65,120 @@ struct LiveFileTests {
         let use = { (hash: String, declared: String?) in
             ControlSocket.Claim.ToolUse(id: "toolu_1", tool: .write, path: file.realpath, hash: hash, declared: declared)
         }
+        file.textView.marks.relayout()
+        #expect(file.textView.marks.painted.isEmpty)
         file.claim(.preToolUse(use(Self.hex("# Plan\n"), Self.hex(after))))
         file.claim(.postToolUse(use(Self.hex(after), nil)))
         try await until { file.live.changes.values.contains { $0.marked && $0.origin == .agent(.claude, session: "s1") } }
+        file.textView.marks.relayout()
+        let id = try #require(file.live.changes.first { $0.value.marked }?.key)
+        #expect(file.textView.marks.painted[id] == file.live.changes[id]?.range)
+    }
+
+    @Test func aMarkedLandingPaintsWithoutEditingTheText() async throws {
+        let file = try OpenFile("# Plan\n\nShip on Friday.\n")
+        defer { file.close() }
+        // A landing into unsaved text is marked.
+        file.textView.insertText("!", replacementRange: NSRange(location: 6, length: 0))
+        let version = file.textView.version
+        try Data("# Plan\n\nShip on Friday.\n\nAgent note.\n".utf8).write(to: file.url, options: .atomic)
+        await file.live.refresh()
+        #expect(file.textView.string == "# Plan!\n\nShip on Friday.\n\nAgent note.\n")
+        let (id, change) = try #require(file.live.changes.first { $0.value.marked })
+        let marks = file.textView.marks
+        marks.relayout()
+        #expect(marks.painted[id] == change.range)
+        #expect((file.textView.string as NSString).substring(with: change.range).contains("Agent note"))
+        // The landing is the one storage edit: the marks are paint, not attributes.
+        #expect(file.textView.version == version + 1)
+        let storage = try #require(file.textView.textStorage)
+        storage.enumerateAttributes(in: change.range) { attributes, _, _ in
+            #expect(attributes[.backgroundColor] == nil)
+            #expect((attributes[.underlineStyle] as? Int ?? 0) == 0)
+        }
+        // Keep clears the mark and leaves the text.
+        file.textView.setSelectedRange(NSRange(location: change.range.location + 1, length: 0))
+        #expect(marks.changeAtCaret == id)
+        file.textView.keepChange(nil)
+        marks.relayout()
+        #expect(file.live.changes[id] == nil)
+        #expect(marks.painted.isEmpty)
+        #expect(file.textView.string == "# Plan!\n\nShip on Friday.\n\nAgent note.\n")
+    }
+
+    @Test func removedTextHangsStruckUnderItsLine() async throws {
+        let file = try OpenFile("# Plan\n\nShip on Friday.\n\nOld note.\n")
+        defer { file.close() }
+        file.textView.insertText("!", replacementRange: NSRange(location: 6, length: 0))
+        try Data("# Plan\n\nShip on Friday.\n".utf8).write(to: file.url, options: .atomic)
+        await file.live.refresh()
+        #expect(file.textView.string == "# Plan!\n\nShip on Friday.\n")
+        let (id, change) = try #require(file.live.changes.first { $0.value.marked })
+        #expect(change.removed.contains("Old note."))
+        #expect(file.textView.marks.hangers[id]?.view is Ghost)
+    }
+
+    @Test func revertTakesTheChangeOutAsOneUndo() async throws {
+        let file = try OpenFile("# Plan\n\nShip on Friday.\n")
+        defer { file.close() }
+        file.textView.insertText("!", replacementRange: NSRange(location: 6, length: 0))
+        try Data("# Plan\n\nShip on Friday.\n\nAgent note.\n".utf8).write(to: file.url, options: .atomic)
+        await file.live.refresh()
+        let (id, change) = try #require(file.live.changes.first { $0.value.marked })
+        file.textView.setSelectedRange(NSRange(location: change.range.location + 1, length: 0))
+        file.textView.revertChange(nil)
+        #expect(file.textView.string == "# Plan!\n\nShip on Friday.\n")
+        #expect(file.live.changes[id] == nil)
+        try await Task.sleep(for: .milliseconds(50))
+        file.textView.undoManager?.undo()
+        #expect(file.textView.string == "# Plan!\n\nShip on Friday.\n\nAgent note.\n")
+    }
+
+    @Test(arguments: [ChangeEngine.Decision.keep, .other, .both])
+    func theConflictCardDecides(_ decision: ChangeEngine.Decision) async throws {
+        let file = try OpenFile("# Plan\n\nShip on Friday.\n")
+        defer { file.close() }
+        file.textView.insertText("Monday", replacementRange: NSRange(location: file.location(of: "Friday"), length: 6))
+        try Data("# Plan\n\nShip on Sunday.\n".utf8).write(to: file.url)
+        await file.live.refresh()
+        let (id, conflict) = try #require(file.live.changes.first { $0.value.conflict })
+        let card = try #require(file.textView.marks.hangers[id]?.view as? ConflictCard)
+        #expect(conflict.theirs.contains("Sunday"))
+        #expect(card.otherVersion == conflict.theirs.trimmingCharacters(in: .newlines))
+        for button in [card.keepYours, card.useTheirs, card.keepBoth] {
+            #expect(!(button.accessibilityLabel() ?? "").isEmpty)
+        }
+        #expect(card.frame.height > 0)
+        // The styler reserves the card's height under your paragraph.
+        try await until {
+            let style = file.textView.textStorage!.attribute(.paragraphStyle, at: conflict.range.location, effectiveRange: nil) as? NSParagraphStyle
+            return (style?.paragraphSpacing ?? 0) >= card.frame.height
+        }
+        let yours = (file.textView.string as NSString).substring(with: conflict.range)
+        let expected = switch decision {
+        case .keep: "# Plan\n\nShip on Monday.\n"
+        case .other: "# Plan\n\nShip on Sunday.\n"
+        case .both:
+            (file.textView.string as NSString).replacingCharacters(
+                in: NSRange(location: conflict.range.location, length: (yours as NSString).length),
+                with: yours + (yours.hasSuffix("\n") ? "" : "\n") + conflict.theirs)
+        }
+        switch decision {
+        case .keep: card.keepYours.performClick(nil)
+        case .other: card.useTheirs.performClick(nil)
+        case .both: card.keepBoth.performClick(nil)
+        }
+        #expect(file.textView.string == expected)
+        #expect(file.live.changes[id] == nil)
+        #expect(file.textView.marks.hangers[id] == nil)
+        #expect(card.superview == nil)
+        // The marks sit under the text and its selection.
+        #expect(file.textView.subviews.first === file.textView.marks)
+        // The space under the paragraph goes with the card.
+        try await until {
+            let style = file.textView.textStorage!.attribute(.paragraphStyle, at: conflict.range.location, effectiveRange: nil) as? NSParagraphStyle
+            return (style?.paragraphSpacing ?? 0) < card.frame.height
+        }
     }
 
     @Test func aReleasedHoldSaves() async throws {

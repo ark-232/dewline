@@ -3,6 +3,8 @@ import AppKit
 /// The markdown editor: hides syntax through `MarkdownStyler` and defers styling while an input method composes.
 final class EditorTextView: CaretTextView {
     let styler = MarkdownStyler()
+    /// The change engine's marks, painted under the text.
+    let marks = ChangeMarks()
     private let blockFragments = BlockFragments()
     private var composing = false
     private var toggleWaits = false
@@ -46,6 +48,10 @@ final class EditorTextView: CaretTextView {
         isAutomaticTextReplacementEnabled = false
         isContinuousSpellCheckingEnabled = true
         usesFindBar = true
+        marks.textView = self
+        marks.autoresizingMask = [.width, .height]
+        marks.wantsLayer = true
+        addSubview(marks, positioned: .below, relativeTo: nil)
         applyTheme()
         NotificationCenter.default.addObserver(self, selector: #selector(themeDidChange(_:)), name: ThemeStore.didChange, object: nil)
     }
@@ -156,6 +162,26 @@ final class EditorTextView: CaretTextView {
         super.unmarkText()
         composing = false
         compositionEnded()
+    }
+
+    override func layout() {
+        super.layout()
+        marks.layoutIfDirty()
+    }
+
+    override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
+        super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
+        marks.caretMoved()
+    }
+
+    /// Cmd-Return.
+    @objc func keepChange(_ sender: Any?) {
+        marks.keepAtCaret()
+    }
+
+    /// Option-Cmd-Delete.
+    @objc func revertChange(_ sender: Any?) {
+        marks.revertAtCaret()
     }
 
     func storageDidEdit(_ range: NSRange, delta: Int) {
@@ -298,6 +324,9 @@ final class EditorTextView: CaretTextView {
     }
 
     override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(keepChange(_:)) || menuItem.action == #selector(revertChange(_:)) {
+            return marks.changeAtCaret != nil
+        }
         guard menuItem.action == #selector(toggleSource(_:)) else { return super.validateMenuItem(menuItem) }
         menuItem.state = styler.showsSource ? .on : .off
         return true

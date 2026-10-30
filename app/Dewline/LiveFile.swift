@@ -12,6 +12,10 @@ final class LiveFile {
         var origin: ChangeEngine.Origin
         var marked: Bool
         let conflict: Bool
+        /// The text the change took out, which shows struck under its line.
+        var removed = ""
+        /// A conflict's other version.
+        var theirs = ""
     }
 
     let engine: ChangeEngine
@@ -19,7 +23,9 @@ final class LiveFile {
     private(set) var url: URL
     /// Quiet changes until the next commit, since a late claim can relabel them; marked changes and conflicts until
     /// they are decided.
-    private(set) var changes: [UInt64: Change] = [:]
+    private(set) var changes: [UInt64: Change] = [:] {
+        didSet { document?.textView?.marks.update(changes) }
+    }
     /// The file's snapshots, newest first, as last read off the main thread for the Snapshots menu.
     private(set) var snapshots: [ChangeEngine.Snapshot] = []
     private var gitdir: URL?
@@ -52,6 +58,7 @@ final class LiveFile {
 
     /// Follows the editor's edits and input sessions.
     func attach(_ textView: EditorTextView) {
+        textView.marks.live = self
         textView.edited = { [weak self] range, delta in self?.edited(range, delta: delta) }
         textView.inputEnded = { [weak self] in self?.inputEnded() }
     }
@@ -329,6 +336,8 @@ final class LiveFile {
         let anchor = first <= caret && caret <= index(visible.maxX, visible.maxY) ? caret : first
         let offset = textView.baseline(at: min(anchor, storage.length - 1)).map { $0 - visible.minY }
 
+        // Removed text shows struck under its line once the change is marked, so it is read before the edit.
+        let removed = edits.map { storage.mutableString.substring(with: $0.range) }
         applying = true
         storage.beginEditing()
         for edit in (landing.covering.map { [$0] } ?? edits).reversed() {
@@ -355,18 +364,20 @@ final class LiveFile {
             return change
         }
         var shift = 0
-        for edit in edits {
+        for (index, edit) in edits.enumerated() {
             let length = edit.text.utf16.count
             changes[edit.change] = Change(
                 range: NSRange(location: edit.range.location + shift, length: length), origin: landing.origin,
-                marked: landing.marked, conflict: false)
+                marked: landing.marked, conflict: false, removed: removed[index])
             shift += length - edit.range.length
         }
         for conflict in landing.conflicts {
             let start = map(conflict.range.location, .after)
             let range = NSRange(location: start, length: max(map(NSMaxRange(conflict.range), .before) - start, 0))
-            changes[conflict.change] = Change(range: range, origin: landing.origin, marked: true, conflict: true)
+            changes[conflict.change] = Change(
+                range: range, origin: landing.origin, marked: true, conflict: true, theirs: conflict.theirs)
         }
+        if landing.marked { textView.marks.announce(landing.origin, places: edits.count + landing.conflicts.count) }
         reloadSnapshots()
 
         if clean {
@@ -399,6 +410,11 @@ final class LiveFile {
         guard let textView = document?.textView, let pending = changes[change] else { return }
         let current = (textView.string as NSString).substring(with: pending.range)
         let replacement = engine.decide(doc, change: change, decision: decision, current: current)
+        // A revert that would drop text typed inside the change leaves it pending.
+        if replacement == nil, decision == .other, !pending.conflict {
+            NSSound.beep()
+            return
+        }
         changes[change] = nil
         if let replacement { textView.replaceAsOneEdit(pending.range, with: replacement) }
         if pending.conflict, !changes.values.contains(where: \.conflict), autosaveRefused {
