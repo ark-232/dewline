@@ -358,7 +358,7 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
         var bottom = last.maxY
         if let hanger = hangers[id]?.view { bottom = max(bottom, hanger.frame.maxY) }
         bar.show(Writer(change.origin)) { [weak self] keep in
-            if keep { self?.keep(id) } else { self?.revert(id) }
+            if keep { self?.live?.keep(id) } else { self?.live?.revert(id) }
         }
         let left = textView.textContainerOrigin.x + (textView.textContainer?.lineFragmentPadding ?? 0)
         bar.frame = NSRect(origin: NSPoint(x: left, y: bottom + 8), size: bar.fittingSize)
@@ -368,21 +368,13 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
     /// Cmd-Return: keeps the change under the caret, or both versions of a conflict.
     func keepAtCaret() {
         guard let id = changeAtCaret else { return }
-        changes[id]?.conflict == true ? live?.decide(id, .both) : keep(id)
+        live?.keep(id)
     }
 
     /// Option-Cmd-Delete: reverts the change under the caret, or keeps your version of a conflict.
     func revertAtCaret() {
         guard let id = changeAtCaret else { return }
-        changes[id]?.conflict == true ? live?.decide(id, .keep) : revert(id)
-    }
-
-    private func keep(_ id: UInt64) {
-        live?.decide(id, .keep)
-    }
-
-    private func revert(_ id: UInt64) {
-        live?.decide(id, .other)
+        live?.revert(id)
     }
 
     /// One announcement per marked landing.

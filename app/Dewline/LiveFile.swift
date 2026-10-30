@@ -24,8 +24,15 @@ final class LiveFile {
     /// Quiet changes until the next commit, since a late claim can relabel them; marked changes and conflicts until
     /// they are decided.
     private(set) var changes: [UInt64: Change] = [:] {
-        didSet { document?.textView?.marks.update(changes) }
+        didSet {
+            guard oldValue != changes else { return }
+            document?.textView?.marks.update(changes)
+            NotificationCenter.default.post(name: Self.changesDidChange, object: self)
+        }
     }
+    static let changesDidChange = Notification.Name("LiveFileChangesDidChange")
+    /// When you last typed in any file, for Follow Changes.
+    private(set) static var lastEdit = ContinuousClock.now
     /// The file's snapshots, newest first, as last read off the main thread for the Snapshots menu.
     private(set) var snapshots: [ChangeEngine.Snapshot] = []
     private var gitdir: URL?
@@ -125,7 +132,8 @@ final class LiveFile {
             let updates = engine.claim(
                 event: event, vendor: claim.vendor.rawValue, session: claim.session, toolUseId: use?.id,
                 tool: use?.tool.rawValue, path: path, hash: use?.hash, declared: use?.declared)
-            guard !updates.isEmpty else { return }
+            let finished = claim.event == .turnEnd
+            guard !updates.isEmpty || finished else { return }
             Task { @MainActor in
                 for update in updates {
                     switch update {
@@ -137,13 +145,16 @@ final class LiveFile {
                         if let live = open[Key(engine, doc)] { Task { await live.refresh() } }
                     }
                 }
+                if finished { Review.finished(vendor: claim.vendor, session: claim.session) }
             }
         }
     }
 
     private func relabel(_ change: UInt64, origin: ChangeEngine.Origin) {
+        guard changes[change] != nil else { return }
         changes[change]?.origin = origin
         changes[change]?.marked = true
+        Review.landed(self, change)
     }
 
     /// A hold on the file ended.
@@ -377,7 +388,12 @@ final class LiveFile {
             changes[conflict.change] = Change(
                 range: range, origin: landing.origin, marked: true, conflict: true, theirs: conflict.theirs)
         }
-        if landing.marked { textView.marks.announce(landing.origin, places: edits.count + landing.conflicts.count) }
+        if landing.marked {
+            textView.marks.announce(landing.origin, places: edits.count + landing.conflicts.count)
+            if let first = (edits.map(\.change) + landing.conflicts.map(\.change)).min(by: { changes[$0]!.range.location < changes[$1]!.range.location }) {
+                Review.landed(self, first)
+            }
+        }
         reloadSnapshots()
 
         if clean {
@@ -391,6 +407,7 @@ final class LiveFile {
 
     private func edited(_ range: NSRange, delta: Int) {
         guard !applying else { return }
+        Self.lastEdit = .now
         let oldEnd = NSMaxRange(range) - delta
         func moved(_ offset: Int) -> Int {
             offset < range.location ? offset : offset >= oldEnd ? offset + delta : NSMaxRange(range)
@@ -420,6 +437,48 @@ final class LiveFile {
         if pending.conflict, !changes.values.contains(where: \.conflict), autosaveRefused {
             Task { await autosave() }
         }
+    }
+
+    /// Keeps a change, or both versions of a conflict.
+    func keep(_ change: UInt64) {
+        decide(change, changes[change]?.conflict == true ? .both : .keep)
+    }
+
+    /// Reverts a change, or keeps your version of a conflict.
+    func revert(_ change: UInt64) {
+        decide(change, changes[change]?.conflict == true ? .keep : .other)
+    }
+
+    /// The change's first line of text, for a list: what it put there, else what it took out.
+    func excerpt(_ change: UInt64) -> String {
+        guard let pending = changes[change], let text = document?.textView?.string as NSString? else { return "" }
+        let range = NSIntersectionRange(pending.range, NSRange(location: 0, length: text.length))
+        let landed = text.substring(with: range)
+        let shown = landed.contains(where: { !$0.isWhitespace }) ? landed : pending.conflict ? pending.theirs : pending.removed
+        return shown.split(whereSeparator: \.isNewline).first { $0.contains(where: { !$0.isWhitespace }) }
+            .map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+    }
+
+    /// The change's line, counting from 1.
+    func line(_ change: UInt64) -> Int {
+        guard let pending = changes[change], let text = document?.textView?.string as NSString? else { return 1 }
+        return text.substring(to: min(pending.range.location, text.length)).utf16.reduce(1) { $1 == 10 ? $0 + 1 : $0 }
+    }
+
+    /// Brings the change's tab forward and scrolls its line a third of the way down the page; `caret` puts the caret
+    /// in it, which shows its change bar.
+    func reveal(_ change: UInt64, caret: Bool) {
+        guard let pending = changes[change], let textView = document?.textView, let window = textView.window,
+            let scrollView = textView.enclosingScrollView
+        else { return }
+        if let group = window.tabGroup, group.selectedWindow !== window { group.selectedWindow = window }
+        if caret {
+            window.makeKeyAndOrderFront(nil)
+            textView.setSelectedRange(NSRange(location: pending.range.location, length: 0))
+            window.makeFirstResponder(textView)
+        }
+        let anchor = min(pending.range.location, max(textView.string.utf16.count - 1, 0))
+        textView.hold(anchor, at: scrollView.contentInsets.top + scrollView.contentView.bounds.height / 3)
     }
 
     /// The Edit menu's name for a decision: "Undo Revert Claude's Change".

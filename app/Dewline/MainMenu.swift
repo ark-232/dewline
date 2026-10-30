@@ -77,6 +77,9 @@ enum MainMenu {
         let menu = NSMenu(title: "View")
         menu.addItem(withTitle: "Command Palette…", action: #selector(AppDelegate.showCommandPalette(_:)), keyEquivalent: "P")
         menu.addItem(.separator())
+        menu.addItem(withTitle: "Review Changes", action: #selector(ReviewPanel.toggleReview(_:)), keyEquivalent: "R").target = ReviewPanel.shared
+        menu.addItem(withTitle: "Follow Changes", action: #selector(ReviewPanel.toggleFollow(_:)), keyEquivalent: "").target = ReviewPanel.shared
+        menu.addItem(.separator())
         let sidebar = menu.addItem(withTitle: "Show Sidebar", action: #selector(NSSplitViewController.toggleSidebar(_:)), keyEquivalent: "s")
         sidebar.keyEquivalentModifierMask = [.command, .control]
         menu.addItem(withTitle: "Show Tab Bar", action: #selector(NSWindow.toggleTabBar(_:)), keyEquivalent: "")

@@ -10,6 +10,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     let index: FolderIndex?
     private let sidebar: SidebarViewController
     private let page = BackdropView()
+    /// "Claude finished · 3 places in 2 files · Review", under the tab bar.
+    let finished = FinishedLine()
     private(set) var textView: EditorTextView?
     private var outlineUpdate: Task<Void, Never>?
     private var sectionUpdate: Task<Void, Never>?
@@ -127,6 +129,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
             content.trailingAnchor.constraint(equalTo: page.trailingAnchor),
             content.topAnchor.constraint(equalTo: page.safeAreaLayoutGuide.topAnchor),
             content.bottomAnchor.constraint(equalTo: page.bottomAnchor),
+        ])
+        // Over the page's top inset, so the text never moves for it.
+        finished.removeFromSuperview()
+        finished.translatesAutoresizingMaskIntoConstraints = false
+        page.addSubview(finished)
+        NSLayoutConstraint.activate([
+            finished.topAnchor.constraint(equalTo: page.safeAreaLayoutGuide.topAnchor),
+            finished.leadingAnchor.constraint(equalTo: page.safeAreaLayoutGuide.leadingAnchor),
+            finished.trailingAnchor.constraint(equalTo: page.trailingAnchor),
+            finished.heightAnchor.constraint(equalToConstant: FinishedLine.height),
         ])
     }
 
