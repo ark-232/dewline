@@ -1,4 +1,5 @@
 import AppKit
+import MdCore
 
 /// One tab: the sidebar beside the open file, or beside an empty page in a folder window until a file opens.
 final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolbarDelegate {
@@ -90,7 +91,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
             document.addWindowController(self)
         }
         let scrollView = EditorTextView.scrollView()
-        setPage(scrollView)
+        let header = document.fileURL.flatMap { isAgentFile($0) ? frontMatterLine(of: document.text) : nil }
+        setPage(header.map { frontMatterPage($0, above: scrollView) } ?? scrollView)
         // Rendered blocks fit the column, so the text arrives once the view has its width.
         window?.layoutIfNeeded()
         let textView = scrollView.documentView as! EditorTextView
@@ -138,7 +140,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         }
         let document: MarkdownDocument
         do {
-            document = try MarkdownDocument(contentsOf: url, ofType: controller.typeForContents(of: url))
+            // Agent files such as .mdc rules and .cursorrules open as Markdown too.
+            document = try MarkdownDocument(contentsOf: url, ofType: "net.daringfireball.markdown")
         } catch {
             presentError(error)
             return

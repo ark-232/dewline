@@ -1,4 +1,5 @@
 import AppKit
+import MdCore
 import UniformTypeIdentifiers
 
 /// A row in the sidebar.
@@ -11,6 +12,8 @@ final class SidebarNode {
         case entry(FolderEntry)
         /// A Pinned or Recents row, with the time it was opened.
         case shortcut(FolderEntry, Date?)
+        /// A file an agent loads, with its load gauge.
+        case agentFile(AgentFile)
         case heading(Heading)
         /// The last row of a folder: what its .gitignore hides.
         case ignored([String])
@@ -28,8 +31,8 @@ final class SidebarNode {
     }
 }
 
-/// Pinned, Recents, and the folder tree with the open file's outline under its row; a window with
-/// no folder shows the outline as its own section.
+/// Pinned, Recents, a folder's Agent Files, and the folder tree with the open file's outline under its row; a window
+/// with no folder shows the outline as its own section.
 final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NSOutlineViewDelegate, NSMenuDelegate {
     var open: (URL, _ newTab: Bool) -> Void = { _, _ in }
     var jump: (Heading) -> Void = { _ in }
@@ -39,6 +42,8 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     private let pinned = SidebarNode(.section("Pinned"))
     private let recents = SidebarNode(.section("Recents"))
     private let outlineSection = SidebarNode(.section("Outline"), children: [])
+    private let agentSection = SidebarNode(.section("Agent Files"), children: [])
+    private var agentScan: Task<Void, Never>?
     private let tree: SidebarNode?
     private var expandedOnce: Set<ObjectIdentifier> = []
     /// The open file's row in the tree.
@@ -48,12 +53,14 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     /// The location of the heading whose section is at the top of the page.
     private var section: Int?
     private var watch: FolderWatch?
-    private var showsIgnored = false
+    private var showsIgnored: Bool
 
     init(folder: Folder?) {
         self.folder = folder
+        let showsIgnored = Preferences.shared.showsIgnored
+        self.showsIgnored = showsIgnored
         tree = folder.map { folder in
-            let listing = folder.children(of: folder.url)
+            let listing = folder.children(of: folder.url, showingIgnored: showsIgnored)
             let rows = listing.entries.map { SidebarNode(.entry($0)) }
             return SidebarNode(
                 .section(FileManager.default.displayName(atPath: folder.url.path), branch: gitBranch(at: folder.url)),
@@ -63,10 +70,17 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         super.init(nibName: nil, bundle: nil)
         watch = folder.map { folder in
             FolderWatch(folder.url) { [weak self] folders in
+                guard let self else { return }
                 let changed = Set(folders.map(\.standardizedFileURL.path))
-                self?.relist { changed.contains($0.path) }
+                relist { changed.contains($0.path) }
+                let known = (agentSection.children ?? []).compactMap { node -> AgentFile? in
+                    if case .agentFile(let file) = node.kind { return file }
+                    return nil
+                }
+                if AgentFile.mayChange(known, in: folders) { findAgentFiles() }
             }
         }
+        findAgentFiles()
     }
 
     required init?(coder: NSCoder) {
@@ -113,6 +127,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         scrollView.autohidesScrollers = true
         view = scrollView
         NotificationCenter.default.addObserver(self, selector: #selector(libraryChanged), name: Library.changed, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(preferencesChanged), name: Preferences.didChange, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(fillUnderReducedTransparency), name: ThemeStore.didChange, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(
             self, selector: #selector(fillUnderReducedTransparency), name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil
@@ -187,7 +202,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     }
 
     private var sections: [SidebarNode] {
-        let shortcuts = [pinned, recents].filter { !($0.children ?? []).isEmpty }
+        let shortcuts = [pinned, recents, agentSection].filter { !($0.children ?? []).isEmpty }
         if let tree { return shortcuts + [tree] }
         return shortcuts + (outlineSection.children!.isEmpty ? [] : [outlineSection])
     }
@@ -252,6 +267,24 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         return children
     }
 
+    /// Lists the folder's agent files again, off the main thread.
+    private func findAgentFiles() {
+        guard let root = folder?.url else { return }
+        agentScan?.cancel()
+        agentScan = Task { [weak self] in
+            let files = await Task.detached(priority: .utility) { AgentFile.find(in: root) }.value
+            guard !Task.isCancelled, let self else { return }
+            agentSection.children = files.map { SidebarNode(.agentFile($0)) }
+            reload()
+        }
+    }
+
+    @objc private func preferencesChanged() {
+        guard Preferences.shared.showsIgnored != showsIgnored else { return }
+        showsIgnored = Preferences.shared.showsIgnored
+        relist { _ in true }
+    }
+
     @objc private func libraryChanged() {
         pinned.children = Library.pins.map { url in
             SidebarNode(.shortcut(FolderEntry(url: url, isFolder: url.hasDirectoryPath), nil))
@@ -275,6 +308,8 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             } else {
                 open(entry.url, newTab)
             }
+        case .agentFile(let file):
+            open(file.url, newTab)
         default:
             break
         }
@@ -299,6 +334,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         let entry: FolderEntry
         switch node.kind {
         case .entry(let row), .shortcut(let row, _): entry = row
+        case .agentFile(let file): entry = FolderEntry(url: file.url, isFolder: false)
         default: return
         }
         func add(_ title: String, _ action: Selector) {
@@ -306,7 +342,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             item.target = self
             item.representedObject = entry.url
         }
-        if entry.isMarkdown {
+        if entry.isMarkdown || isAgentFile(entry.url) {
             add("Open in New Tab", #selector(openInNewTab(_:)))
             menu.addItem(.separator())
         }
@@ -383,6 +419,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     func outlineView(_ outlineView: NSOutlineView, typeSelectStringFor tableColumn: NSTableColumn?, item: Any) -> String? {
         switch (item as! SidebarNode).kind {
         case .entry(let entry), .shortcut(let entry, _): entry.url.lastPathComponent
+        case .agentFile(let file): file.url.lastPathComponent
         default: nil
         }
     }
@@ -395,6 +432,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     func outlineView(_ outlineView: NSOutlineView, shouldSelectItem item: Any) -> Bool {
         switch (item as! SidebarNode).kind {
         case .entry(let entry), .shortcut(let entry, _): entry.isFolder || entry.isMarkdown
+        case .agentFile: true
         default: false
         }
     }
@@ -413,6 +451,10 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         case .shortcut(let entry, let date):
             let cell = cell(SidebarCell.file)
             cell.show(entry, detail: date.map { shortDate($0) }, gone: !FileManager.default.fileExists(atPath: entry.url.path))
+            return cell
+        case .agentFile(let file):
+            let cell = cell(SidebarCell.agent)
+            cell.show(file, path: folder?.relativePath(of: file.url) ?? file.url.lastPathComponent)
             return cell
         case .heading(let heading):
             let cell = cell(SidebarCell.heading)
@@ -478,8 +520,10 @@ private final class SidebarCell: NSTableCellView {
     static let file = NSUserInterfaceItemIdentifier("file")
     static let heading = NSUserInterfaceItemIdentifier("heading")
     static let note = NSUserInterfaceItemIdentifier("note")
+    static let agent = NSUserInterfaceItemIdentifier("agent")
 
     private let detail = NSTextField(labelWithString: "")
+    private let gauge = NSLevelIndicator()
     private var indent: NSLayoutConstraint?
 
     init(_ identifier: NSUserInterfaceItemIdentifier) {
@@ -534,6 +578,36 @@ private final class SidebarCell: NSTableCellView {
                 label.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 5),
                 label.trailingAnchor.constraint(lessThanOrEqualTo: detail.leadingAnchor, constant: -6),
             ]
+        case Self.agent:
+            let icon = NSImageView(image: NSImage(systemSymbolName: "doc.text", accessibilityDescription: nil)!)
+            icon.translatesAutoresizingMaskIntoConstraints = false
+            icon.symbolConfiguration = .init(pointSize: 13, weight: .regular)
+            icon.contentTintColor = .secondaryLabelColor
+            imageView = icon
+            addSubview(icon)
+            label.lineBreakMode = .byTruncatingHead
+            // Secondary ink below 80% of the limit, orange from there, red at the limit, where the agent cuts the file.
+            gauge.levelIndicatorStyle = .continuousCapacity
+            gauge.minValue = 0
+            gauge.maxValue = 1
+            gauge.warningValue = 0.8
+            gauge.criticalValue = 1
+            gauge.fillColor = .secondaryLabelColor
+            gauge.warningFillColor = .systemOrange
+            gauge.criticalFillColor = .systemRed
+            gauge.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(gauge)
+            constraints += [
+                icon.leadingAnchor.constraint(equalTo: leadingAnchor),
+                icon.centerYAnchor.constraint(equalTo: centerYAnchor),
+                icon.widthAnchor.constraint(equalToConstant: 18),
+                label.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 5),
+                label.trailingAnchor.constraint(lessThanOrEqualTo: gauge.leadingAnchor, constant: -6),
+                gauge.trailingAnchor.constraint(equalTo: detail.leadingAnchor, constant: -6),
+                gauge.centerYAnchor.constraint(equalTo: centerYAnchor),
+                gauge.widthAnchor.constraint(equalToConstant: 28),
+                gauge.heightAnchor.constraint(equalToConstant: 6),
+            ]
         case Self.heading:
             label.font = .systemFont(ofSize: 12)
             label.textColor = .secondaryLabelColor
@@ -579,6 +653,18 @@ private final class SidebarCell: NSTableCellView {
         textField?.textColor = dim ? .tertiaryLabelColor : .labelColor
         toolTip = gone ? "Moved or deleted" : nil
         detail.stringValue = text ?? ""
+    }
+
+    /// An agent file at `path` in its folder, with its load gauge when its agent documents a limit.
+    func show(_ file: AgentFile, path: String) {
+        textField?.stringValue = path
+        textField?.textColor = .labelColor
+        detail.stringValue = file.tokenLabel
+        gauge.isHidden = file.load == nil
+        gauge.doubleValue = min(file.load ?? 0, 1)
+        let words = file.gaugeText(date: agentFilesDate)
+        toolTip = path + "\n" + words
+        setAccessibilityLabel(path + ". " + words)
     }
 
     func show(_ title: String, branch: String?) {
