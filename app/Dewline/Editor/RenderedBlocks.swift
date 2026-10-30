@@ -8,7 +8,7 @@ import MdCore
 @MainActor
 final class RenderedBlocks {
     weak var textView: EditorTextView?
-    private(set) var index = BlockIndex()
+    private let map: BlockMap
     private var revealed: Set<RenderedBlock> = []
     private var pictures: [PictureRequest: Result<BlockPicture, RenderFailure>] = [:]
     private var pending: Set<PictureRequest> = []
@@ -17,31 +17,29 @@ final class RenderedBlocks {
     private static let sourceLines = lines(20)
     private static let collapsedLines = lines(0.01)
 
-    /// Ranges to restyle beyond the edited paragraphs: blocks the edit made, changed or broke.
-    func textDidChange(_ text: NSString, edited: NSRange, delta: Int) -> [NSRange] {
+    init(map: BlockMap) {
+        self.map = map
+    }
+
+    /// Moves the revealed blocks past an edit the map has taken.
+    func textDidChange(edited: NSRange, delta: Int) {
         let oldEnd = NSMaxRange(edited) - delta
         revealed = Set(revealed.compactMap { block in
             if NSMaxRange(block.range) < edited.location { return block }
             return block.range.location > oldEnd ? block.shifted(by: delta) : nil
         })
-        let changed = index.update(text, edited: edited, delta: delta)
-        revealed.formIntersection(index.blocks)
-        return changed
+        textDidParse()
     }
 
-    /// Whether `range` lies in a block, where markdown spans do not apply.
-    func contains(_ range: NSRange) -> Bool {
-        index.blocks.contains { NSIntersectionRange($0.range, range).length > 0 }
-    }
-
-    /// `range` and every block it meets: a block styles and reveals as a whole.
-    func covering(_ range: NSRange) -> NSRange {
-        index.blocks.reduce(range) { NSIntersectionRange($1.range, range).length > 0 ? NSUnionRange($0, $1.range) : $0 }
+    /// Forgets the revealed blocks the map no longer has.
+    func textDidParse() {
+        revealed = revealed.filter { map.renderedBlocks(in: $0.range).contains($0) }
     }
 
     /// Ranges of the blocks the selection entered or left since they were last styled.
     func revealChanges(_ selection: [NSRange]) -> [NSRange] {
-        Set(index.blocks.filter { Self.touches($0.range, selection) }).symmetricDifference(revealed).map(\.range)
+        let touched = selection.flatMap(map.renderedBlocks(touching:)).filter { Self.touches($0.range, selection) }
+        return Set(touched).symmetricDifference(revealed).map(\.range)
     }
 
     /// Styles the blocks that meet `styled`, a copy of the storage from `offset` on, for a selection in its
@@ -53,7 +51,7 @@ final class RenderedBlocks {
         let text = styled.mutableString
         let paragraphs = NSRange(location: offset, length: styled.length)
         let width = (textView.textContainer?.size.width ?? 0) - 2 * (textView.textContainer?.lineFragmentPadding ?? 0)
-        for block in index.blocks where NSIntersectionRange(block.range, paragraphs).length > 0 {
+        for block in map.renderedBlocks(in: paragraphs) {
             let range = NSRange(location: block.range.location - offset, length: block.range.length)
             let overlap = NSIntersectionRange(block.range, paragraphs)
             let local = NSRange(location: overlap.location - offset, length: overlap.length)
@@ -68,7 +66,8 @@ final class RenderedBlocks {
                         MainActor.assumeIsolated {
                             guard let self, let textView = self.textView else { return }
                             self.pending.remove(request)
-                            let shown = self.index.blocks.map { ($0, self.request(for: $0, in: textView)) }
+                            let all = NSRange(location: 0, length: textView.textStorage?.length ?? 0)
+                            let shown = self.map.renderedBlocks(in: all).map { ($0, self.request(for: $0, in: textView)) }
                             self.pictures = self.pictures.filter { key, _ in shown.contains { $0.1 == key } }
                             self.pictures[request] = picture
                             for (block, key) in shown where key == request { textView.styler.restyleNow(block.range) }

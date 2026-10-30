@@ -1,4 +1,5 @@
 import AppKit
+import MdCore
 import Testing
 @testable import Dewline
 
@@ -58,11 +59,9 @@ private struct Editor {
         let text = view.textStorage!.mutableString
         let visible = view.visibleRect
         let end = view.characterIndexForInsertion(at: NSPoint(x: visible.maxX, y: visible.maxY))
-        var spans: [SyntaxSpan] = []
-        text.enumerateSubstrings(in: NSRange(location: 0, length: end), options: [.byParagraphs, .substringNotRequired]) { _, line, _, _ in
-            spans += SpikeTokenizer.spans(in: text, line: line).filter { $0.kind == .strong }
+        return view.styler.map.blocks(in: NSRange(location: 0, length: min(end, text.length))).flatMap { block in
+            block.spans.filter { $0.kind == .strong }.map { $0.shifted(by: block.range.location) }
         }
-        return spans
     }
 
     /// Milliseconds from a key down sent through the window to the first committed display, and to the display
@@ -101,12 +100,10 @@ private struct Editor {
     var middleSpan: SyntaxSpan {
         let text = view.textStorage!.mutableString
         let middle = text.paragraphRange(for: NSRange(location: text.length / 2, length: 0)).location
-        var span: SyntaxSpan?
-        text.enumerateSubstrings(in: NSRange(location: middle, length: text.length - middle), options: [.byParagraphs, .substringNotRequired]) { _, line, _, stop in
-            span = SpikeTokenizer.spans(in: text, line: line).first { $0.kind == .strong }
-            stop.pointee = ObjCBool(span != nil)
-        }
-        return span!
+        let block = view.styler.map.blocks(in: NSRange(location: middle, length: text.length - middle)).first {
+            $0.spans.contains { $0.kind == .strong }
+        }!
+        return block.spans.first { $0.kind == .strong }!.shifted(by: block.range.location)
     }
 
     /// Empties the view first: a closed window's text system stays alive for a while, still holding the text.
@@ -235,5 +232,45 @@ struct PerfTests {
         try record("scroll", percentiles(first).merging(["over8_3ms": Double(first.count { $0 > 8.3 })]) { $1 })
         try record("scrollSettled", percentiles(settled).merging(["over8_3ms": Double(settled.count { $0 > 8.3 })]) { $1 })
         editor.close()
+    }
+
+    /// From text storage through the FFI to every record read, p50: a paragraph's window and the paragraph alone,
+    /// looped, and the 1 MB document.
+    @Test func parsing() throws {
+        let clock = ContinuousClock()
+        let parser = MarkdownParser()
+        var headings = 0
+        func read(_ parse: MarkdownParse) {
+            headings += parse.blocks.count { if case .heading = $0.kind { true } else { false } }
+            headings += parse.tokens.count { if case .heading = $0.kind { true } else { false } }
+        }
+        func p50(_ runs: Int, _ unit: Duration, _ body: () throws -> Void) rethrows -> Double {
+            var samples: [Double] = []
+            for _ in 0..<runs {
+                let start = clock.now
+                try body()
+                samples.append((clock.now - start) / unit)
+            }
+            return samples.sorted()[runs / 2]
+        }
+
+        let paragraph = "The quiet **editor keeps** every note while the *morning plan* waits beside the `river map`, "
+            + "toward [first light](https://example.com/notes/first) 🙂. Every careful agent reads the old letter before "
+            + "the window turns, and the ~~last draft~~ holds without a pattern.\n"
+        let storage = NSTextStorage(string: "# Notes\n\n" + paragraph + "\nAfter.\n")
+        let string = storage.string as NSString
+        let window = string.range(of: paragraph)
+        let next = NSRange(location: NSMaxRange(window), length: string.length - NSMaxRange(window))
+        _ = try parser.parse(storage.string)
+        let windowUs = try p50(5000, .microseconds(1)) {
+            let text = string.substring(with: window)
+            read(try #require(try parser.parse(window: text, next: string.substring(with: next), atStart: false, row: false)))
+        }
+        let paragraphUs = try p50(5000, .microseconds(1)) { try read(parser.parse(string.substring(with: window))) }
+
+        let document = NSTextStorage(string: MarkdownCorpus.text(bytes: 1 << 20))
+        let documentMs = try p50(21, .milliseconds(1)) { try read(parser.parse(document.string)) }
+        #expect(headings > 0)
+        try record("parse", ["paragraphWindowUs": windowUs, "paragraphUs": paragraphUs, "document1MBMs": documentMs])
     }
 }
