@@ -5,7 +5,7 @@ enum MainMenu {
     static func build() -> NSMenu {
         let main = NSMenu()
         let window = windowMenu()
-        for menu in [appMenu(), fileMenu(), editMenu(), viewMenu(), window] {
+        for menu in [appMenu(), fileMenu(), editMenu(), viewMenu(), goMenu(), window] {
             let item = NSMenuItem()
             item.submenu = menu
             main.addItem(item)
@@ -76,6 +76,13 @@ enum MainMenu {
         menu.addItem(.separator())
         let source = menu.addItem(withTitle: "Show Source", action: #selector(EditorTextView.toggleSource(_:)), keyEquivalent: "u")
         source.keyEquivalentModifierMask = [.command, .option]
+        return menu
+    }
+
+    private static func goMenu() -> NSMenu {
+        let menu = NSMenu(title: "Go")
+        menu.addItem(withTitle: "Back", action: #selector(MainWindowController.goBack(_:)), keyEquivalent: "[")
+        menu.addItem(withTitle: "Forward", action: #selector(MainWindowController.goForward(_:)), keyEquivalent: "]")
         return menu
     }
 

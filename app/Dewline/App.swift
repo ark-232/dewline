@@ -21,11 +21,20 @@ enum DewlineApp {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var launchWindow: LaunchWindowController?
     private var control: ControlSocket?
+    private let defaults = UserDefaults.standard
+    /// The test host neither resumes nor saves a session.
+    private let isTestHost = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+
+    // Before AppKit decides whether to show the launch window, which it shows only when nothing reopened.
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        guard !isTestHost, let session = Session.load(from: defaults) else { return }
+        MainWindowController.resume(session)
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Updates.shared.start()
         // The test host leaves the real socket alone; ControlSocketTests make their own.
-        guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
+        guard !isTestHost else { return }
         let control = ControlSocket(path: ControlSocket.standardPath) { [weak self] request, connection in
             self?.open(request, for: connection)
         }
@@ -40,6 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         control?.stop()
+        if !isTestHost { MainWindowController.session().save(to: defaults) }
     }
 
     /// Opens a file for the `dewline` command as Markdown, whatever its extension (git's COMMIT_EDITMSG has none),
@@ -71,7 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // AppKit asks at launch when nothing opens or restores, and when the Dock icon is clicked with no windows.
     func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {
-        LaunchWindowController.showsWhenNothingIsOpen
+        LaunchWindowController.showsWhenNothingIsOpen && !NSApp.windows.contains { $0.windowController is MainWindowController && ($0.isVisible || $0.isMiniaturized) }
     }
 
     func applicationOpenUntitledFile(_ sender: NSApplication) -> Bool {
