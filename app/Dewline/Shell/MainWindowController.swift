@@ -95,7 +95,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         window?.layoutIfNeeded()
         let textView = scrollView.documentView as! EditorTextView
         textView.documentFolder = document.fileURL?.deletingLastPathComponent()
+        textView.noteFolder = folder?.url ?? textView.documentFolder
+        textView.openNote = { [weak self] url, heading in self?.follow(url, heading: heading) }
         textView.string = document.text
+        // Front matter stays folded until the caret goes into it.
+        if let first = textView.styler.map.blocks(in: NSRange(location: 0, length: 0)).first, first.kind == .frontMatter {
+            textView.setSelectedRange(NSRange(location: min(NSMaxRange(first.range), (textView.string as NSString).length), length: 0))
+        }
         // The editor's undo history is the document's, which counts its unsaved edits.
         document.undoManager = textView.styler.undoManager
         if let old = self.textView {
@@ -153,6 +159,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         } else {
             display(document)
         }
+    }
+
+    /// Opens a note a link points to and puts the caret on its heading.
+    private func follow(_ url: URL, heading: String?) {
+        open(url, newTab: false)
+        guard let heading, let controller = NSDocumentController.shared.document(for: url)?.windowControllers.first as? MainWindowController else { return }
+        controller.textView?.jump(toHeading: heading)
     }
 
     override func newWindowForTab(_ sender: Any?) {

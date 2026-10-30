@@ -37,7 +37,7 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
     /// The attributes styling owns; restyling leaves every other attribute in the storage as it is.
     private static let keys = [
         NSAttributedString.Key.font, .foregroundColor, .backgroundColor, .paragraphStyle, .underlineStyle, .strikethroughStyle, .kern,
-        .dewlineMarkerFont, .dewlineBlock, .dewlineQuote,
+        .dewlineMarkerFont, .dewlineBlock, .dewlineQuote, .baselineOffset, .dewlineCallout,
     ].map { $0.rawValue as NSString }
     /// The most text one pass styles while more waits: several screens, a few milliseconds of work.
     private static let chunk = BlockMap.screen
@@ -291,6 +291,7 @@ extension MarkdownStyler {
             default:
                 break
             }
+            Constructs.style(block, lines: lines, in: styled, source: source)
             let spans = Self.styled(block).map { $0.shifted(by: offset) }
             for span in spans {
                 switch span.kind {
@@ -310,7 +311,7 @@ extension MarkdownStyler {
                     }
                     styled.addAttribute(.backgroundColor, value: store.color(.codeBackground), range: span.range)
                 default:
-                    break
+                    Constructs.style(span, in: styled, source: source)
                 }
             }
             for span in spans {
@@ -403,16 +404,19 @@ extension MarkdownStyler {
     }
 
     /// A heading's and a quote's spans and the inline ones that style, outside rendered blocks: the spans whose markers
-    /// hide.
+    /// hide. A callout's `[!type]` hides whole.
     private static func styled(_ block: BlockMap.Block) -> [SyntaxSpan] {
         block.spans.filter { span in
             let styles = switch span.kind {
             case .heading: if case .heading = block.kind { true } else { false }
-            case .quote: block.kind == .quote || block.kind == .callout
+            case .quote, .callout: block.kind == .quote || block.kind == .callout
             case .emphasis, .strong, .strikethrough, .inlineCode, .link: true
+            case .highlight, .comment, .footnoteReference, .wikiLink, .embed: true
             default: false
             }
             return styles && !block.rendered.contains { NSIntersectionRange($0.range, span.range).length > 0 }
+        }.map { span in
+            span.kind == .callout ? SyntaxSpan(kind: .callout, range: span.range, content: NSRange(location: NSMaxRange(span.range), length: 0)) : span
         }
     }
 

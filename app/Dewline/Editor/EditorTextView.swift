@@ -12,6 +12,13 @@ final class EditorTextView: CaretTextView {
     private(set) var fadeStarted: ContinuousClock.Instant?
     /// Where images in the document resolve from.
     var documentFolder: URL?
+    /// Where wikilinks resolve: the window's folder, else the document's.
+    var noteFolder: URL?
+    /// Opens a note a link points to, at a heading.
+    var openNote: ((URL, String?) -> Void)?
+    /// Runs Find in Files for a tag; until there is one, Cmd-clicking a tag beeps.
+    var findInFiles: ((String) -> Void)?
+    var footnotePopover: NSPopover?
 
     var defersStyling: Bool {
         composing || hasMarkedText()
@@ -42,6 +49,18 @@ final class EditorTextView: CaretTextView {
         usesFindBar = true
         applyTheme()
         NotificationCenter.default.addObserver(self, selector: #selector(themeDidChange(_:)), name: ThemeStore.didChange, object: nil)
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self))
+    }
+
+    /// Cmd-click follows a link, wikilink, embed, footnote or tag.
+    override func mouseDown(with event: NSEvent) {
+        if event.modifierFlags.contains(.command), follow(at: convert(event.locationInWindow, from: nil)) { return }
+        super.mouseDown(with: event)
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        hoverFootnote(at: convert(event.locationInWindow, from: nil))
     }
 
     required init?(coder: NSCoder) {
@@ -108,6 +127,7 @@ final class EditorTextView: CaretTextView {
         func line(at index: Int) -> NSRect {
             convert(window.convertFromScreen(firstRect(forCharacterRange: NSRange(location: index, length: 0), actualRange: nil)), from: nil)
         }
+        drawCallouts(in: visible, line: line(at:))
         ThemeStore.shared.color(.quoteRule).setFill()
         storage.enumerateAttribute(.dewlineQuote, in: visible) { value, range, _ in
             guard value != nil else { return }

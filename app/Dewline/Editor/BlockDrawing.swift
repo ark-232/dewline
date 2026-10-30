@@ -1,10 +1,11 @@
 import AppKit
 
 /// How one line of a rendered block lays out and draws: the value of `.dewlineBlock`. The picture's line reserves
-/// its height, the block's other lines collapse, and a failed block's last line carries the error below it.
+/// its height, the block's other lines collapse, a failed block's last line carries the error below it, and folded
+/// front matter's first line draws its summary.
 final class BlockLine: NSObject {
     enum Role {
-        case picture(BlockPicture, label: String), collapsed, error(String)
+        case picture(BlockPicture, label: String), collapsed, error(String), summary(NSAttributedString)
     }
 
     let role: Role
@@ -20,6 +21,7 @@ final class BlockLine: NSObject {
             picture.image === other.image && picture.size == other.size && label == otherLabel
         case (.collapsed, .collapsed?): true
         case let (.error(message), .error(other)?): message == other
+        case let (.summary(line), .summary(other)?): line.isEqual(to: other)
         default: false
         }
     }
@@ -29,6 +31,7 @@ final class BlockLine: NSObject {
         case .picture(let picture, _): ObjectIdentifier(picture.image).hashValue
         case .collapsed: 0
         case .error(let message): message.hashValue
+        case .summary(let line): line.string.hashValue
         }
     }
 }
@@ -73,6 +76,7 @@ final class BlockFragment: NSTextLayoutFragment {
         switch line.role {
         case .picture(let picture, _): CGRect(origin: .zero, size: picture.size)
         case .collapsed: .zero
+        case .summary(let line): CGRect(origin: .zero, size: CGSize(width: line.size().width + 16, height: layoutFragmentFrame.height))
         case .error:
             // The error is wider than the line it hangs under.
             super.renderingSurfaceBounds.union(CGRect(
@@ -91,6 +95,11 @@ final class BlockFragment: NSTextLayoutFragment {
             context.restoreGState()
         case .collapsed:
             break
+        case .summary(let line):
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+            line.draw(at: CGPoint(x: point.x + (textLayoutManager?.textContainer?.lineFragmentPadding ?? 0), y: point.y + (layoutFragmentFrame.height - line.size().height) / 2))
+            NSGraphicsContext.restoreGraphicsState()
         case .error(let message):
             super.draw(at: point, in: context)
             NSGraphicsContext.saveGraphicsState()
