@@ -109,7 +109,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
             document.addWindowController(self)
         }
         let scrollView = EditorTextView.scrollView()
-        setPage(scrollView)
+        let header = document.fileURL.flatMap { isAgentFile($0) ? frontMatterLine(of: document.text) : nil }
+        setPage(header.map { frontMatterPage($0, above: scrollView) } ?? scrollView)
         // Rendered blocks fit the column, so the text arrives once the view has its width.
         window?.layoutIfNeeded()
         let textView = scrollView.documentView as! EditorTextView
@@ -162,7 +163,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     private static func load(_ url: URL) -> MarkdownDocument? {
         let controller = NSDocumentController.shared
         do {
-            let document = try MarkdownDocument(contentsOf: url, ofType: controller.typeForContents(of: url))
+            // Agent files such as .mdc rules and .cursorrules open as Markdown too.
+            let document = try MarkdownDocument(contentsOf: url, ofType: "net.daringfireball.markdown")
             controller.addDocument(document)
             return document
         } catch {

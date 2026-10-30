@@ -5,12 +5,14 @@ enum MainMenu {
     static func build() -> NSMenu {
         let main = NSMenu()
         let window = windowMenu()
-        for menu in [appMenu(), fileMenu(), editMenu(), viewMenu(), goMenu(), window] {
+        let help = helpMenu()
+        for menu in [appMenu(), fileMenu(), editMenu(), viewMenu(), goMenu(), window, help] {
             let item = NSMenuItem()
             item.submenu = menu
             main.addItem(item)
         }
         NSApplication.shared.windowsMenu = window
+        NSApplication.shared.helpMenu = help
         return main
     }
 
@@ -108,6 +110,13 @@ enum MainMenu {
         welcome.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(.separator())
         menu.addItem(withTitle: "Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: "")
+        return menu
+    }
+
+    private static func helpMenu() -> NSMenu {
+        let menu = NSMenu(title: "Help")
+        menu.addItem(withTitle: "Welcome to Dewline", action: #selector(AppDelegate.showWelcomeGuide(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Watch a Change Land (Demo)", action: #selector(AppDelegate.runWelcomeDemo(_:)), keyEquivalent: "")
         return menu
     }
 }

@@ -10,6 +10,7 @@ use ratex_types::color::Color;
 use resvg::{tiny_skia, usvg};
 
 mod engine;
+mod agents;
 mod markdown;
 mod save;
 mod search;

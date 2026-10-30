@@ -15,9 +15,12 @@ final class SettingsWindowController: NSWindowController {
         let store = ThemeStore.shared
         let tabs = NSTabViewController()
         tabs.tabStyle = .toolbar
+        tabs.addTabViewItem(Self.pane("General", "gearshape", GeneralPane(preferences: .shared)))
         tabs.addTabViewItem(Self.pane("Appearance", "paintpalette", AppearancePane(store: store)))
         tabs.addTabViewItem(Self.pane("Editor", "character.cursor.ibeam", EditorPane(store: store)))
         tabs.addTabViewItem(Self.pane("Fonts", "textformat", FontsPane(store: store, library: .shared)))
+        tabs.addTabViewItem(Self.pane("Files", "folder", FilesPane(preferences: .shared)))
+        tabs.addTabViewItem(Self.pane("Agents", "dot.radiowaves.left.and.right", AgentsPane()))
         tabs.addTabViewItem(Self.pane("Updates", "arrow.triangle.2.circlepath", UpdatesPane(updates: .shared)))
         let window = NSWindow(contentViewController: tabs)
         window.styleMask = [.titled, .closable]
