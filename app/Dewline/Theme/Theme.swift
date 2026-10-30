@@ -75,6 +75,8 @@ enum Token: String, CaseIterable, Sendable {
     case paper, ink, ink2, syntax, heading, accent, link, selection, sidebarTint, codeBackground, quoteRule
     /// The sky behind the glass, zenith and horizon; only Dusk and Nightwatch have one.
     case sky1, sky2
+    /// Code highlighting's colors, derived from the theme's (`Theme.coded`).
+    case codeKeyword, codeString, codeNumber, codeType, codeFunction, codeComment, codeTag, codeInserted, codeDeleted
 
     static let required = allCases.filter { $0 != .sky1 && $0 != .sky2 }
 }
@@ -106,14 +108,38 @@ struct Theme: Identifiable, Hashable, Sendable {
             light[token] = OKLCH(l: values[0], c: values[1], h: values[2])
             dark[token] = OKLCH(l: values[3], c: values[4], h: values[5])
         }
+        light = Self.coded(light)
+        dark = Self.coded(dark)
         self.name = name
         self.summary = summary
         self.light = light
         self.dark = dark
         lightColors = light.mapValues(\.color)
         darkColors = dark.mapValues(\.color)
-        increasedLightColors = Self.increased(light, dark: false).mapValues(\.color)
-        increasedDarkColors = Self.increased(dark, dark: true).mapValues(\.color)
+        increasedLightColors = Self.coded(Self.increased(light, dark: false)).mapValues(\.color)
+        increasedDarkColors = Self.coded(Self.increased(dark, dark: true)).mapValues(\.color)
+    }
+
+    /// `tokens` with code highlighting's colors: keywords in the accent's hue, the rest at hues turned from the link's,
+    /// all at the link's lightness, which reads on the paper; comments in ink2, tags and keys in the heading's color,
+    /// insertions green and deletions red.
+    static func coded(_ tokens: [Token: OKLCH]) -> [Token: OKLCH] {
+        var tokens = tokens
+        let link = tokens[.link]!
+        let accent = tokens[.accent]!
+        func turned(_ hue: Double) -> OKLCH {
+            OKLCH(l: link.l, c: min(max(link.c, 0.08), 0.14), h: (hue + 360).truncatingRemainder(dividingBy: 360))
+        }
+        tokens[.codeKeyword] = OKLCH(l: link.l, c: min(max(accent.c, 0.08), 0.16), h: accent.h)
+        tokens[.codeString] = turned(link.h + 240)
+        tokens[.codeNumber] = turned(link.h + 60)
+        tokens[.codeType] = turned(link.h + 150)
+        tokens[.codeFunction] = turned(link.h - 35)
+        tokens[.codeComment] = tokens[.ink2]!
+        tokens[.codeTag] = tokens[.heading]!
+        tokens[.codeInserted] = turned(150)
+        tokens[.codeDeleted] = turned(25)
+        return tokens
     }
 
     /// `tokens` under Increase Contrast (synthesis 2.1): ink at L 0.15 or 0.97, ink2 at 7:1 on paper and syntax with it,

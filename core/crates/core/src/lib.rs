@@ -2,6 +2,7 @@ pub mod agents;
 pub mod claims;
 pub mod file;
 pub mod git;
+pub mod highlight;
 pub mod md;
 pub mod merge;
 pub mod search;

@@ -7,6 +7,7 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
     let undoManager = UndoManager()
     let map: BlockMap
     let blocks: RenderedBlocks
+    let highlights = CodeHighlights()
     private(set) var restyles = 0
     private(set) var showsSource = false
     /// Source line height: 22 pt, or prose's 24.5 pt pitch through `DewlineSourceLineHeight`, until the owner picks one.
@@ -148,6 +149,7 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
             let changed = map.textDidChange(textView!.textStorage!.mutableString, edited: edit, delta: delta)
             LatencyProbe.end(.parse)
             blocks.textDidChange(edited: edit, delta: delta)
+            highlights.textDidChange(edited: edit, delta: delta)
             range = NSUnionRange(range, changed)
             if textView!.defersStyling {
                 pending = range
@@ -311,6 +313,10 @@ extension MarkdownStyler {
                     break
                 }
             }
+            // Fenced code is monospaced; `highlights` colors it.
+            for span in block.spans where span.kind == .fencedCode && !source {
+                styled.addAttribute(.font, value: Self.code(matching: Self.bodyFont), range: NSRange(location: span.range.location + offset, length: span.range.length))
+            }
             for span in spans {
                 for marker in span.markers {
                     styled.addAttribute(.dewlineMarkerFont, value: styled.attribute(.font, at: marker.location, effectiveRange: nil)!, range: marker)
@@ -321,6 +327,7 @@ extension MarkdownStyler {
             }
         }
         blocks.style(styled, at: paragraphs.location, selection: source ? [whole] : selection)
+        highlights.update(map.blocks(in: paragraphs), in: paragraphs, text: storage.mutableString)
         // Only runs whose styling differs are written, once each, so layout invalidates only what changed. The CF
         // accessors return a run's dictionary without bridging it to Swift, which costs more than the comparison.
         var offset = 0

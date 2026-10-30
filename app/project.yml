@@ -37,11 +37,14 @@ targets:
         excludes:
           - Fonts
           - Specimens
+          - Syntaxes.packdump
       - path: Dewline/Fonts
         type: folder
         buildPhase: resources
       - path: Dewline/Specimens
         type: folder
+        buildPhase: resources
+      - path: Dewline/Syntaxes.packdump
         buildPhase: resources
       - path: ../THIRD_PARTY_NOTICES.md
         buildPhase: resources
