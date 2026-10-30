@@ -31,6 +31,10 @@ final class EditorTextView: CaretTextView {
         textLayoutManager?.delegate = blockFragments
         styler.textView = self
         styler.blocks.textView = self
+        styler.highlights.textView = self
+        textLayoutManager?.renderingAttributesValidator = { [weak self] layout, fragment in
+            MainActor.assumeIsolated { self?.styler.highlights.validate(layout, fragment) }
+        }
         delegate = styler
         textStorage?.delegate = styler
         isRichText = false
@@ -75,6 +79,7 @@ final class EditorTextView: CaretTextView {
     @objc private func themeDidChange(_ notification: Notification) {
         applyTheme()
         styler.restyleDocument()
+        styler.highlights.recolor()
     }
 
     /// Rendered diagrams and math take the colors of the appearance they were drawn in.
