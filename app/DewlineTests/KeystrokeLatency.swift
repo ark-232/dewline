@@ -373,10 +373,8 @@ struct KeystrokeLatency {
         #expect(editor.view.selectedRange() == NSRange(location: caret, length: 0))
         #expect(keystrokes.map(\.wellFormed) == Array(repeating: true, count: 8))
         #expect(keystrokes.map(\.restyles) == Array(repeating: 1, count: 8))
-        withKnownIssue("A1: AppKit widens the edited range to the paragraph, the restyle takes its end for the caret and hides the span under the caret, and the reveal shows it again in a second storage edit") {
-            #expect(keystrokes.map(\.storageEdits) == Array(repeating: 1, count: 8))
-            #expect(keystrokes.map(\.revealWrites) == Array(repeating: 0, count: 8))
-        }
+        #expect(keystrokes.map(\.storageEdits) == Array(repeating: 1, count: 8))
+        #expect(keystrokes.map(\.revealWrites) == Array(repeating: 0, count: 8))
         #expect(keystrokes.map(\.fonts) == Array(repeating: 0, count: 8))
         print("KeystrokeLatency counts: storage edits \(keystrokes.map(\.storageEdits)), restyles \(keystrokes.map(\.restyles)), fonts \(keystrokes.map(\.fonts)), reveal writes \(keystrokes.map(\.revealWrites))")
     }
@@ -398,6 +396,7 @@ struct KeystrokeLatency {
     }
 
     /// Off, a stamp is a load and a branch and records nothing: its time, less an empty loop's, is a few nanoseconds.
+    /// The time is checked only in latency runs; shared CI machines are too noisy for a 10 ns bound.
     @Test func stampOff() {
         LatencyProbe.stamps.removeAll()
         #expect(!LatencyProbe.enabled)
@@ -418,7 +417,9 @@ struct KeystrokeLatency {
         let nanoseconds = (stamped - bare) * 1e6 / Double(2 * passes)
         print(String(format: "KeystrokeLatency stamp off: %.2f ns, loop pass %.2f ns", nanoseconds, bare * 1e6 / Double(passes)))
         #expect(LatencyProbe.stamps.isEmpty)
-        #expect(nanoseconds < 10, "a stamp with the probe off costs \(nanoseconds) ns")
+        if ProcessInfo.processInfo.environment["DEWLINE_LATENCY"] != nil {
+            #expect(nanoseconds < 10, "a stamp with the probe off costs \(nanoseconds) ns")
+        }
     }
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["DEWLINE_LATENCY"] != nil))

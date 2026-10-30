@@ -15,6 +15,11 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
     }()
     private var revealed: Set<SyntaxSpan> = []
     private var pending: NSRange?
+    /// Where the caret lands after the edit `shouldChangeText` approved, until the storage processes that edit.
+    var landing: Int?
+    /// The characters the storage's current edit changed, before AppKit fixes attributes around them and widens the
+    /// range `didProcessEditing` gets, as far as the whole paragraph.
+    private var edit = NSRange()
     /// Text not styled yet, whole paragraphs, which `styleSome` works through from the top of the view.
     private var unstyled = IndexSet()
     private var scheduled = false
@@ -78,6 +83,16 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
 
     nonisolated func textStorage(
         _ textStorage: NSTextStorage,
+        willProcessEditing editedMask: NSTextStorageEditActions,
+        range editedRange: NSRange,
+        changeInLength delta: Int
+    ) {
+        guard editedMask.contains(.editedCharacters) else { return }
+        MainActor.assumeIsolated { edit = editedRange }
+    }
+
+    nonisolated func textStorage(
+        _ textStorage: NSTextStorage,
         didProcessEditing editedMask: NSTextStorageEditActions,
         range editedRange: NSRange,
         changeInLength delta: Int
@@ -86,6 +101,11 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
         LatencyProbe.begin(.attributes)
         defer { LatencyProbe.end(.attributes) }
         MainActor.assumeIsolated {
+            // A landing outside the edit is left from an approved edit that never came. Undo and redo come without
+            // shouldChangeText and leave the caret at the end of the text they put back.
+            let caret = landing.flatMap { editedRange.location <= $0 && $0 <= NSMaxRange(editedRange) ? $0 : nil }
+                ?? (undoManager.isUndoing || undoManager.isRedoing ? NSMaxRange(editedRange) : nil)
+            landing = nil
             let oldEnd = NSMaxRange(editedRange) - delta
             revealed = Set(revealed.compactMap { span in
                 if NSMaxRange(span.range) < editedRange.location { return span }
@@ -94,22 +114,28 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
             })
             unstyled.remove(integersIn: editedRange.location..<oldEnd)
             unstyled.shift(startingAt: oldEnd, by: delta)
-            var range = editedRange
+            // An edit whose text ends in a line break splits a paragraph, and the half after the break is a paragraph
+            // the edit changed too.
+            let length = textView!.textStorage!.length
+            var range = NSUnionRange(editedRange, NSRange(location: edit.location, length: min(edit.length + 1, length - edit.location)))
             if let waiting = pending {
                 func moved(_ offset: Int) -> Int {
                     offset < oldEnd ? min(offset, editedRange.location) : offset + delta
                 }
                 let start = moved(waiting.location)
-                range = NSUnionRange(NSRange(location: start, length: moved(NSMaxRange(waiting)) - start), editedRange)
+                range = NSUnionRange(NSRange(location: start, length: moved(NSMaxRange(waiting)) - start), range)
             }
             LatencyProbe.begin(.parse)
             let changed = blocks.textDidChange(textView!.textStorage!.mutableString, edited: editedRange, delta: delta)
             LatencyProbe.end(.parse)
+            range = blocks.covering(range)
             if textView!.defersStyling {
                 pending = changed.reduce(range, NSUnionRange)
             } else {
                 pending = nil
-                let selection = [NSRange(location: NSMaxRange(editedRange), length: 0)]
+                // An edit made on the storage leaves the selection where it is unless the view moves it, and a move
+                // updates the reveal.
+                let selection = caret.map { [NSRange(location: $0, length: 0)] } ?? textView!.selectedRanges.map(\.rangeValue)
                 restyleSoon(range, in: textView!.textStorage!, selection: selection)
                 for block in changed where NSUnionRange(block, range) != range {
                     restyle(block, in: textView!.textStorage!, selection: selection)
@@ -217,7 +243,7 @@ extension MarkdownStyler {
 
     private func restyle(_ range: NSRange, in storage: NSTextStorage, selection: [NSRange]) {
         restyles += 1
-        let paragraphs = storage.mutableString.paragraphRange(for: range)
+        let paragraphs = storage.mutableString.paragraphRange(for: blocks.covering(storage.mutableString.paragraphRange(for: range)))
         unstyled.remove(integersIn: Range(paragraphs)!)
         let styled = NSMutableAttributedString(string: storage.mutableString.substring(with: paragraphs))
         let text = styled.mutableString
