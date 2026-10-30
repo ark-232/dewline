@@ -1,8 +1,11 @@
 mod control;
+mod hook;
+mod notify;
+mod patch;
 mod target;
 
 use std::env;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
@@ -34,10 +37,31 @@ enum Command {
         #[arg(long)]
         wait: bool,
     },
+    /// Tell Dewline which file an agent's tool is changing; agents' hooks run it with the event's JSON on stdin
+    Notify {
+        /// Whose hook runs it
+        #[arg(long, value_enum)]
+        hook: notify::Vendor,
+    },
 }
 
 fn main() -> ExitCode {
-    let Command::Open { files, wait } = Cli::parse().command;
+    let command = match Cli::try_parse() {
+        Ok(cli) => cli.command,
+        // A hook's exit status reaches the agent: Claude Code and Codex take 2 as a refusal of the tool call.
+        Err(error) if env::args_os().nth(1).as_deref() == Some(OsStr::new("notify")) => {
+            let _ = error.print();
+            return ExitCode::SUCCESS;
+        }
+        Err(error) => error.exit(),
+    };
+    let (files, wait) = match command {
+        Command::Open { files, wait } => (files, wait),
+        Command::Notify { hook } => {
+            notify::run(hook);
+            return ExitCode::SUCCESS;
+        }
+    };
     match open(&files, wait) {
         Ok(()) => ExitCode::SUCCESS,
         Err(message) => {
@@ -92,8 +116,10 @@ mod tests {
     use clap::CommandFactory;
 
     fn parse(args: &[&str]) -> Result<(Vec<OsString>, bool), clap::Error> {
-        let Command::Open { files, wait } = Cli::try_parse_from(args)?.command;
-        Ok((files, wait))
+        match Cli::try_parse_from(args)?.command {
+            Command::Open { files, wait } => Ok((files, wait)),
+            Command::Notify { .. } => panic!("{args:?} is notify"),
+        }
     }
 
     #[test]
@@ -128,7 +154,34 @@ mod tests {
     }
 
     #[test]
-    fn open_is_the_only_command() {
+    fn notify_takes_one_hook() {
+        for (args, hook) in [
+            (
+                &["dewline", "notify", "--hook", "claude"][..],
+                notify::Vendor::Claude,
+            ),
+            (
+                &["dewline", "notify", "--hook=codex"],
+                notify::Vendor::Codex,
+            ),
+        ] {
+            let Command::Notify { hook: parsed } = Cli::try_parse_from(args).unwrap().command
+            else {
+                panic!("{args:?}")
+            };
+            assert_eq!(parsed, hook);
+        }
+        for args in [
+            &["dewline", "notify"][..],
+            &["dewline", "notify", "--hook", "cursor"],
+            &["dewline", "notify", "--hook", "claude", "extra"],
+        ] {
+            assert!(Cli::try_parse_from(args).is_err(), "{args:?}");
+        }
+    }
+
+    #[test]
+    fn other_commands_are_refused() {
         for args in [
             &["dewline"][..],
             &["dewline", "open"],

@@ -198,8 +198,18 @@ struct FileTree: Sendable {
         self.folder = folder
     }
 
+    /// Every file in the sidebar's order: each folder's subfolders with what they hold, then its own files.
     var files: [QuickOpenFile] {
-        listings.values.flatMap(\.files)
+        var files: [QuickOpenFile] = []
+        func add(_ path: String) {
+            guard let listing = listings[path] else { return }
+            for folder in listing.folders {
+                add(folder)
+            }
+            files += listing.files
+        }
+        add(folder.url.path)
+        return files
     }
 
     /// Lists `paths` again, scanning folders that appeared and forgetting those that went; nil lists the whole tree.
