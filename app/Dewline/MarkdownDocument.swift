@@ -13,13 +13,14 @@ final class MarkdownDocument: NSDocument {
     private var hasBOM = false
     /// `dewline open --wait` connections, answered when this document closes.
     private var waiters: [ControlSocket.Connection] = []
-    /// The engine that opens the file; none reads and saves it directly.
-    var engine = MarkdownDocument.sharedEngine
+    /// The engine that opens the file; none reads and saves it directly. Set only before the document reads, which
+    /// may happen off the main thread.
+    nonisolated(unsafe) var engine = MarkdownDocument.sharedEngine
     /// The file as the engine keeps it, once read.
     private(set) var live: LiveFile?
 
     /// The app's engine, its snapshots in Application Support. The test host has none; tests make their own.
-    static let sharedEngine: ChangeEngine? = {
+    nonisolated static let sharedEngine: ChangeEngine? = {
         guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return nil }
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         do {
@@ -43,6 +44,23 @@ final class MarkdownDocument: NSDocument {
         false
     }
 
+    /// The engine reads, hashes and snapshots the file, so AppKit opens documents off the main thread.
+    override nonisolated class func canConcurrentlyReadDocuments(ofType typeName: String) -> Bool {
+        true
+    }
+
+    /// Opens the file at `url` as Markdown, whatever its extension, reading it off the main thread.
+    static func open(_ url: URL) async throws -> MarkdownDocument {
+        let document = MarkdownDocument()
+        try await Task.detached { try document.read(from: url, ofType: type) }.value
+        document.fileURL = url
+        document.fileType = type
+        document.fileModificationDate = try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date
+        return document
+    }
+
+    nonisolated static let type = "net.daringfireball.markdown"
+
     func answerWhenClosed(_ connection: ControlSocket.Connection) {
         waiters.removeAll { !$0.isOpen }
         waiters.append(connection)
@@ -60,10 +78,10 @@ final class MarkdownDocument: NSDocument {
     }
 
     /// Reads through a descriptor that must be a regular file, so a path that became a FIFO or a device after it
-    /// was checked fails at once instead of blocking the main thread.
+    /// was checked fails at once instead of blocking. Runs off the main thread when AppKit opens a document.
     override func read(from url: URL, ofType typeName: String) throws {
-        if let engine = MainActor.assumeIsolated({ engine }) {
-            return try MainActor.assumeIsolated { try open(url, with: engine) }
+        if let engine {
+            return try open(url, with: engine)
         }
         let fd = Darwin.open(url.path, O_RDONLY | O_NONBLOCK | O_CLOEXEC)
         guard fd >= 0 else {
@@ -82,18 +100,25 @@ final class MarkdownDocument: NSDocument {
         guard let decoded = String(data: data, encoding: .utf8) else {
             throw CocoaError(.fileReadInapplicableStringEncoding)
         }
-        // Documents read on the main thread unless canConcurrentlyReadDocuments says otherwise.
-        MainActor.assumeIsolated {
+        Self.onMain {
             text = decoded
             baseHash = contentHash(data)
             hasBOM = data.starts(with: Self.bom)
         }
     }
 
+    /// Runs `body` on the main thread, waiting for it from a concurrent read.
+    private nonisolated static func onMain<T: Sendable>(_ body: @MainActor () throws -> T) rethrows -> T {
+        guard !Thread.isMainThread else { return try MainActor.assumeIsolated(body) }
+        return try DispatchQueue.main.sync { try MainActor.assumeIsolated(body) }
+    }
+
     /// Opens the file through `engine`, which reads it as `read(from:ofType:)` does and keeps it from then on.
-    private func open(_ url: URL, with engine: ChangeEngine) throws {
-        live?.close()
-        live = nil
+    private nonisolated func open(_ url: URL, with engine: ChangeEngine) throws {
+        Self.onMain {
+            live?.close()
+            live = nil
+        }
         let opened: ChangeEngine.Opened
         do throws(ChangeEngine.Failure) {
             opened = try engine.open(url)
@@ -104,11 +129,13 @@ final class MarkdownDocument: NSDocument {
             engine.close(opened.doc)
             throw CocoaError(.fileReadInapplicableStringEncoding, userInfo: [NSURLErrorKey: url])
         }
-        self.text = text
-        hasBOM = opened.bom
-        let live = LiveFile(engine: engine, doc: opened.doc, url: url, document: self)
-        if let textView { live.attach(textView) }
-        self.live = live
+        Self.onMain {
+            self.text = text
+            hasBOM = opened.bom
+            let live = LiveFile(engine: engine, doc: opened.doc, url: url, gitdir: opened.gitdir, document: self)
+            if let textView { live.attach(textView) }
+            self.live = live
+        }
     }
 
     var textView: EditorTextView? {
@@ -150,12 +177,16 @@ final class MarkdownDocument: NSDocument {
         super.save(withDelegate: delegate, didSave: didSaveSelector, contextInfo: contextInfo)
     }
 
-    /// Saving the engine's file goes through it, and a file saved under a new name opens through it again.
+    /// Saving the engine's file goes through it, Save As onto that same file included, and a file saved under a new
+    /// name opens through it again.
     override func save(
         to url: URL, ofType typeName: String, for saveOperation: NSDocument.SaveOperationType,
         completionHandler: @escaping (Error?) -> Void
     ) {
-        guard let live, saveOperation == .saveOperation, url.standardizedFileURL == live.url.standardizedFileURL else {
+        let ownFile = live.map { live in
+            url.standardizedFileURL == live.url.standardizedFileURL || Self.identity(of: url).map { $0 == Self.identity(of: live.url) } ?? false
+        } ?? false
+        guard let live, saveOperation == .saveOperation || saveOperation == .saveAsOperation, ownFile else {
             super.save(to: url, ofType: typeName, for: saveOperation) { [weak self] error in
                 if error == nil, saveOperation == .saveAsOperation, let self, let engine = self.engine {
                     try? self.open(url, with: engine)

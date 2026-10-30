@@ -1,4 +1,5 @@
 import AppKit
+import MdCore
 import os
 
 @main
@@ -22,11 +23,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var launchWindow: LaunchWindowController?
     private var control: ControlSocket?
 
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        NotificationCenter.default.addObserver(self, selector: #selector(prune), name: NSApplication.didFinishRestoringWindowsNotification, object: nil)
+    }
+
+    /// Only the app prunes snapshots, once, with the last session's documents open again.
+    @objc private func prune() {
+        NotificationCenter.default.removeObserver(self, name: NSApplication.didFinishRestoringWindowsNotification, object: nil)
+        guard let engine = MarkdownDocument.sharedEngine else { return }
+        DispatchQueue.global(qos: .utility).async {
+            do throws(ChangeEngine.Failure) {
+                try engine.prune()
+            } catch {
+                Logger(subsystem: "dev.arkwerx.dewline", category: "engine")
+                    .error("Snapshots were not pruned: \(String(describing: error), privacy: .public)")
+            }
+        }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         Updates.shared.start()
         // The test host leaves the real socket alone; ControlSocketTests make their own.
         guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
-        let control = ControlSocket(path: ControlSocket.standardPath) { [weak self] request, connection in
+        let engine = MarkdownDocument.sharedEngine
+        let control = ControlSocket(path: ControlSocket.standardPath, notify: { claim in
+            if let engine { LiveFile.claim(claim, engine: engine) }
+        }) { [weak self] request, connection in
             self?.open(request, for: connection)
         }
         do {
@@ -47,20 +69,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func open(_ request: ControlSocket.Open, for connection: ControlSocket.Connection) {
         let url = URL(fileURLWithPath: request.path)
         let controller = NSDocumentController.shared
-        let document: MarkdownDocument
         if let open = controller.document(for: url) as? MarkdownDocument {
-            document = open
-        } else {
+            return show(open, for: request, connection)
+        }
+        Task {
+            let document: MarkdownDocument
             do {
-                document = try MarkdownDocument(contentsOf: url, ofType: "net.daringfireball.markdown")
+                document = try await MarkdownDocument.open(url)
             } catch {
                 connection.reply(.refused(.cannotOpen, message: error.localizedDescription))
                 return
             }
+            // Another request may have opened it while this one read.
+            if let open = controller.document(for: url) as? MarkdownDocument {
+                document.close()
+                return show(open, for: request, connection)
+            }
             controller.addDocument(document)
             controller.noteNewRecentDocumentURL(url)
             document.makeWindowControllers()
+            show(document, for: request, connection)
         }
+    }
+
+    private func show(_ document: MarkdownDocument, for request: ControlSocket.Open, _ connection: ControlSocket.Connection) {
         document.showWindows()
         if let line = request.line {
             (document.windowControllers.first as? MainWindowController)?.textView?.jump(toLine: line, column: request.column ?? 1)

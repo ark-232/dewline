@@ -43,6 +43,9 @@ enum MainMenu {
         menu.addItem(.separator())
         menu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         menu.addItem(withTitle: "Save", action: #selector(NSDocument.save(_:)), keyEquivalent: "s")
+        let snapshots = NSMenu(title: "Snapshots")
+        snapshots.delegate = SnapshotsMenu.shared
+        menu.addItem(withTitle: "Snapshots", action: nil, keyEquivalent: "").submenu = snapshots
         return menu
     }
 

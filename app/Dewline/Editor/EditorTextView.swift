@@ -276,6 +276,15 @@ final class EditorTextView: CaretTextView {
         super.didChangeText()
     }
 
+    /// Replaces `range` with `text` as one undoable edit of its own.
+    func replaceAsOneEdit(_ range: NSRange, with text: String) {
+        breakUndoCoalescing()
+        guard shouldChangeText(in: range, replacementString: text) else { return }
+        textStorage!.replaceCharacters(in: range, with: text)
+        didChangeText()
+        breakUndoCoalescing()
+    }
+
     /// The baseline of the line holding the character at `index`, in this view's coordinates.
     func baseline(at index: Int) -> CGFloat? {
         guard index >= 0, index < textStorage!.length, let layout = textLayoutManager, let content = layout.textContentManager,
