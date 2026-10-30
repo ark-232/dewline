@@ -50,6 +50,9 @@ jobs:
   swift:
     runs-on: xcode-27
     timeout-minutes: 30
+    # One cached target dir for the FFI library and the dewline command that embed-cli.sh builds.
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/core/target
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -69,8 +72,6 @@ jobs:
           shared-key: ffi
       # Host slice only: release-dry builds and checks the universal app on main.
       - run: scripts/build-xcframework.sh
-        env:
-          CARGO_TARGET_DIR: ${{ github.workspace }}/core/target
       - run: xcodegen generate --spec app/project.yml
       - run: xcodebuild test -project app/Dewline.xcodeproj -scheme Dewline -destination 'platform=macOS,arch=arm64' CODE_SIGNING_ALLOWED=NO
 
