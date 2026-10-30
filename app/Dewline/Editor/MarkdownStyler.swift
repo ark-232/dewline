@@ -63,6 +63,16 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
         blocks = RenderedBlocks(map: map)
         super.init()
         map.merged = { [weak self] changed in self?.restyleLater(changed) }
+        for name in [NSNotification.Name.NSUndoManagerDidUndoChange, .NSUndoManagerDidRedoChange] {
+            NotificationCenter.default.addObserver(self, selector: #selector(undid), name: name, object: undoManager)
+        }
+    }
+
+    /// Undo and redo set the selection after their edit, often to where it was, and then no selection change corrects
+    /// the reveal their restyle guessed.
+    @objc private func undid(_ notification: Notification) {
+        guard textView?.defersStyling == false else { return }
+        updateReveal()
     }
 
     var baseAttributes: [NSAttributedString.Key: Any] {
