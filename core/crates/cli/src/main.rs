@@ -9,6 +9,7 @@ use std::ffi::{OsStr, OsString};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
+use dewline_core::decisions;
 
 use control::Socket;
 
@@ -43,6 +44,18 @@ enum Command {
         #[arg(long, value_enum)]
         hook: notify::Vendor,
     },
+    /// List the agents' changes you kept and reverted, oldest first
+    Changes {
+        /// Print a JSON array, one object per decision
+        #[arg(long)]
+        json: bool,
+        /// Only this agent session's decisions
+        #[arg(long, value_name = "ID")]
+        session: Option<String>,
+        /// Only decisions at or after this UTC time: 2026-10-30, 2026-10-30T18:00:00Z
+        #[arg(long, value_name = "TIME")]
+        since: Option<String>,
+    },
 }
 
 fn main() -> ExitCode {
@@ -61,6 +74,11 @@ fn main() -> ExitCode {
             notify::run(hook);
             return ExitCode::SUCCESS;
         }
+        Command::Changes {
+            json,
+            session,
+            since,
+        } => return changes(json, session.as_deref(), since.as_deref()),
     };
     match open(&files, wait) {
         Ok(()) => ExitCode::SUCCESS,
@@ -102,6 +120,38 @@ fn open(files: &[OsString], wait: bool) -> Result<(), String> {
     Ok(())
 }
 
+fn changes(json: bool, session: Option<&str>, since: Option<&str>) -> ExitCode {
+    let read = decisions::standard_root()
+        .ok_or_else(|| "no home folder".to_owned())
+        .and_then(|root| {
+            decisions::read(&root, session, since)
+                .map_err(|error| format!("the decisions log: {error}"))
+        });
+    let records = match read {
+        Ok(records) => records,
+        Err(message) => {
+            eprintln!("dewline: {message}");
+            return ExitCode::FAILURE;
+        }
+    };
+    if json {
+        println!("{}", serde_json::Value::Array(records));
+        return ExitCode::SUCCESS;
+    }
+    for record in records {
+        let field = |key: &str| printable(record[key].as_str().unwrap_or(""));
+        println!(
+            "{}  {:<8}  {} {}  {}",
+            field("time"),
+            field("decision"),
+            field("vendor"),
+            field("session"),
+            field("file")
+        );
+    }
+    ExitCode::SUCCESS
+}
+
 /// Paths and the app's messages with control characters replaced, so a
 /// hostile name can't drive the terminal.
 fn printable(text: &str) -> String {
@@ -119,6 +169,7 @@ mod tests {
         match Cli::try_parse_from(args)?.command {
             Command::Open { files, wait } => Ok((files, wait)),
             Command::Notify { .. } => panic!("{args:?} is notify"),
+            Command::Changes { .. } => panic!("{args:?} is changes"),
         }
     }
 
