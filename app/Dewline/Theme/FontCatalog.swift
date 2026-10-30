@@ -165,6 +165,55 @@ enum FontCatalog {
             ]
         ),
         Family(
+            name: "Source Code Pro", role: .mono, folder: "sourcecodepro",
+            why: "Adobe's quiet coding mono; pairs with Source Serif 4",
+            project: "https://github.com/adobe-fonts/source-code-pro",
+            files: [
+                File(name: "SourceCodePro-Italic[wght].ttf", size: 174852, sha256: "6db77d25aa7b30eff449305b5c998e475694c74d398421127ea5a60f536413cd"),
+                File(name: "SourceCodePro[wght].ttf", size: 212340, sha256: "b400fc584e10aff25d0e775ce181b4fc1c5ea1b5dc37b81aeb2084375b945790"),
+                File(name: "OFL.txt", size: 4622, sha256: "cb30d3086a8b3ce0b9e3690bf48d6620402b61160bc658076f95180ccd9e9dae"),
+            ]
+        ),
+        Family(
+            name: "Cascadia Code", role: .mono, folder: "cascadiacode",
+            why: "Windows Terminal's face, with programming ligatures and a cursive italic",
+            project: "https://github.com/microsoft/cascadia-code",
+            files: [
+                File(name: "CascadiaCode-Italic[wght].ttf", size: 530444, sha256: "33559b4beb60523b824e25a416b5de2779a9bc7c7ce32ce128490b42acbf4681"),
+                File(name: "CascadiaCode[wght].ttf", size: 727940, sha256: "30f2e14a5c389b346b1fce110c4ddcf0dc5ce8265faf5eca2ab7323f49dba590"),
+                File(name: "OFL.txt", size: 4395, sha256: "82c05d6c53dfa0c9025985c19e371810020b74ed2c61d51d370f2a8ab2506d52"),
+            ]
+        ),
+        Family(
+            name: "Victor Mono", role: .mono, folder: "victormono",
+            why: "Narrow and tall, with a semi-connected cursive italic for comments",
+            project: "https://github.com/rubjo/victor-mono",
+            files: [
+                File(name: "VictorMono-Italic[wght].ttf", size: 242872, sha256: "e393afee873d56e052c10bdfcbf67053c429895bd73a4f8e59100a09ffb9d8ec"),
+                File(name: "VictorMono[wght].ttf", size: 194312, sha256: "6fab3abe37b456f56d180987e04a3a0c326bace2cb825bc638b6be1eb03edf8f"),
+                File(name: "OFL.txt", size: 4395, sha256: "493589852331b4ea83f1d6b0cbdc157b002ffdb995cf2429acf0c9863bc8f3df"),
+            ]
+        ),
+        Family(
+            name: "Geist Mono", role: .mono, folder: "geistmono",
+            why: "Vercel's crisp, geometric mono for terminals and editors",
+            project: "https://github.com/vercel/geist-font",
+            files: [
+                File(name: "GeistMono-Italic[wght].ttf", size: 182656, sha256: "70c15be47d55f637197f7e38570dbca16b35777ea647dc3598f61bf3961d2b0d"),
+                File(name: "GeistMono[wght].ttf", size: 171948, sha256: "d00e590b8eb3a59acc329b2d044fd143ae935090b7da33199ebee27cc7de8196"),
+                File(name: "OFL.txt", size: 4387, sha256: "1781d2806a07d91c4edf4740b88449fab7d0eadad53f7c351b94cd4d4eb8c00f"),
+            ]
+        ),
+        Family(
+            name: "Inconsolata", role: .mono, folder: "inconsolata",
+            why: "A humanist coding mono with a width axis for dense listings",
+            project: "https://github.com/googlefonts/Inconsolata",
+            files: [
+                File(name: "Inconsolata[wdth,wght].ttf", size: 347180, sha256: "23ded25b447074d00659392bf9b1123d89df55cb07b0ad9bfef3366d199b5fcb"),
+                File(name: "OFL.txt", size: 4350, sha256: "29bd0cfd0fb2a45f9b057c834a057724bae1f63b525a8ac83d3e7525706d9f80"),
+            ]
+        ),
+        Family(
             name: "Fraunces", role: .display, folder: "fraunces",
             why: "Soft and Wonk axes for warm display headings",
             project: "https://github.com/undercasetype/Fraunces",
