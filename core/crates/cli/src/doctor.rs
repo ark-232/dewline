@@ -219,10 +219,7 @@ fn install_hooks(
         .into_iter()
         .map(|event| json!({ (event): merged["hooks"][event].as_array().and_then(|groups| groups.last()) }))
         .collect();
-    println!(
-        "\n  This adds to {}, which is rewritten with its keys in alphabetical order after a backup:",
-        path.display()
-    );
+    println!("\n  This adds to {}:", path.display());
     for entry in &added {
         println!("    {entry}");
     }
@@ -338,6 +335,10 @@ mod tests {
             once["hooks"]["Stop"],
             json!([{"hooks": [{"type": "command", "command": COMMAND}]}])
         );
+        let keys: Vec<_> = once.as_object().unwrap().keys().collect();
+        assert_eq!(keys, ["model", "permissions", "hooks"]);
+        let events: Vec<_> = once["hooks"].as_object().unwrap().keys().collect();
+        assert_eq!(events[..2], ["PreToolUse", "Notification"]);
     }
 
     #[test]
