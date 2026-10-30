@@ -12,7 +12,8 @@ app=${1:?usage: scripts/sign.sh <Dewline.app> <Dewline.dmg>}
 dmg=${2:?usage: scripts/sign.sh <Dewline.app> <Dewline.dmg>}
 identity=${SIGN_IDENTITY:-}
 work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
+entitlements=$(mktemp -d)
+trap 'rm -rf "$work" "$entitlements"' EXIT
 
 sign() { codesign --force --timestamp --options runtime --sign "$identity" "$@"; }
 
@@ -26,7 +27,15 @@ if [[ -n $identity ]]; then
     for helper in "$app"/Contents/Helpers/*; do
         if [[ -e $helper ]]; then sign "$helper"; fi
     done
-    sign "$app"
+    # The archive is unsigned, so the entitlements are written here: the app group the Quick Look preview reads the
+    # app's stylesheet from, and the preview's sandbox.
+    group=$(plutil -extract DewlineAppGroup raw "$app/Contents/Info.plist")
+    plutil -create xml1 "$entitlements/app.plist"
+    plutil -insert 'com\.apple\.security\.application-groups' -json "[\"$group\"]" "$entitlements/app.plist"
+    cp "$entitlements/app.plist" "$entitlements/preview.plist"
+    plutil -insert 'com\.apple\.security\.app-sandbox' -bool YES "$entitlements/preview.plist"
+    sign --entitlements "$entitlements/preview.plist" "$app/Contents/PlugIns/DewlinePreview.appex"
+    sign --entitlements "$entitlements/app.plist" "$app"
     codesign --verify --strict --deep -vv "$app"
 else
     echo "sign.sh: skipped code signing: SIGN_IDENTITY is not set, so the app and the DMG stay unsigned"

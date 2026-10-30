@@ -21,11 +21,17 @@ enum DewlineApp {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var launchWindow: LaunchWindowController?
     private var control: ControlSocket?
+    private let inboxService = InboxService()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Updates.shared.start()
+        NSApp.servicesProvider = inboxService
         // The test host leaves the real socket alone; ControlSocketTests make their own.
         guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
+        Export.publishPreviewStylesheet()
+        NotificationCenter.default.addObserver(forName: ThemeStore.didChange, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { Export.publishPreviewStylesheet() }
+        }
         let control = ControlSocket(path: ControlSocket.standardPath) { [weak self] request, connection in
             self?.open(request, for: connection)
         }
@@ -45,28 +51,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Opens a file for the `dewline` command as Markdown, whatever its extension (git's COMMIT_EDITMSG has none),
     /// with the caret at the line and column asked for.
     func open(_ request: ControlSocket.Open, for connection: ControlSocket.Connection) {
-        let url = URL(fileURLWithPath: request.path)
+        let document: MarkdownDocument
+        do {
+            document = try show(URL(fileURLWithPath: request.path), line: request.line, column: request.column)
+        } catch {
+            connection.reply(.refused(.cannotOpen, message: error.localizedDescription))
+            return
+        }
+        if request.wait { document.answerWhenClosed(connection) }
+        connection.reply(.opened)
+    }
+
+    /// Opens `url` as Markdown, or brings its window forward, with the caret at `line` and `column`.
+    @discardableResult
+    func show(_ url: URL, line: Int?, column: Int?) throws -> MarkdownDocument {
         let controller = NSDocumentController.shared
         let document: MarkdownDocument
         if let open = controller.document(for: url) as? MarkdownDocument {
             document = open
         } else {
-            do {
-                document = try MarkdownDocument(contentsOf: url, ofType: "net.daringfireball.markdown")
-            } catch {
-                connection.reply(.refused(.cannotOpen, message: error.localizedDescription))
-                return
-            }
+            document = try MarkdownDocument(contentsOf: url, ofType: "net.daringfireball.markdown")
             controller.addDocument(document)
             controller.noteNewRecentDocumentURL(url)
             document.makeWindowControllers()
         }
         document.showWindows()
-        if let line = request.line {
-            (document.windowControllers.first as? MainWindowController)?.textView?.jump(toLine: line, column: request.column ?? 1)
+        if let line {
+            (document.windowControllers.first as? MainWindowController)?.textView?.jump(toLine: line, column: column ?? 1)
         }
-        if request.wait { document.answerWhenClosed(connection) }
-        connection.reply(.opened)
+        return document
     }
 
     // AppKit asks at launch when nothing opens or restores, and when the Dock icon is clicked with no windows.
@@ -85,7 +98,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
-            if (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
+            if url.scheme == "dewline" {
+                Links.handle(url)
+            } else if (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
                 openFolder(at: url)
             } else {
                 NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { _, _, error in
