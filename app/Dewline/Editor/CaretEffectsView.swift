@@ -17,11 +17,18 @@ final class CaretEffectsView: NSView {
         return mark
     }()
 
+    let block: CALayer = {
+        let block = CALayer()
+        block.isHidden = true
+        return block
+    }()
+
     override var isFlipped: Bool { true }
     override var wantsUpdateLayer: Bool { true }
 
     override func makeBackingLayer() -> CALayer {
         let layer = CALayer()
+        layer.addSublayer(block)
         layer.addSublayer(mark)
         layer.addSublayer(streak)
         return layer
@@ -40,6 +47,18 @@ final class CaretEffectsView: NSView {
         streak.path = Self.path(Self.corners(of: new))
         streak.opacity = 0
         streak.add(Self.streakAnimation(from: old, to: new), forKey: "streak")
+        CATransaction.commit()
+    }
+
+    /// The block caret over `rect`, or none.
+    func showBlock(_ rect: NSRect?, color: CGColor?) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        block.isHidden = rect == nil
+        if let rect {
+            block.frame = rect
+            block.backgroundColor = color
+        }
         CATransaction.commit()
     }
 
