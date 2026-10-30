@@ -64,9 +64,12 @@ enum Command {
     },
     /// Check the app's version, the agent hooks and the companion tools
     Doctor {
-        /// Merge Dewline's hooks into Claude Code's and Codex's settings, asking first
+        /// Merge Dewline's hooks into Claude Code's, Codex's and Cursor's settings, asking first
         #[arg(long)]
         install_hooks: bool,
+        /// Print the broken relative links and CLAUDE.md @imports of the markdown files under DIR, and nothing else
+        #[arg(long, value_name = "DIR", conflicts_with = "install_hooks")]
+        links: Option<PathBuf>,
     },
 }
 
@@ -76,7 +79,10 @@ fn main() -> ExitCode {
         Command::Capture { text } => capture(text),
         Command::Export { file, to, out } => export::run(&file, to, out.as_deref()),
         Command::Mcp { root } => mcp::run(&root),
-        Command::Doctor { install_hooks } => doctor::run(install_hooks),
+        Command::Doctor {
+            links: Some(dir), ..
+        } => doctor::links(&dir),
+        Command::Doctor { install_hooks, .. } => doctor::run(install_hooks),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -206,7 +212,8 @@ mod tests {
         assert!(matches!(
             command(&["dewline", "doctor", "--install-hooks"]),
             Ok(Command::Doctor {
-                install_hooks: true
+                install_hooks: true,
+                links: None
             })
         ));
     }

@@ -268,7 +268,7 @@ final class FolderIndex {
 
     private init(_ folder: Folder) {
         tree = FileTree(folder)
-        watch = FolderWatch(folder.url) { [weak self] folders in
+        watch = FolderWatch([folder.url]) { [weak self] folders in
             self?.relist(folders.map(\.standardizedFileURL.path))
         }
         relist(nil)

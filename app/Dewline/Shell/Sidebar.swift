@@ -16,6 +16,8 @@ final class SidebarNode {
         case ignored([String])
         /// The row after the first 12 headings that shows the rest.
         case more(Int)
+        /// A What Loads Here or Review row.
+        case agent(AgentRow)
     }
 
     let kind: Kind
@@ -39,6 +41,11 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     private let pinned = SidebarNode(.section("Pinned"))
     private let recents = SidebarNode(.section("Recents"))
     private let outlineSection = SidebarNode(.section("Outline"), children: [])
+    private let review = SidebarNode(.section("Review"), children: [])
+    private let loads = SidebarNode(.section("What Loads Here"), children: [])
+    /// "differs from AGENTS.md" for the open file's folder's instruction files, by path.
+    private var flags: [String: (flag: String, sections: [String])] = [:]
+    private var reviewWatch: FolderWatch?
     private let tree: SidebarNode?
     private var expandedOnce: Set<ObjectIdentifier> = []
     /// The open file's row in the tree.
@@ -62,10 +69,13 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         }
         super.init(nibName: nil, bundle: nil)
         watch = folder.map { folder in
-            FolderWatch(folder.url) { [weak self] folders in
+            FolderWatch([folder.url]) { [weak self] folders in
                 let changed = Set(folders.map(\.standardizedFileURL.path))
                 self?.relist { changed.contains($0.path) }
             }
+        }
+        reviewWatch = FolderWatch(Review.roots(folder: folder?.url)) { [weak self] folders in
+            if folders.contains(where: Review.matters) { self?.listReview() }
         }
     }
 
@@ -101,6 +111,10 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             case .ignored:
                 self?.showsIgnored.toggle()
                 self?.relist { _ in true }
+            case .agent(let row):
+                if let url = row.url {
+                    self?.open(url, NSApp.currentEvent?.modifierFlags.contains(.command) == true)
+                }
             default:
                 return false
             }
@@ -140,6 +154,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
 
     /// Shows `url` as the open file: reveals and selects its row and lists its headings.
     func show(_ url: URL?, text: String) {
+        listLoads(in: url?.deletingLastPathComponent() ?? folder?.url)
         fileNode?.children = nil
         fileNode = url.flatMap(treeNode(for:))
         showsAllHeadings = false
@@ -186,8 +201,19 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         }
     }
 
+    /// What Loads Here for `directory`, and the divergence flags of its instruction files.
+    private func listLoads(in directory: URL?) {
+        flags = directory.map(divergenceFlags(in:)) ?? [:]
+        loads.children = directory.map { whatLoadsRows(in: $0, root: folder?.url).map { SidebarNode(.agent($0)) } } ?? []
+    }
+
+    private func listReview() {
+        review.children = Review.rows(folder: folder?.url).map { SidebarNode(.agent($0)) }
+        reload()
+    }
+
     private var sections: [SidebarNode] {
-        let shortcuts = [pinned, recents].filter { !($0.children ?? []).isEmpty }
+        let shortcuts = [pinned, recents, review, loads].filter { !($0.children ?? []).isEmpty }
         if let tree { return shortcuts + [tree] }
         return shortcuts + (outlineSection.children!.isEmpty ? [] : [outlineSection])
     }
@@ -259,7 +285,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         recents.children = Library.recents.prefix(8).map { visit in
             SidebarNode(.shortcut(FolderEntry(url: visit.url, isFolder: false), visit.date))
         }
-        reload()
+        listReview()
     }
 
     /// A click opens in this tab and a Command-click in a new one.
@@ -408,7 +434,12 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             return cell
         case .entry(let entry):
             let cell = cell(SidebarCell.file)
-            cell.show(entry, detail: nil, gone: false)
+            cell.show(entry, detail: flags[entry.url.path]?.flag, gone: false)
+            cell.toolTip = flags[entry.url.path].map { "Differs in: " + $0.sections.joined(separator: ", ") }
+            return cell
+        case .agent(let row):
+            let cell = cell(SidebarCell.file)
+            cell.show(row)
             return cell
         case .shortcut(let entry, let date):
             let cell = cell(SidebarCell.file)
@@ -575,10 +606,27 @@ private final class SidebarCell: NSTableCellView {
             : "doc"
         imageView?.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
         imageView?.contentTintColor = dim ? .tertiaryLabelColor : entry.isFolder ? .controlAccentColor : .secondaryLabelColor
+        textField?.font = .systemFont(ofSize: NSFont.systemFontSize)
         textField?.stringValue = entry.url.lastPathComponent
         textField?.textColor = dim ? .tertiaryLabelColor : .labelColor
         toolTip = gone ? "Moved or deleted" : nil
         detail.stringValue = text ?? ""
+    }
+
+    /// An agent's name in secondary text, or one of its files with any divergence flag dim after its name.
+    func show(_ row: AgentRow) {
+        imageView?.image = row.url == nil ? nil : NSImage(systemSymbolName: "doc.text", accessibilityDescription: nil)
+        imageView?.contentTintColor = .secondaryLabelColor
+        let title = NSMutableAttributedString(string: row.title, attributes: [
+            .font: NSFont.systemFont(ofSize: row.url == nil ? 11 : 13, weight: row.url == nil ? .medium : .regular),
+            .foregroundColor: row.url == nil ? NSColor.secondaryLabelColor : .labelColor,
+        ])
+        if let flag = row.flag {
+            title.append(NSAttributedString(string: "  " + flag, attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.tertiaryLabelColor]))
+        }
+        textField?.attributedStringValue = title
+        toolTip = row.tip
+        detail.stringValue = row.detail
     }
 
     func show(_ title: String, branch: String?) {

@@ -1,10 +1,13 @@
 pub mod agents;
 pub mod claims;
+pub mod divergence;
 pub mod export;
 pub mod file;
 pub mod git;
 pub mod inbox;
 pub mod jail;
+pub mod links;
+pub mod loads;
 pub mod md;
 pub mod merge;
 pub mod store;

@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use dewline_core::file;
+use dewline_core::{file, links};
 use serde_json::{Map, Value, json};
 
 use crate::control::enclosing_app;
@@ -21,11 +21,13 @@ struct Agent {
     settings: &'static str,
     /// Each hook event, with the tool matcher it takes.
     events: &'static [(&'static str, Option<&'static str>)],
+    /// Cursor's shape: each event a list of `{"command"}` with no matcher groups, under `"version": 1`.
+    flat: bool,
 }
 
 const TOOLS: &str = "Read|Edit|MultiEdit|Write";
 
-const AGENTS: [Agent; 2] = [
+const AGENTS: [Agent; 3] = [
     Agent {
         name: "claude",
         title: "Claude Code",
@@ -39,6 +41,7 @@ const AGENTS: [Agent; 2] = [
             ("SessionEnd", None),
             ("InstructionsLoaded", None),
         ],
+        flat: false,
     },
     Agent {
         name: "codex",
@@ -48,6 +51,14 @@ const AGENTS: [Agent; 2] = [
             ("PreToolUse", Some("^apply_patch$")),
             ("PostToolUse", Some("^apply_patch$")),
         ],
+        flat: false,
+    },
+    Agent {
+        name: "cursor",
+        title: "Cursor",
+        settings: ".cursor/hooks.json",
+        events: &[("afterFileEdit", None)],
+        flat: true,
     },
 ];
 
@@ -158,8 +169,10 @@ fn missing(settings: Option<&Value>, agent: &Agent) -> Vec<&'static str> {
             .and_then(Value::as_array)
             .into_iter()
             .flatten()
-            .filter_map(|group| group.get("hooks")?.as_array())
-            .flatten()
+            .flat_map(|group| match group.get("hooks") {
+                Some(hooks) if !agent.flat => hooks.as_array().map_or(&[][..], Vec::as_slice),
+                _ => std::slice::from_ref(group),
+            })
             .filter_map(|hook| hook.get("command")?.as_str())
             .any(|command| command.contains("dewline") && command.trim_end().ends_with(&suffix))
     };
@@ -179,6 +192,9 @@ fn merge(settings: Option<&Value>, agent: &Agent, command: &str) -> Result<Value
     let root = settings
         .as_object_mut()
         .ok_or("the settings aren't a JSON object")?;
+    if agent.flat {
+        root.entry("version").or_insert(json!(1));
+    }
     let hooks = root
         .entry("hooks")
         .or_insert_with(|| json!({}))
@@ -189,13 +205,17 @@ fn merge(settings: Option<&Value>, agent: &Agent, command: &str) -> Result<Value
             continue;
         }
         let mut group = Map::new();
-        if let Some(matcher) = matcher {
+        if agent.flat {
+            group.insert("command".into(), json!(command));
+        } else if let Some(matcher) = matcher {
             group.insert("matcher".into(), json!(matcher));
         }
-        group.insert(
-            "hooks".into(),
-            json!([{"type": "command", "command": command}]),
-        );
+        if !agent.flat {
+            group.insert(
+                "hooks".into(),
+                json!([{"type": "command", "command": command}]),
+            );
+        }
         hooks
             .entry(event)
             .or_insert_with(|| json!([]))
@@ -242,6 +262,31 @@ fn install_hooks(
         );
     }
     Ok(())
+}
+
+/// `dewline doctor --links`: each broken link and import under `dir` as `file:line: target (problem)`.
+pub fn links(dir: &Path) -> Result<(), String> {
+    let home = env::home_dir();
+    let broken = links::check_dir(dir, home.as_deref());
+    for item in &broken {
+        let line = fs::read_to_string(&item.file)
+            .map(|text| links::line_of(&text, item.target.range.start))
+            .unwrap_or(0);
+        println!(
+            "{}:{line}: {} ({})",
+            crate::printable(&item.file.to_string_lossy()),
+            crate::printable(&item.target.text),
+            item.problem.describe()
+        );
+    }
+    match broken.len() {
+        0 => {
+            println!("No broken links under {}.", dir.display());
+            Ok(())
+        }
+        1 => Err("1 broken link".into()),
+        count => Err(format!("{count} broken links")),
+    }
 }
 
 /// Writes `new` over a file that held `old`, after copying it to a dated backup beside it, or makes the file when

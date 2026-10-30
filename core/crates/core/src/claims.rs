@@ -40,6 +40,7 @@ impl Id {
 pub enum Vendor {
     Claude,
     Codex,
+    Cursor,
 }
 
 /// A vendor's session.
@@ -70,6 +71,7 @@ impl Tool {
             (Vendor::Claude, "MultiEdit") => Some(Tool::MultiEdit),
             (Vendor::Claude, "Write") => Some(Tool::Write),
             (Vendor::Codex, "apply_patch") => Some(Tool::ApplyPatch),
+            (Vendor::Cursor, "Edit") => Some(Tool::Edit),
             _ => None,
         }
     }
@@ -151,6 +153,7 @@ impl Claim {
         let vendor = match fields.vendor {
             "claude" => Vendor::Claude,
             "codex" => Vendor::Codex,
+            "cursor" => Vendor::Cursor,
             _ => return Err(Refused::Invalid("vendor")),
         };
         let session = Id::new(fields.session).ok_or(Refused::Invalid("session id"))?;
@@ -193,6 +196,73 @@ impl Claim {
             event,
         })
     }
+}
+
+/// The PreToolUse and PostToolUse claims of one edit Cursor's `afterFileEdit` hook reports, for the file at `path`
+/// (its realpath) holding `disk` once the hook runs. The hook has no call id and no before half, so the bytes before
+/// are the disk's with each edit's `new_string` turned back into its `old_string`, and the declared change is the
+/// edits applied to those again; an edit whose `new_string` isn't in the file exactly once is refused. The call id
+/// is the `generation_id` with the hash after, so each edit of a generation has its own.
+pub fn cursor_edit(
+    input: &serde_json::Value,
+    path: &str,
+    disk: &[u8],
+) -> Result<[Claim; 2], Refused> {
+    let field = |name: &'static str| {
+        input
+            .get(name)
+            .and_then(|value| value.as_str())
+            .ok_or(Refused::Invalid(name))
+    };
+    let session = field("conversation_id")?;
+    let generation = field("generation_id")?;
+    let edits: Vec<(&str, &str)> = input
+        .get("edits")
+        .and_then(|edits| edits.as_array())
+        .filter(|edits| !edits.is_empty())
+        .ok_or(Refused::Invalid("edits"))?
+        .iter()
+        .map(|edit| {
+            let text = |name| edit.get(name).and_then(|value| value.as_str());
+            text("old_string")
+                .zip(text("new_string"))
+                .ok_or(Refused::Invalid("edits"))
+        })
+        .collect::<Result<_, _>>()?;
+    let disk = std::str::from_utf8(disk).map_err(|_| Refused::Invalid("edits"))?;
+    let swap = |text: &str, from: &str, to: &str| {
+        (!from.is_empty() && text.matches(from).count() == 1)
+            .then(|| text.replacen(from, to, 1))
+            .ok_or(Refused::Invalid("edits"))
+    };
+    let mut before = disk.to_owned();
+    for &(old, new) in edits.iter().rev() {
+        before = swap(&before, new, old)?;
+    }
+    let mut declared = before.clone();
+    for &(old, new) in &edits {
+        declared = swap(&declared, old, new)?;
+    }
+    let [before, after, declared] = [before.as_bytes(), disk.as_bytes(), declared.as_bytes()]
+        .map(|bytes| blake3::hash(bytes).to_hex().to_string());
+    let id = format!("{generation}:{}", &after[..16]);
+    let pre = Fields {
+        event: "PreToolUse",
+        vendor: "cursor",
+        session,
+        tool_use_id: Some(&id),
+        tool: Some("Edit"),
+        path: Some(path),
+        hash: Some(&before),
+        declared: Some(&declared),
+    };
+    let post = Fields {
+        event: "PostToolUse",
+        hash: Some(&after),
+        declared: None,
+        ..pre
+    };
+    Ok([Claim::parse(pre)?, Claim::parse(post)?])
 }
 
 /// One session's paired writes that take a file from a change's ancestor to

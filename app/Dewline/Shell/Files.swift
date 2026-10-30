@@ -87,13 +87,13 @@ struct Folder {
     }
 }
 
-/// Reports, on the main queue, the folders under a root whose contents changed, batched by FSEvents over 0.3 s.
+/// Reports, on the main queue, the folders under the roots whose contents changed, batched by FSEvents over 0.3 s.
 @MainActor
 final class FolderWatch {
     private let changed: ([URL]) -> Void
     private var stream: FSEventStreamRef?
 
-    init(_ root: URL, changed: @escaping ([URL]) -> Void) {
+    init(_ roots: [URL], changed: @escaping ([URL]) -> Void) {
         self.changed = changed
         var context = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
         stream = FSEventStreamCreate(
@@ -106,7 +106,7 @@ final class FolderWatch {
                 }
             },
             &context,
-            [root.path] as CFArray,
+            roots.map(\.path) as CFArray,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
             0.3,
             FSEventStreamCreateFlags(kFSEventStreamCreateFlagUseCFTypes)

@@ -9,6 +9,7 @@ use ratex_layout::LayoutOptions;
 use ratex_types::color::Color;
 use resvg::{tiny_skia, usvg};
 
+mod agentfiles;
 mod markdown;
 mod save;
 

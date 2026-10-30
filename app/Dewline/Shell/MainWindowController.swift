@@ -1,4 +1,5 @@
 import AppKit
+import MdCore
 
 /// One tab: the sidebar beside the open file, or beside an empty page in a folder window until a file opens.
 final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolbarDelegate {
@@ -105,7 +106,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         NotificationCenter.default.addObserver(self, selector: #selector(textChanged), name: NSText.didChangeNotification, object: textView)
         NotificationCenter.default.addObserver(self, selector: #selector(scrolled), name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
         self.textView = textView
+        if let url = document.fileURL { Review.noteOpened(url) }
         sidebar.show(document.fileURL, text: document.text)
+        markBrokenLinks()
         if let url = document.fileURL {
             let folders = folder.flatMap { folder in
                 folder.relativePath(of: url).map { [folder.url.lastPathComponent] + $0.split(separator: "/").dropLast().map(String.init) }
@@ -183,6 +186,24 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled, let self, let textView = self.textView else { return }
             self.sidebar.updateOutline(textView.string)
+            self.markBrokenLinks()
+        }
+    }
+
+    /// A dotted underline under each relative link and CLAUDE.md `@import` whose file is missing, or whose import
+    /// cycles or runs more than 5 deep. Drawn as rendering attributes, so the text's own attributes stay as they are.
+    private func markBrokenLinks() {
+        guard let textView, let layout = textView.textLayoutManager, let content = layout.textContentManager else { return }
+        layout.removeRenderingAttribute(.underlineStyle, for: content.documentRange)
+        layout.removeRenderingAttribute(.underlineColor, for: content.documentRange)
+        guard let url = (document as? MarkdownDocument)?.fileURL else { return }
+        for link in brokenTargets(in: textView.string, path: url.path, home: agentHome) {
+            guard let start = content.location(content.documentRange.location, offsetBy: link.range.location),
+                let end = content.location(start, offsetBy: link.range.length),
+                let range = NSTextRange(location: start, end: end)
+            else { continue }
+            layout.addRenderingAttribute(.underlineStyle, value: NSUnderlineStyle([.single, .patternDot]).rawValue, for: range)
+            layout.addRenderingAttribute(.underlineColor, value: NSColor.systemRed.withAlphaComponent(0.7), for: range)
         }
     }
 
