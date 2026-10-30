@@ -35,6 +35,7 @@ final class ThemeStore {
     @ObservationIgnored private var traited: [NSFont: [UInt32: NSFont]] = [:]
     @ObservationIgnored private var lines: [CGFloat: NSParagraphStyle] = [:]
     @ObservationIgnored private var quote: NSParagraphStyle?
+    @ObservationIgnored private var writerColors: [Writer: NSColor] = [:]
 
     var appearance: Appearance {
         didSet {
@@ -54,6 +55,10 @@ final class ThemeStore {
     var vimMode: Bool { didSet { save(vimMode, "VimMode") } }
     /// The system's smart quotes and dashes, outside code; off by default.
     var smartPunctuation: Bool { didSet { save(smartPunctuation, "SmartPunctuation") } }
+    /// The hues the owner picked, by writer, as chroma and hue; a writer without one keeps its default.
+    var writerHues: [Writer: OKLCH] {
+        didSet { save(Dictionary(uniqueKeysWithValues: writerHues.map { ($0.key.rawValue, [$0.value.c, $0.value.h]) }), "WriterHues") }
+    }
 
     init(defaults: UserDefaults) {
         self.defaults = defaults
@@ -74,6 +79,11 @@ final class ThemeStore {
         headingStyle = string("HeadingStyle").flatMap(HeadingStyle.init) ?? .standard
         vimMode = defaults.bool(forKey: "DewlineVimMode")
         smartPunctuation = defaults.bool(forKey: "DewlineSmartPunctuation")
+        let hues = defaults.dictionary(forKey: "DewlineWriterHues") as? [String: [Double]] ?? [:]
+        writerHues = hues.reduce(into: [:]) { picks, entry in
+            guard let writer = Writer(rawValue: entry.key), entry.value.count == 2 else { return }
+            picks[writer] = OKLCH(l: writer.standard.light.l, c: entry.value[0], h: entry.value[1])
+        }
     }
 
     private func save(_ value: Any, _ key: String) {
@@ -85,6 +95,7 @@ final class ThemeStore {
         traited = [:]
         lines = [:]
         quote = nil
+        writerColors = [:]
         NotificationCenter.default.post(name: Self.didChange, object: self)
     }
 
@@ -117,6 +128,48 @@ final class ThemeStore {
         }
         colors[token] = color
         return color
+    }
+
+    /// The writer's mark color under the window's appearance (D21): the owner's hue when there is one.
+    func writerColor(_ writer: Writer) -> NSColor {
+        // Read on a cache hit too, so a view that shows the color observes it.
+        let pick = writerHues[writer]
+        if let color = writerColors[writer] { return color }
+        let colors = writer.colors(pick)
+        let (light, dark) = (colors.light.color, colors.dark.color)
+        let color = NSColor(name: nil) { $0.isDark ? dark : light }
+        writerColors[writer] = color
+        return color
+    }
+
+    /// The theme color within ΔE 8 of `writer`'s, nearest first, across the light slot's light tokens and the dark
+    /// slot's dark ones. A gray token never clashes with a gray writer: their shapes tell them apart.
+    func clash(_ writer: Writer) -> WriterClash? {
+        let colors = writer.colors(writerHues[writer])
+        func nearest(_ colors: (light: OKLCH, dark: OKLCH)) -> (theme: Theme, token: Token, dark: Bool, deltaE: Double)? {
+            var best: (theme: Theme, token: Token, dark: Bool, deltaE: Double)?
+            for (theme, dark, color) in [(lightTheme, false, colors.light), (darkTheme, true, colors.dark)] {
+                for (token, value) in dark ? theme.dark : theme.light where value.c >= 0.03 || color.c >= 0.03 {
+                    let deltaE = value.deltaE(color)
+                    if deltaE < best?.deltaE ?? .infinity { best = (theme, token, dark, deltaE) }
+                }
+            }
+            return best
+        }
+        guard let near = nearest(colors), near.deltaE < WriterClash.distance else { return nil }
+        var clear: OKLCH?
+        if colors.light.c >= 0.03 {
+            search: for step in 1...180 {
+                for hue in [colors.light.h + Double(step), colors.light.h - Double(step)] {
+                    let candidate = OKLCH(l: colors.light.l, c: colors.light.c, h: (hue + 360).truncatingRemainder(dividingBy: 360))
+                    if let other = nearest(writer.colors(candidate)), other.deltaE >= WriterClash.distance {
+                        clear = candidate
+                        break search
+                    }
+                }
+            }
+        }
+        return WriterClash(theme: near.theme, token: near.token, dark: near.dark, deltaE: near.deltaE, clearHue: clear)
     }
 
     /// The backdrop of the slot's theme for a light or dark appearance, under the system's accessibility settings.

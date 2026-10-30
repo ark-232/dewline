@@ -6,9 +6,11 @@ mod target;
 
 use std::env;
 use std::ffi::{OsStr, OsString};
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
 use control::Socket;
 
@@ -43,6 +45,22 @@ enum Command {
         #[arg(long, value_enum)]
         hook: notify::Vendor,
     },
+    /// Write a markdown file in another format
+    Export {
+        /// The markdown file; its images come from its own folder
+        file: PathBuf,
+        /// The format to write
+        #[arg(long, value_enum)]
+        to: Format,
+        /// Where to write it; by default beside the file, with the format's extension
+        #[arg(long, short)]
+        output: Option<PathBuf>,
+    },
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum Format {
+    Docx,
 }
 
 fn main() -> ExitCode {
@@ -55,14 +73,15 @@ fn main() -> ExitCode {
         }
         Err(error) => error.exit(),
     };
-    let (files, wait) = match command {
-        Command::Open { files, wait } => (files, wait),
+    let result = match command {
+        Command::Open { files, wait } => open(&files, wait),
         Command::Notify { hook } => {
             notify::run(hook);
             return ExitCode::SUCCESS;
         }
+        Command::Export { file, to, output } => export(&file, to, output),
     };
-    match open(&files, wait) {
+    match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(message) => {
             for line in message.lines() {
@@ -102,6 +121,20 @@ fn open(files: &[OsString], wait: bool) -> Result<(), String> {
     Ok(())
 }
 
+fn export(file: &Path, to: Format, output: Option<PathBuf>) -> Result<(), String> {
+    let name = printable(&file.display().to_string());
+    let markdown = fs::read_to_string(file).map_err(|error| format!("{name}: {error}"))?;
+    let folder = file.parent().filter(|folder| !folder.as_os_str().is_empty()).unwrap_or(Path::new("."));
+    let (bytes, extension) = match to {
+        Format::Docx => (
+            dewline_core::export::docx::docx(&markdown, folder).map_err(|error| format!("{name}: {error}"))?,
+            "docx",
+        ),
+    };
+    let output = output.unwrap_or_else(|| file.with_extension(extension));
+    fs::write(&output, bytes).map_err(|error| format!("{}: {error}", printable(&output.display().to_string())))
+}
+
 /// Paths and the app's messages with control characters replaced, so a
 /// hostile name can't drive the terminal.
 fn printable(text: &str) -> String {
@@ -116,10 +149,10 @@ mod tests {
     use clap::CommandFactory;
 
     fn parse(args: &[&str]) -> Result<(Vec<OsString>, bool), clap::Error> {
-        match Cli::try_parse_from(args)?.command {
-            Command::Open { files, wait } => Ok((files, wait)),
-            Command::Notify { .. } => panic!("{args:?} is notify"),
-        }
+        let Command::Open { files, wait } = Cli::try_parse_from(args)?.command else {
+            panic!("{args:?} is not open");
+        };
+        Ok((files, wait))
     }
 
     #[test]
@@ -181,7 +214,7 @@ mod tests {
     }
 
     #[test]
-    fn other_commands_are_refused() {
+    fn open_refuses_what_it_does_not_take() {
         for args in [
             &["dewline"][..],
             &["dewline", "open"],
