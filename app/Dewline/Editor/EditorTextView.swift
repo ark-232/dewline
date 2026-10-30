@@ -496,7 +496,21 @@ final class EditorTextView: CaretTextView {
         return textContainerOrigin.y + fragment.layoutFragmentFrame.minY + line.typographicBounds.minY + line.glyphOrigin.y
     }
 
+    /// Runs the `MarkdownFormat` command in the sender's tag as one undoable edit named for it.
+    @objc func format(_ sender: Any?) {
+        guard !hasMarkedText(), let command = (sender as? NSMenuItem).flatMap({ MarkdownFormat(rawValue: $0.tag) }),
+            let edit = command.edit(in: textStorage!.mutableString, selection: selectedRange())
+        else { return }
+        breakUndoCoalescing()
+        guard shouldChangeText(in: edit.range, replacementString: edit.replacement) else { return }
+        textStorage!.replaceCharacters(in: edit.range, with: edit.replacement)
+        setSelectedRange(edit.selection)
+        didChangeText()
+        undoManager?.setActionName(command.name)
+    }
+
     override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(format(_:)) { return isEditable }
         switch menuItem.action {
         case #selector(toggleSource(_:)): menuItem.state = styler.showsSource ? .on : .off
         case #selector(toggleFocusMode(_:)): menuItem.state = focusMode ? .on : .off
