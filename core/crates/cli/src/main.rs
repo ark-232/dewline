@@ -3,9 +3,11 @@ mod target;
 
 use std::env;
 use std::ffi::OsString;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
 use control::Socket;
 
@@ -34,11 +36,30 @@ enum Command {
         #[arg(long)]
         wait: bool,
     },
+    /// Write a markdown file in another format
+    Export {
+        /// The markdown file; its images come from its own folder
+        file: PathBuf,
+        /// The format to write
+        #[arg(long, value_enum)]
+        to: Format,
+        /// Where to write it; by default beside the file, with the format's extension
+        #[arg(long, short)]
+        output: Option<PathBuf>,
+    },
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum Format {
+    Docx,
 }
 
 fn main() -> ExitCode {
-    let Command::Open { files, wait } = Cli::parse().command;
-    match open(&files, wait) {
+    let result = match Cli::parse().command {
+        Command::Open { files, wait } => open(&files, wait),
+        Command::Export { file, to, output } => export(&file, to, output),
+    };
+    match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(message) => {
             for line in message.lines() {
@@ -78,6 +99,20 @@ fn open(files: &[OsString], wait: bool) -> Result<(), String> {
     Ok(())
 }
 
+fn export(file: &Path, to: Format, output: Option<PathBuf>) -> Result<(), String> {
+    let name = printable(&file.display().to_string());
+    let markdown = fs::read_to_string(file).map_err(|error| format!("{name}: {error}"))?;
+    let folder = file.parent().filter(|folder| !folder.as_os_str().is_empty()).unwrap_or(Path::new("."));
+    let (bytes, extension) = match to {
+        Format::Docx => (
+            dewline_core::export::docx::docx(&markdown, folder).map_err(|error| format!("{name}: {error}"))?,
+            "docx",
+        ),
+    };
+    let output = output.unwrap_or_else(|| file.with_extension(extension));
+    fs::write(&output, bytes).map_err(|error| format!("{}: {error}", printable(&output.display().to_string())))
+}
+
 /// Paths and the app's messages with control characters replaced, so a
 /// hostile name can't drive the terminal.
 fn printable(text: &str) -> String {
@@ -92,7 +127,9 @@ mod tests {
     use clap::CommandFactory;
 
     fn parse(args: &[&str]) -> Result<(Vec<OsString>, bool), clap::Error> {
-        let Command::Open { files, wait } = Cli::try_parse_from(args)?.command;
+        let Command::Open { files, wait } = Cli::try_parse_from(args)?.command else {
+            panic!("not open");
+        };
         Ok((files, wait))
     }
 
@@ -128,7 +165,7 @@ mod tests {
     }
 
     #[test]
-    fn open_is_the_only_command() {
+    fn open_refuses_what_it_does_not_take() {
         for args in [
             &["dewline"][..],
             &["dewline", "open"],
