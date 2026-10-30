@@ -29,6 +29,8 @@ use crate::text;
 
 const YOU: &str = "You";
 const UNKNOWN: &str = "Unknown app";
+/// Larger files don't open, and a file that grows past it reads as unreadable.
+const MAX_FILE: u64 = 64 << 20;
 
 /// The time now, for claims and git's lock window and for the snapshot store.
 pub type Clock = Box<dyn Fn() -> (Instant, SystemTime) + Send + Sync>;
@@ -268,6 +270,8 @@ struct Pending {
     chain: Option<Chain>,
     head: Option<String>,
     changes: Vec<Change>,
+    /// The landing edits the buffer, so its apply bumps the version.
+    edits: bool,
 }
 
 struct Doc {
@@ -692,6 +696,7 @@ impl Engine {
             chain,
             head: now_head,
             changes,
+            edits: !landing.edits.is_empty(),
         });
         Ok(Some(landing))
     }
@@ -719,7 +724,9 @@ impl Engine {
         d.bom = pending.bom;
         d.base_origin = pending.origin;
         d.base_kept = true;
-        d.floor = Some(pending.version);
+        if pending.edits {
+            d.floor = Some(pending.version);
+        }
         d.head = pending.head;
         d.changes.retain(|change| change.marked);
         d.changes.extend(pending.changes);
@@ -888,11 +895,15 @@ impl Engine {
         let mut state = self.state();
         let d = state.docs.get_mut(&doc)?;
         let at = d.changes.iter().position(|pending| pending.id == change)?;
+        if let (Kind::Edit { original, landed }, Decision::Other) = (&d.changes[at].kind, decision)
+        {
+            // A revert that would drop text typed inside the change leaves it pending.
+            let reverted = revert(original, landed, current)?;
+            d.changes.remove(at);
+            return Some(reverted);
+        }
         match (d.changes.remove(at).kind, decision) {
-            (_, Decision::Keep) | (Kind::Edit { .. }, Decision::Both) => None,
-            (Kind::Edit { original, landed }, Decision::Other) => {
-                Some(revert(&original, &landed, current))
-            }
+            (_, Decision::Keep) | (Kind::Edit { .. }, _) => None,
             (Kind::Conflict { theirs }, Decision::Other) => Some(theirs),
             (Kind::Conflict { theirs }, Decision::Both) => Some(both(current, &theirs)),
         }
@@ -1120,7 +1131,7 @@ impl Engine {
 /// Reads a regular file. The open doesn't block, so a FIFO put at the path
 /// can't stall the document.
 fn read(path: &Path) -> io::Result<Vec<u8>> {
-    let mut file = OpenOptions::new()
+    let file = OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_NONBLOCK)
         .open(path)?;
@@ -1128,7 +1139,10 @@ fn read(path: &Path) -> io::Result<Vec<u8>> {
         return Err(io::Error::new(io::ErrorKind::InvalidData, "not a file"));
     }
     let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes)?;
+    file.take(MAX_FILE + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_FILE {
+        return Err(io::ErrorKind::FileTooLarge.into());
+    }
     Ok(bytes)
 }
 
@@ -1217,17 +1231,17 @@ fn differing(ours: &str, theirs: &str) -> (u32, u32, String) {
 }
 
 /// A change's text with the change undone: `original` back where it put
-/// `landed`, keeping what was typed inside it since when the two merge.
-fn revert(original: &str, landed: &str, current: &str) -> String {
+/// `landed`, keeping what was typed inside it since. None when that typing
+/// and the revert overlap.
+fn revert(original: &str, landed: &str, current: &str) -> Option<String> {
     if current == landed {
-        return original.to_owned();
+        return Some(original.to_owned());
     }
     let merge = merge::merge3(landed, current, original);
-    if merge.conflicts.is_empty() {
-        merge::apply(current, &merge.edits)
-    } else {
-        original.to_owned()
-    }
+    merge
+        .conflicts
+        .is_empty()
+        .then(|| merge::apply(current, &merge.edits))
 }
 
 /// A conflict's two versions, yours first, on lines of their own.
@@ -1483,6 +1497,42 @@ mod tests {
     }
 
     #[test]
+    fn a_landing_that_edits_nothing_leaves_the_version_saveable() {
+        let fx = fixture();
+        let path = fx.file("notes.md", "x\n\nThe cat sat\n");
+        let (doc, _) = opened(&fx.engine, &path);
+        let ours = "x\n\nThe dog sat\n";
+        fx.replace(&path, "x\n\nThe cow sat\n");
+        let (landing, _) = fx.land(doc, ours, 1);
+        assert!(landing.edits.is_empty() && landing.conflicts.len() == 1);
+        let (id, conflict) = &landing.conflicts[0];
+        let yours = &ours[conflict.start as usize..conflict.end as usize];
+        assert_eq!(fx.engine.decide(doc, *id, Decision::Keep, yours), None);
+        fx.engine.save(doc, ours, 1, auto()).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), ours);
+    }
+
+    #[test]
+    fn a_file_over_64_mb_does_not_open_or_land() {
+        let fx = fixture();
+        let path = fx.file("big.md", "a\n");
+        let (doc, _) = opened(&fx.engine, &path);
+        let file = OpenOptions::new().write(true).open(&path).unwrap();
+        file.set_len(MAX_FILE + 1).unwrap();
+        assert_eq!(
+            fx.engine.open(&path).err().map(|error| error.kind()),
+            Some(io::ErrorKind::FileTooLarge)
+        );
+        assert!(fx.engine.observe(doc).unwrap());
+        assert!(fx.engine.land(doc, "a\n", 1).unwrap().is_none());
+        let refused = fx.engine.save(doc, "b\n", 1, auto());
+        assert!(
+            matches!(refused, Err(SaveRefused::Unreadable)),
+            "{refused:?}"
+        );
+    }
+
+    #[test]
     fn a_newer_version_supersedes_a_landing() {
         let fx = fixture();
         let path = fx.file("notes.md", "a\n");
@@ -1625,12 +1675,12 @@ mod tests {
 
     #[test]
     fn decisions_revert_keep_and_take_the_other_version() {
-        assert_eq!(revert("old", "new", "new"), "old");
+        assert_eq!(revert("old", "new", "new").as_deref(), Some("old"));
         assert_eq!(
-            revert("The cat sat", "The cow sat", "The cow sat down"),
-            "The cat sat down"
+            revert("The cat sat", "The cow sat", "The cow sat down").as_deref(),
+            Some("The cat sat down")
         );
-        assert_eq!(revert("a", "b", "c"), "a");
+        assert_eq!(revert("a", "b", "c"), None);
         assert_eq!(both("mine", "theirs\r\n"), "mine\r\ntheirs\r\n");
         assert_eq!(both("mine\n", "theirs\n"), "mine\ntheirs\n");
         assert_eq!(both("", "theirs"), "theirs");
@@ -1650,6 +1700,8 @@ mod tests {
             panic!("{landing:?}");
         };
         assert_eq!(edit.text, "cow");
+        // Typing inside the change that the revert would drop leaves it pending.
+        assert_eq!(fx.engine.decide(doc, *id, Decision::Other, "cXw"), None);
         assert_eq!(
             fx.engine
                 .decide(doc, *id, Decision::Other, "cow")
@@ -2411,7 +2463,11 @@ mod tests {
                                     prop_assert_eq!(one, merge::apply(&self.buffer, &edits));
                                 }
                                 self.live.retain(|live| live.marked);
-                                self.edit(&edits);
+                                // Swift bumps the version only when a landing edits the buffer.
+                                if !edits.is_empty() {
+                                    self.edit(&edits);
+                                    self.floor = Some(landing.version);
+                                }
                                 let after: Vec<u16> = self.buffer.encode_utf16().collect();
                                 for (id, edit) in &landing.edits {
                                     let start =
@@ -2447,7 +2503,6 @@ mod tests {
                                         conflict: true,
                                     });
                                 }
-                                self.floor = Some(landing.version);
                                 self.landings.clear();
                             }
                             Err(Stale) => self.landings.retain(|l| l.id != landing.id),
