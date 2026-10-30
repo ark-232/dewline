@@ -12,6 +12,12 @@ final class EditorTextView: CaretTextView {
     private(set) var fadeStarted: ContinuousClock.Instant?
     /// Where images in the document resolve from.
     var documentFolder: URL?
+    /// Counts the storage's character edits; the change engine stamps landings and saves with it.
+    private(set) var version: UInt64 = 0
+    /// Called after each character edit with its range and change in length.
+    var edited: ((NSRange, Int) -> Void)?
+    /// Called when a composition or a Writing Tools session ends.
+    var inputEnded: (() -> Void)?
 
     var defersStyling: Bool {
         composing || hasMarkedText()
@@ -152,8 +158,14 @@ final class EditorTextView: CaretTextView {
         compositionEnded()
     }
 
+    func storageDidEdit(_ range: NSRange, delta: Int) {
+        version += 1
+        edited?(range, delta)
+    }
+
     private func compositionEnded() {
         styler.flush()
+        inputEnded?()
         if toggleWaits {
             toggleWaits = false
             toggleSource(nil)

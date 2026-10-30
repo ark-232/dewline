@@ -1,5 +1,6 @@
 import AppKit
 import MdCore
+import os
 
 /// A markdown file. Saving writes only while the file still holds the bytes it was opened or last saved with.
 final class MarkdownDocument: NSDocument {
@@ -12,6 +13,23 @@ final class MarkdownDocument: NSDocument {
     private var hasBOM = false
     /// `dewline open --wait` connections, answered when this document closes.
     private var waiters: [ControlSocket.Connection] = []
+    /// The engine that opens the file; none reads and saves it directly.
+    var engine = MarkdownDocument.sharedEngine
+    /// The file as the engine keeps it, once read.
+    private(set) var live: LiveFile?
+
+    /// The app's engine, its snapshots in Application Support. The test host has none; tests make their own.
+    static let sharedEngine: ChangeEngine? = {
+        guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return nil }
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        do {
+            return try ChangeEngine(store: support.appending(path: "dev.arkwerx.dewline/snapshots"))
+        } catch {
+            Logger(subsystem: "dev.arkwerx.dewline", category: "engine")
+                .error("No change engine, so files save without it: \(String(describing: error), privacy: .public)")
+            return nil
+        }
+    }()
 
     /// Posted when a document closes.
     static let didCloseNotification = Notification.Name("MarkdownDocumentDidClose")
@@ -31,6 +49,8 @@ final class MarkdownDocument: NSDocument {
     }
 
     override func close() {
+        live?.close()
+        live = nil
         super.close()
         for waiter in waiters {
             waiter.reply(.closed)
@@ -42,6 +62,9 @@ final class MarkdownDocument: NSDocument {
     /// Reads through a descriptor that must be a regular file, so a path that became a FIFO or a device after it
     /// was checked fails at once instead of blocking the main thread.
     override func read(from url: URL, ofType typeName: String) throws {
+        if let engine = MainActor.assumeIsolated({ engine }) {
+            return try MainActor.assumeIsolated { try open(url, with: engine) }
+        }
         let fd = Darwin.open(url.path, O_RDONLY | O_NONBLOCK | O_CLOEXEC)
         guard fd >= 0 else {
             let code: CocoaError.Code = errno == ENOENT ? .fileReadNoSuchFile : errno == EACCES ? .fileReadNoPermission : .fileReadUnknown
@@ -67,12 +90,51 @@ final class MarkdownDocument: NSDocument {
         }
     }
 
+    /// Opens the file through `engine`, which reads it as `read(from:ofType:)` does and keeps it from then on.
+    private func open(_ url: URL, with engine: ChangeEngine) throws {
+        live?.close()
+        live = nil
+        let opened: ChangeEngine.Opened
+        do throws(ChangeEngine.Failure) {
+            opened = try engine.open(url)
+        } catch {
+            throw CocoaError(.fileReadUnknown, userInfo: [NSURLErrorKey: url, NSLocalizedFailureReasonErrorKey: "\(error)"])
+        }
+        guard let text = opened.text else {
+            engine.close(opened.doc)
+            throw CocoaError(.fileReadInapplicableStringEncoding, userInfo: [NSURLErrorKey: url])
+        }
+        self.text = text
+        hasBOM = opened.bom
+        let live = LiveFile(engine: engine, doc: opened.doc, url: url, document: self)
+        if let textView { live.attach(textView) }
+        self.live = live
+    }
+
+    var textView: EditorTextView? {
+        (windowControllers.first as? MainWindowController)?.textView
+    }
+
+    /// A landing left the buffer equal to the file.
+    func absorbed(_ text: String) {
+        self.text = text
+    }
+
+    /// The engine wrote `text`.
+    func saved(_ text: String, token: Any) {
+        self.text = text
+        updateChangeCount(withToken: token, for: .saveOperation)
+        if let fileURL, let date = try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.modificationDate] as? Date {
+            fileModificationDate = date
+        }
+    }
+
     override func data(ofType typeName: String) throws -> Data {
         bytes(of: shownText)
     }
 
     private var shownText: String {
-        (windowControllers.first as? MainWindowController)?.textView?.string ?? text
+        textView?.string ?? text
     }
 
     /// Decoding drops a byte-order mark, so the file's own goes back in front.
@@ -86,6 +148,41 @@ final class MarkdownDocument: NSDocument {
             fileModificationDate = date
         }
         super.save(withDelegate: delegate, didSave: didSaveSelector, contextInfo: contextInfo)
+    }
+
+    /// Saving the engine's file goes through it, and a file saved under a new name opens through it again.
+    override func save(
+        to url: URL, ofType typeName: String, for saveOperation: NSDocument.SaveOperationType,
+        completionHandler: @escaping (Error?) -> Void
+    ) {
+        guard let live, saveOperation == .saveOperation, url.standardizedFileURL == live.url.standardizedFileURL else {
+            super.save(to: url, ofType: typeName, for: saveOperation) { [weak self] error in
+                if error == nil, saveOperation == .saveAsOperation, let self, let engine = self.engine {
+                    try? self.open(url, with: engine)
+                }
+                completionHandler(error)
+            }
+            return
+        }
+        Task {
+            let refusal = await live.saveExplicitly()
+            completionHandler(refusal.map { refusal in
+                switch refusal {
+                case .conflict, .changed: SaveConflict(document: self, name: url.lastPathComponent)
+                default: CocoaError(.fileWriteUnknown, userInfo: [NSLocalizedFailureReasonErrorKey: "\(refusal)"])
+                }
+            })
+        }
+    }
+
+    // NSDocument would revert an unedited document; the engine lands the change instead.
+    override nonisolated func presentedItemDidChange() {
+        Task { @MainActor in live?.signal() }
+    }
+
+    override nonisolated func presentedItemDidMove(to newURL: URL) {
+        super.presentedItemDidMove(to: newURL)
+        Task { @MainActor in live?.moved(to: newURL) }
     }
 
     override func writeSafely(to url: URL, ofType typeName: String, for saveOperation: NSDocument.SaveOperationType) throws {
@@ -121,7 +218,7 @@ final class MarkdownDocument: NSDocument {
 
     override func willPresentError(_ error: any Error) -> any Error {
         // NSDocument presents a failed save as "could not be saved"; a conflict says what happened instead.
-        (error as NSError).userInfo[NSUnderlyingErrorKey] as? SaveConflict ?? super.willPresentError(error)
+        error as? SaveConflict ?? (error as NSError).userInfo[NSUnderlyingErrorKey] as? SaveConflict ?? super.willPresentError(error)
     }
 
     override func makeWindowControllers() {

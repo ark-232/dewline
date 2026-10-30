@@ -96,6 +96,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         let textView = scrollView.documentView as! EditorTextView
         textView.documentFolder = document.fileURL?.deletingLastPathComponent()
         textView.string = document.text
+        document.live?.attach(textView)
         // The editor's undo history is the document's, which counts its unsaved edits.
         document.undoManager = textView.styler.undoManager
         if let old = self.textView {

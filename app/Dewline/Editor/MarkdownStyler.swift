@@ -67,6 +67,10 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
         undoManager
     }
 
+    func textViewWritingToolsDidEnd(_ textView: NSTextView) {
+        self.textView?.inputEnded?()
+    }
+
     func textViewDidChangeSelection(_ notification: Notification) {
         guard !textView!.defersStyling else { return }
         updateReveal()
@@ -101,6 +105,7 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
         LatencyProbe.begin(.attributes)
         defer { LatencyProbe.end(.attributes) }
         MainActor.assumeIsolated {
+            textView!.storageDidEdit(editedRange, delta: delta)
             // A landing outside the edit is left from an approved edit that never came. Undo and redo come without
             // shouldChangeText and leave the caret at the end of the text they put back.
             let caret = landing.flatMap { editedRange.location <= $0 && $0 <= NSMaxRange(editedRange) ? $0 : nil }
