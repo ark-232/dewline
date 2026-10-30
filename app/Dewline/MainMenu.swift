@@ -43,6 +43,11 @@ enum MainMenu {
         menu.addItem(.separator())
         menu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         menu.addItem(withTitle: "Save", action: #selector(NSDocument.save(_:)), keyEquivalent: "s")
+        menu.addItem(.separator())
+        let html = menu.addItem(withTitle: "Export as HTML…", action: #selector(MarkdownDocument.exportDocument(_:)), keyEquivalent: "")
+        html.tag = Export.Format.html.rawValue
+        let pdf = menu.addItem(withTitle: "Export as PDF…", action: #selector(MarkdownDocument.exportDocument(_:)), keyEquivalent: "E")
+        pdf.tag = Export.Format.pdf.rawValue
         return menu
     }
 
