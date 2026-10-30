@@ -69,7 +69,7 @@ impl Fixture {
         assert!(output.status.success(), "{output:?}");
         assert!(output.stdout.is_empty(), "{output:?}");
         // The run probes the socket once before it reads stdin, sending nothing.
-        let lines: Vec<String> = heard.try_iter().collect();
+        let lines = drain(&self.socket, &heard);
         assert_eq!(lines.first().map(String::as_str), Some(""));
         lines[1..]
             .iter()
@@ -88,6 +88,14 @@ impl Fixture {
         assert!(lines.len() <= 1, "{lines:?}");
         lines.pop()
     }
+}
+
+/// Every line the stand-in heard: the command sends without waiting for the app, so this sends a last line of
+/// its own and reads until the stand-in, which takes connections in order, has heard it.
+fn drain(socket: &Path, heard: &mpsc::Receiver<String>) -> Vec<String> {
+    let mut last = std::os::unix::net::UnixStream::connect(socket).unwrap();
+    last.write_all(b"end\n").unwrap();
+    heard.iter().take_while(|line| line != "end\n").collect()
 }
 
 fn run(vendor: &str, stdin: &[u8], socket: &Path) -> std::process::Output {
@@ -682,14 +690,19 @@ fn hostile_paths_and_ids_are_refused_or_resolved() {
         Some(plan.clone()),
         "relative to cwd"
     );
-    // A NUL, a dangling symlink, a folder, a missing folder, a path past 1024 bytes, or one past the 4 KiB
-    // the reader keeps names nothing.
+    // A file in folders not made yet takes the nearest existing folder's realpath and the names below it.
+    assert_eq!(
+        path_of(edit(&format!("{dir}/nowhere/deeper/new.md"))),
+        Some(fixture.real("nowhere/deeper/new.md"))
+    );
+    // A NUL, a dangling symlink, a folder, .. among folders not made yet, a path past 1024 bytes, or one past
+    // the 4 KiB the reader keeps names nothing.
     let long = format!("{dir}/{}.md", "n".repeat(1100));
     for path in [
         format!("{dir}/plan.md\0.md"),
         format!("{dir}/dangling.md"),
         format!("{dir}/sub"),
-        format!("{dir}/nowhere/new.md"),
+        format!("{dir}/nowhere/../new.md"),
         format!("{dir}/sub/.."),
         long,
         format!("{dir}/{}plan.md", "./".repeat(2100)),
@@ -749,7 +762,6 @@ fn malformed_or_oversized_input_names_nothing() {
         b"".to_vec(),
         b"not json".to_vec(),
         event.as_bytes()[..event.len() / 2].to_vec(),
-        format!("{event}{event}").into_bytes(),
         format!("{}{}", "[".repeat(100_000), "]".repeat(100_000)).into_bytes(),
     ] {
         assert!(fixture.notify("claude", &stdin).is_empty());
@@ -783,4 +795,76 @@ fn a_bad_command_line_still_exits_0() {
             "{args:?} {output:?}"
         );
     }
+}
+
+#[test]
+fn stdin_left_open_doesnt_hold_the_run() {
+    let fixture = Fixture::new();
+    let listener = UnixListener::bind(&fixture.socket).unwrap();
+    let mut child = Command::new(DEWLINE)
+        .args(["notify", "--hook", "claude"])
+        .env_clear()
+        .env("DEWLINE_SOCKET", &fixture.socket)
+        .stdin(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let start = Instant::now();
+    stdin
+        .write_all(fixture.event("claude Stop").to_string().as_bytes())
+        .unwrap();
+    // The probe, then the claim, with stdin still open.
+    for expected in ["", "Stop"] {
+        let (stream, _) = listener.accept().unwrap();
+        let mut line = String::new();
+        BufReader::new(&stream).read_line(&mut line).unwrap();
+        assert!(line.contains(expected), "{line:?}");
+    }
+    assert!(child.wait().unwrap().success());
+    assert!(
+        start.elapsed() < Duration::from_secs(1),
+        "{:?}",
+        start.elapsed()
+    );
+    drop(stdin);
+}
+
+#[test]
+fn every_file_of_a_patch_is_sent_though_the_app_answers_none() {
+    let fixture = Fixture::new();
+    let listener = UnixListener::bind(&fixture.socket).unwrap();
+    // A stand-in that reads each line and keeps the connection open, as a busy app might.
+    let (sender, heard) = mpsc::channel();
+    thread::spawn(move || {
+        let mut kept = Vec::new();
+        for stream in listener.incoming() {
+            let Ok(stream) = stream else { return };
+            let mut line = String::new();
+            let _ = BufReader::new(&stream).read_line(&mut line);
+            kept.push(stream);
+            if sender.send(line).is_err() {
+                return;
+            }
+        }
+    });
+    let mut event = fixture.event("codex PreToolUse apply_patch");
+    event["tool_input"]["command"] =
+        "*** Begin Patch\n*** Add File: a.md\n+a\n*** Add File: b.md\n+b\n*** Add File: c.md\n+c\n*** End Patch".into();
+    let output = run("codex", event.to_string().as_bytes(), &fixture.socket);
+    assert!(output.status.success());
+    let lines: Vec<String> = drain(&fixture.socket, &heard)
+        .into_iter()
+        .filter(|line| !line.is_empty())
+        .collect();
+    assert_eq!(lines.len(), 3, "{lines:?}");
+}
+
+#[test]
+fn a_write_over_a_file_with_a_byte_order_mark_still_declares_its_content() {
+    let fixture = Fixture::new();
+    fs::write(fixture.dir.path().join("plan.md"), b"\xEF\xBB\xBF# Plan\n").unwrap();
+    let mut event = fixture.event("claude PreToolUse Write");
+    event["tool_input"]["file_path"] = fixture.real("plan.md").into();
+    let line = fixture.one("claude", &event).unwrap();
+    assert_eq!(line["declared"], hex("# New\n\n“Quoted” 😀\n"));
 }

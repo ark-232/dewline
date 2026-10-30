@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::os::unix::fs::OpenOptionsExt;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::thread;
 use std::time::Duration;
 
@@ -56,23 +56,16 @@ pub fn run(vendor: Vendor) {
         return;
     };
     for line in lines(vendor, &event) {
-        if notify(&socket, &line).is_err() {
-            return;
-        }
+        // A line that doesn't get through costs only its own file's name.
+        let _ = notify(&socket, &line);
     }
 }
 
-/// Sends one line on its own connection, then waits for the app to close it, so a patch naming many files can't
-/// crowd the app's connection limit.
+/// Sends one line on its own connection. The app answers a valid claim with nothing, so nothing is awaited.
 fn notify(socket: &Socket, line: &[u8]) -> io::Result<()> {
     let mut stream = socket.reach()?;
     control::set_timeout(&stream, Some(control::CONNECT_TIMEOUT))?;
-    stream.write_all(line)?;
-    io::copy(
-        &mut (&stream).take(control::MAX_LINE as u64),
-        &mut io::sink(),
-    )?;
-    Ok(())
+    stream.write_all(line)
 }
 
 #[derive(Serialize)]
@@ -287,6 +280,9 @@ fn patch_text(bytes: &[u8]) -> Option<&str> {
 /// of its bytes: a file that isn't UTF-8 text, holds a NUL or starts with a byte-order mark, an Edit of a file with
 /// CRs (Edit rewrites line endings), or an Edit Claude Code would refuse.
 fn declared(tool: &str, input: &Input, disk: &Disk) -> Option<blake3::Hash> {
+    if tool == "Write" {
+        return input.content;
+    }
     let text = match disk {
         Disk::Missing => None,
         Disk::File { bytes, .. } => {
@@ -296,7 +292,6 @@ fn declared(tool: &str, input: &Input, disk: &Disk) -> Option<blake3::Hash> {
         }
     };
     let edits: Vec<(&str, &str, bool)> = match tool {
-        "Write" => return input.content,
         "Edit" => vec![(
             input.old_string.as_deref()?,
             input.new_string.as_deref()?,
@@ -397,17 +392,34 @@ fn named(cwd: Option<&str>, path: &str) -> Option<PathBuf> {
     }
 }
 
-/// The realpath of `path` and what is there, keeping the bytes when `keep`. A file not there yet takes its folder's
-/// realpath and its name. Anything but a regular file, or nothing at a resolvable place, is None; a FIFO is opened
-/// without blocking and refused.
+/// The realpath of `path` and what is there, keeping the bytes when `keep`. A file not there yet takes the realpath
+/// of its nearest existing folder and the names below it, which may not hold `..`. Anything but a regular file, or
+/// nothing at a resolvable place, is None; a FIFO is opened without blocking and refused.
 fn look(path: &Path, keep: bool) -> Option<(PathBuf, Disk)> {
     let real = match fs::canonicalize(path) {
         Ok(real) => real,
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            // A dangling symlink is something: the tool would write through it.
-            fs::symlink_metadata(path).is_err().then_some(())?;
-            let folder = fs::canonicalize(path.parent()?).ok()?;
-            return Some((folder.join(path.file_name()?), Disk::Missing));
+            if path.components().any(|part| part == Component::ParentDir) {
+                return None;
+            }
+            let (mut base, mut names) = (path, Vec::new());
+            loop {
+                // A dangling symlink is something: the tool would write through it.
+                fs::symlink_metadata(base).is_err().then_some(())?;
+                names.push(base.file_name()?);
+                base = base.parent()?;
+                match fs::canonicalize(base) {
+                    Ok(folder) => {
+                        let real = names
+                            .iter()
+                            .rev()
+                            .fold(folder, |real, name| real.join(name));
+                        return Some((real, Disk::Missing));
+                    }
+                    Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                    Err(_) => return None,
+                }
+            }
         }
         Err(_) => return None,
     };
@@ -570,9 +582,16 @@ mod tests {
             ..Input::default()
         };
         assert_eq!(declared("Write", &write, &Disk::Missing), h("new"));
-        // Write writes its content as it is over a file with CRLFs, but adds a byte-order mark to one that has one.
+        // Write's declared hash is its content's, whatever the file it replaces holds.
         assert_eq!(declared("Write", &write, &file(b"old\r\n")), h("new"));
-        assert_eq!(declared("Write", &write, &file(b"\xEF\xBB\xBFold")), None);
+        for bytes in [&b"\xEF\xBB\xBFold"[..], b"a\0", b"\xff"] {
+            assert_eq!(
+                declared("Write", &write, &file(bytes)),
+                h("new"),
+                "{bytes:?}"
+            );
+        }
+        assert_eq!(declared("Write", &write, &too_big), h("new"));
         assert_eq!(declared("Read", &write, &file(b"old")), None);
     }
 

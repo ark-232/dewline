@@ -53,7 +53,7 @@ pub struct Edit {
     pub replace_all: Option<bool>,
 }
 
-/// Reads one JSON object from `input`. Malformed or over-long input, a duplicated field, or a field of the wrong
+/// Reads one JSON object from `input`, stopping at its closing brace. Malformed or over-long input, a duplicated field, or a field of the wrong
 /// type is an error: the event then names nothing.
 pub fn read(input: impl BufRead, vendor: Vendor) -> io::Result<Event> {
     let mut reader = Reader {
@@ -83,11 +83,8 @@ pub fn read(input: impl BufRead, vendor: Vendor) -> io::Result<Event> {
         }),
         _ => reader.skip(),
     })?;
-    reader.whitespace()?;
-    match reader.peek()? {
-        None => Ok(event),
-        Some(_) => Err(invalid("text after the object")),
-    }
+    // Whatever follows the object is never read, so a hook that leaves stdin open doesn't hold the run.
+    Ok(event)
 }
 
 fn invalid(what: &str) -> io::Error {
@@ -436,7 +433,6 @@ mod tests {
             "",
             "[]",
             "{",
-            r#"{"session_id":"s1"} {}"#,
             r#"{"session_id":"s1","session_id":"s2"}"#,
             r#"{"session_id":1}"#,
             r#"{"tool_input":{"replace_all":"yes"}}"#,
