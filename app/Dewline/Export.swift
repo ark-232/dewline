@@ -3,8 +3,9 @@ import MdCore
 import UniformTypeIdentifiers
 import WebKit
 
-/// A document as a standalone HTML page or a paged PDF, styled in the theme the window shows. The source file is
-/// never read or written: the page comes from the text passed in.
+/// A document as a standalone HTML page or a paged PDF in the current theme: the PDF in its light palette, as paper
+/// is, and the HTML in both, switched by the reader's appearance. The source file is never read or written: the page
+/// comes from the text passed in, and images inline from the document's folder.
 @MainActor
 enum Export {
     enum Format: Int, CaseIterable {
@@ -18,21 +19,40 @@ enum Export {
         let errorDescription: String?
     }
 
-    static func write(_ text: String, title: String, as format: Format, to url: URL, appearance: NSAppearance) async throws {
-        var paper = NSColor.white
-        var css = ""
-        var colors: DiagramColors?
-        appearance.performAsCurrentDrawingAppearance {
-            paper = ThemeStore.shared.color(.paper)
-            css = stylesheet(dark: appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua)
-            colors = DiagramColors(
-                paper: rgba(.paper), ink: rgba(.ink), ink2: rgba(.ink2), accent: rgba(.accent), rule: rgba(.syntax), fill: rgba(.codeBackground)
-            )
+    /// One appearance's colors: CSS custom properties, the diagram colors and the paper.
+    @MainActor
+    private struct Palette {
+        let properties: String
+        let colors: DiagramColors
+        let paper: NSColor
+
+        init(_ name: NSAppearance.Name) {
+            var palette: (String, DiagramColors, NSColor)?
+            NSAppearance(named: name)!.performAsCurrentDrawingAppearance {
+                let tokens: [Token] = [.paper, .ink, .ink2, .heading, .link, .codeBackground, .quoteRule, .syntax]
+                palette = (
+                    tokens.map { "--\($0.rawValue): \(String(format: "#%08x", Export.rgba($0)));" }.joined(separator: " "),
+                    DiagramColors(
+                        paper: Export.rgba(.paper), ink: Export.rgba(.ink), ink2: Export.rgba(.ink2), accent: Export.rgba(.accent),
+                        rule: Export.rgba(.syntax), fill: Export.rgba(.codeBackground)
+                    ),
+                    ThemeStore.shared.color(.paper).usingColorSpace(.sRGB)!
+                )
+            }
+            (properties, colors, paper) = palette!
         }
-        let page = exportPage(text, title: title, css: css, colors: colors!, mathSize: ThemeStore.shared.bodySize)
+    }
+
+    static func write(_ text: String, title: String, as format: Format, to url: URL, folder: URL?) async throws {
+        let light = Palette(.aqua)
+        let dark = format == .html ? Palette(.darkAqua) : nil
+        let page = exportPage(
+            text, title: title, css: stylesheet(light: light, dark: dark), folder: folder, colors: light.colors, dark: dark?.colors,
+            mathSize: ThemeStore.shared.bodySize
+        )
         let data = switch format {
         case .html: Data(page.utf8)
-        case .pdf: try await PDFRenderer().pdf(of: page, paper: paper)
+        case .pdf: try await PDFRenderer().pdf(of: page, paper: light.paper)
         }
         try data.write(to: url, options: .atomic)
     }
@@ -43,39 +63,36 @@ enum Export {
             .reduce(0) { $0 << 8 | UInt32(($1 * 255).rounded()) }
     }
 
-    private static func css(_ token: Token) -> String {
-        String(format: "#%08x", rgba(token))
-    }
-
     private static func family(_ face: String, _ generic: String) -> String {
         let system = ["New York": "ui-serif", "SF Pro": "system-ui", "SF Pro Rounded": "ui-rounded", "SF Mono": "ui-monospace"]
         let name = system[face] ?? "\"\(face.filter { !"\"\\;{}<>".contains($0) })\""
         return "\(name), \(generic)"
     }
 
-    /// The theme's tokens and the editor's faces as CSS; call under the appearance the colors are for.
-    private static func stylesheet(dark: Bool) -> String {
+    /// The editor's faces, and the theme's colors in the light palette, switched to `dark` on a dark page.
+    private static func stylesheet(light: Palette, dark: Palette?) -> String {
         let store = ThemeStore.shared
+        let scheme = dark.map { "@media (prefers-color-scheme: dark) { :root { \($0.properties) } }\n" } ?? ""
         return """
-        :root { color-scheme: \(dark ? "dark" : "light"); }
-        html { background: \(css(.paper)); }
-        body { color: \(css(.ink)); font-family: \(family(store.bodyFace, "serif")); font-size: \(store.bodySize)px; line-height: \(store.lineHeight); max-width: 40em; margin: 0 auto; padding: 2em 3em; }
-        h1, h2, h3, h4, h5, h6 { font-family: \(family(store.headingFace, "serif")); color: \(css(.heading)); line-height: 1.25; }
-        a { color: \(css(.link)); }
-        code, pre { font-family: \(family(store.codeFace, "monospace")); font-size: 0.88em; background: \(css(.codeBackground)); border-radius: 4px; }
+        :root { color-scheme: \(dark == nil ? "light" : "light dark"); \(light.properties) }
+        \(scheme)html { background: var(--paper); }
+        body { color: var(--ink); font-family: \(family(store.bodyFace, "serif")); font-size: \(store.bodySize)px; line-height: \(store.lineHeight); max-width: 40em; margin: 0 auto; padding: 2em 3em; }
+        h1, h2, h3, h4, h5, h6 { font-family: \(family(store.headingFace, "serif")); color: var(--heading); line-height: 1.25; }
+        a { color: var(--link); }
+        code, pre { font-family: \(family(store.codeFace, "monospace")); font-size: 0.88em; background: var(--codeBackground); border-radius: 4px; }
         code { padding: 0.1em 0.3em; }
         pre { padding: 0.8em 1em; white-space: pre-wrap; }
         pre code { padding: 0; background: none; font-size: 1em; }
-        blockquote { margin-left: 0; padding-left: 1em; border-left: 3px solid \(css(.quoteRule)); color: \(css(.ink2)); }
+        blockquote { margin-left: 0; padding-left: 1em; border-left: 3px solid var(--quoteRule); color: var(--ink2); }
         table { border-collapse: collapse; }
-        th, td { border: 1px solid \(css(.syntax)); padding: 0.3em 0.6em; }
-        hr { border: 0; border-top: 1px solid \(css(.syntax)); }
+        th, td { border: 1px solid var(--syntax); padding: 0.3em 0.6em; }
+        hr { border: 0; border-top: 1px solid var(--syntax); }
         img { max-width: 100%; }
         figure.diagram { margin: 1em 0; }
         figure.diagram svg { max-width: 100%; height: auto; }
         img.math { vertical-align: middle; }
         .math-display { display: block; text-align: center; margin: 1em 0; }
-        .footnote-definition { font-size: 0.9em; color: \(css(.ink2)); }
+        .footnote-definition { font-size: 0.9em; color: var(--ink2); }
         """
     }
 
@@ -100,13 +117,13 @@ enum Export {
         let chooser = PopUpTarget { choose(Format(rawValue: $0) ?? .html) }
         formats.target = chooser
         formats.action = #selector(PopUpTarget.changed(_:))
-        let appearance = window.effectiveAppearance
+        let folder = document.fileURL?.deletingLastPathComponent()
         panel.beginSheetModal(for: window) { response in
             withExtendedLifetime(chooser) {}
             guard response == .OK, let url = panel.url, let format = Format(rawValue: formats.indexOfSelectedItem) else { return }
             Task { @MainActor in
                 do {
-                    try await write(text, title: title, as: format, to: url, appearance: appearance)
+                    try await write(text, title: title, as: format, to: url, folder: folder)
                 } catch {
                     document.presentError(error, modalFor: window, delegate: nil, didPresent: nil, contextInfo: nil)
                 }

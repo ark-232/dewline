@@ -2,6 +2,10 @@
 
 use std::collections::HashMap;
 use std::fmt::Write;
+use std::fs::{self, File};
+use std::io::Read;
+use std::os::unix::fs::OpenOptionsExt;
+use std::path::{Component, Path};
 
 use pulldown_cmark::{Alignment, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 
@@ -14,7 +18,12 @@ pub struct ExportOptions<'a> {
     pub diagram: &'a dyn Fn(&str) -> Option<String>,
     /// TeX as inline HTML, display math when the flag is set, or `None` to show the source.
     pub math: &'a dyn Fn(&str, bool) -> Option<String>,
+    /// The document's folder: images inside it are inlined as data URLs, all others keep their paths.
+    pub folder: Option<&'a Path>,
 }
+
+/// The largest image file inlined.
+const MAX_IMAGE: u64 = 20 << 20;
 
 /// Scripts never run; styles and images come only from the page itself and data URLs.
 pub const CSP: &str = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:";
@@ -75,6 +84,74 @@ fn url(target: &str) -> Option<String> {
     safe.then(|| escape(target))
 }
 
+/// A data URL of the image at `path` relative to `folder`: a relative path without `..` that resolves, symlinks
+/// followed, to a regular file inside the folder, at most `MAX_IMAGE` bytes, whose bytes are PNG, JPEG, GIF, WebP or
+/// SVG.
+fn inline_image(folder: &Path, path: &str) -> Option<String> {
+    let relative = Path::new(path);
+    if path.contains(':')
+        || !relative
+            .components()
+            .all(|part| matches!(part, Component::Normal(_) | Component::CurDir))
+    {
+        return None;
+    }
+    let root = fs::canonicalize(folder).ok()?;
+    let target = fs::canonicalize(root.join(relative)).ok()?;
+    if !target.starts_with(&root) {
+        return None;
+    }
+    let file = File::options()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(&target)
+        .ok()?;
+    let info = file.metadata().ok()?;
+    if !info.is_file() || info.len() > MAX_IMAGE {
+        return None;
+    }
+    let mut bytes = Vec::with_capacity(info.len() as usize);
+    file.take(MAX_IMAGE + 1).read_to_end(&mut bytes).ok()?;
+    let head = &bytes[..bytes.len().min(1024)];
+    let mime = if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        "image/png"
+    } else if bytes.starts_with(b"\xff\xd8\xff") {
+        "image/jpeg"
+    } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        "image/gif"
+    } else if bytes.len() > 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        "image/webp"
+    } else if target
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("svg"))
+        && head.windows(4).any(|window| window == b"<svg")
+    {
+        "image/svg+xml"
+    } else {
+        return None;
+    };
+    (bytes.len() as u64 <= MAX_IMAGE).then(|| format!("data:{mime};base64,{}", base64(&bytes)))
+}
+
+pub fn base64(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let n = chunk
+            .iter()
+            .enumerate()
+            .fold(0u32, |n, (i, &b)| n | u32::from(b) << (16 - 8 * i));
+        for i in 0..4 {
+            out.push(if i <= chunk.len() {
+                ALPHABET[(n >> (18 - 6 * i) & 63) as usize] as char
+            } else {
+                '='
+            });
+        }
+    }
+    out
+}
+
 struct Writer<'o, 'a> {
     out: &'o mut String,
     options: &'o ExportOptions<'a>,
@@ -120,7 +197,11 @@ impl Writer<'_, '_> {
                 }) => {
                     let alt = code(&mut events);
                     self.out.push_str("<img");
-                    if let Some(src) = url(&dest_url) {
+                    let inlined = self
+                        .options
+                        .folder
+                        .and_then(|folder| inline_image(folder, &dest_url));
+                    if let Some(src) = inlined.or_else(|| url(&dest_url)) {
                         let _ = write!(self.out, " src=\"{src}\"");
                     }
                     let _ = write!(self.out, " alt=\"{}\"", escape(&alt));
@@ -345,6 +426,7 @@ mod tests {
                 css: "",
                 diagram: &|_| Some("<svg>diagram</svg>".into()),
                 math: &|tex, display| Some(format!("[{display}:{tex}]")),
+                folder: None,
             },
         )
     }
@@ -449,6 +531,7 @@ mod tests {
                 css: "p{}</style><script>",
                 diagram: &|_| None,
                 math: &|_, _| None,
+                folder: None,
             },
         );
         assert!(
@@ -459,5 +542,42 @@ mod tests {
             page.contains("<title>&lt;t&gt;</title>") && !page.contains("</style><script>"),
             "{page}"
         );
+    }
+
+    #[test]
+    fn images_inside_the_folder_inline_and_all_others_keep_their_paths() {
+        let root = tempfile::tempdir().unwrap();
+        let folder = root.path().join("doc");
+        fs::create_dir_all(folder.join("img")).unwrap();
+        let png = b"\x89PNG\r\n\x1a\nrest".to_vec();
+        fs::write(folder.join("img/a.png"), &png).unwrap();
+        fs::write(folder.join("notes.png"), b"not an image").unwrap();
+        fs::write(root.path().join("secret.png"), &png).unwrap();
+        std::os::unix::fs::symlink(root.path().join("secret.png"), folder.join("link.png"))
+            .unwrap();
+        let page = html(
+            "![a](img/a.png) ![b](link.png) ![c](../secret.png) ![d](notes.png) ![e](missing.png)",
+            &ExportOptions {
+                title: "t",
+                css: "",
+                diagram: &|_| None,
+                math: &|_, _| None,
+                folder: Some(&folder),
+            },
+        );
+        assert!(
+            page.contains(&format!(
+                "<img src=\"data:image/png;base64,{}\" alt=\"a\">",
+                base64(&png)
+            )),
+            "{page}"
+        );
+        for kept in ["link.png", "../secret.png", "notes.png", "missing.png"] {
+            assert!(
+                page.contains(&format!("<img src=\"{kept}\"")),
+                "{kept}: {page}"
+            );
+        }
+        assert_eq!(base64(b"Ma"), "TWE=");
     }
 }
