@@ -1,19 +1,20 @@
 import Foundation
 
-/// A block drawn as a picture while the selection is outside it: a fenced `mermaid` diagram, a `$$` formula, or a
-/// paragraph that is only an image. Like a span, the characters in `range` but outside `content` are its markers.
+/// A block drawn as a picture while the selection is outside it: a fenced `mermaid` diagram, a `$$` formula, a
+/// paragraph that is only an image or an image embed, or front matter, which folds to one line. Like a span, the characters in `range` but outside `content` are its markers.
 struct RenderedBlock: Hashable {
     enum Kind: Hashable {
-        case mermaid, math, image
+        case mermaid, math, image, frontMatter
     }
 
     let kind: Kind
     /// Whole lines, without the last line's terminator.
     let range: NSRange
     let content: NSRange
-    /// The diagram, the TeX, or the image's path.
+    /// The diagram, the TeX, the image's path, or the front matter's YAML.
     let source: String
-    /// What VoiceOver reads for the picture: the diagram's first line, the TeX, or the image's alt text.
+    /// What VoiceOver reads for the picture: the diagram's first line, the TeX, or the image's alt text; front matter's
+    /// folded line.
     let label: String
 
     func shifted(by offset: Int) -> RenderedBlock {

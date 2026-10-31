@@ -57,9 +57,13 @@ final class RenderedBlocks {
             let local = NSRange(location: overlap.location - offset, length: overlap.length)
             let reveal = Self.touches(range, selection)
             if reveal { revealed.insert(block) } else { revealed.remove(block) }
-            let request = request(for: block, in: textView)
-            let picture = pictures[request]
-            if picture == nil, !reveal, width > 0, pending.insert(request).inserted {
+            if block.kind == .frontMatter, !reveal {
+                fold(block, at: range, local: local, in: styled)
+                continue
+            }
+            let request = block.kind == .frontMatter ? nil : request(for: block, in: textView)
+            let picture = request.flatMap { pictures[$0] }
+            if let request, picture == nil, !reveal, width > 0, pending.insert(request).inserted {
                 queue.async { [weak self] in
                     let picture = request.render(width: width)
                     DispatchQueue.main.async {
@@ -106,6 +110,7 @@ final class RenderedBlocks {
                 case .mermaid: "Mermaid"
                 case .math: "TeX"
                 case .image: "Image"
+                case .frontMatter: "Front matter"
                 }
                 let reason = failure.reason.split(whereSeparator: \.isNewline).first.map(String.init) ?? failure.reason
                 styled.addAttributes([.paragraphStyle: spaced, .dewlineBlock: BlockLine(.error("\(name): \(reason)"))], range: last)
@@ -128,10 +133,25 @@ final class RenderedBlocks {
                     paper: rgba(.paper), ink: rgba(.ink), ink2: rgba(.ink2), accent: rgba(.accent), rule: rgba(.syntax), fill: rgba(.codeBackground)
                 )
             }
-        case .image:
+        case .image, .frontMatter:
             source = textView.documentFolder.map { $0.appending(path: block.source).standardizedFileURL.path } ?? ""
         }
         return PictureRequest(kind: block.kind, source: source, scale: textView.window?.backingScaleFactor ?? 2, colors: colors)
+    }
+
+    /// Folds front matter to one dim line naming its field count; its other lines collapse.
+    private func fold(_ block: RenderedBlock, at range: NSRange, local: NSRange, in styled: NSMutableAttributedString) {
+        let store = ThemeStore.shared
+        let font = NSFont.systemFont(ofSize: (store.bodyFont.pointSize * 0.8).rounded())
+        let summary = NSAttributedString(string: block.label, attributes: [.font: font, .foregroundColor: store.color(.ink2)])
+        let whole = NSRange(location: 0, length: styled.length)
+        styled.mutableString.enumerateSubstrings(in: local, options: [.byLines, .substringNotRequired]) { _, line, enclosing, _ in
+            let first = line.location == range.location
+            let paragraph = NSIntersectionRange(enclosing, whole)
+            styled.addAttribute(.dewlineBlock, value: BlockLine(first ? .summary(summary) : .collapsed), range: paragraph)
+            styled.addAttributes([.foregroundColor: NSColor.clear, .font: MarkdownStyler.hiddenFont], range: line)
+            styled.addAttribute(.paragraphStyle, value: first ? store.paragraphStyle(lineHeight: store.bodyLineHeight) : Self.collapsedLines, range: paragraph)
+        }
     }
 
     private static func touches(_ range: NSRange, _ selection: [NSRange]) -> Bool {

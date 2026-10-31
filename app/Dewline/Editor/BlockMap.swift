@@ -402,8 +402,9 @@ final class BlockMap {
         return found
     }
 
-    /// The block's fenced Mermaid diagrams, `$$` formulas and images, each on lines of its own with at most three
-    /// spaces before it, an image also alone between blank lines; in offsets from `block.location`.
+    /// The block's fenced Mermaid diagrams, `$$` formulas, images, image embeds and front matter, each on lines of its
+    /// own with at most three spaces before it, an image also alone between blank lines; in offsets from
+    /// `block.location`.
     private nonisolated static func rendered(_ spans: [SyntaxSpan], in block: NSRange, of text: NSString) -> [RenderedBlock] {
         func line(_ offset: Int) -> (start: Int, end: Int, contentsEnd: Int) {
             var (start, end, contentsEnd) = (0, 0, 0)
@@ -414,7 +415,7 @@ final class BlockMap {
             text.substring(with: range).allSatisfy(\.isWhitespace)
         }
         var found: [RenderedBlock] = []
-        for span in spans where [.fencedCode, .displayMath, .image].contains(span.kind) {
+        for span in spans where [.fencedCode, .displayMath, .image, .embed, .frontMatter].contains(span.kind) {
             let range = NSRange(location: span.range.location + block.location, length: span.range.length)
             let content = NSRange(location: span.content.location + block.location, length: span.content.length)
             let first = line(range.location)
@@ -438,18 +439,35 @@ final class BlockMap {
             case .displayMath where blank(after):
                 let tex = text.substring(with: content).trimmingCharacters(in: .whitespacesAndNewlines)
                 found.append(RenderedBlock(kind: .math, range: lines, content: content, source: tex, label: tex))
-            case .image where blank(after):
+            case .frontMatter:
+                let yaml = text.substring(with: content)
+                // Top-level keys: lines that start with neither a blank, a comment nor a list item.
+                let fields = yaml.split(whereSeparator: \.isNewline).filter { line in
+                    line.first.map { !$0.isWhitespace && $0 != "#" && $0 != "-" } == true && line.contains(":")
+                }.count
+                let summary = "Front matter · \(fields) field\(fields == 1 ? "" : "s")"
+                found.append(RenderedBlock(kind: .frontMatter, range: lines, content: content, source: yaml, label: summary))
+            case .image where blank(after), .embed where blank(after):
                 let above = first.start > block.location ? line(first.start - 1) : nil
                 let below = first.end < NSMaxRange(block) ? line(first.end) : nil
                 let close = text.substring(with: NSRange(location: NSMaxRange(content), length: NSMaxRange(range) - NSMaxRange(content)))
-                // A relative path: no scheme, no leading `/`, no title.
                 guard above.map({ blank(NSRange(location: $0.start, length: $0.contentsEnd - $0.start)) }) ?? true,
-                    below.map({ blank(NSRange(location: $0.start, length: $0.contentsEnd - $0.start)) }) ?? true,
-                    close.hasPrefix("]("), close.hasSuffix(")"), close.count > 3
+                    below.map({ blank(NSRange(location: $0.start, length: $0.contentsEnd - $0.start)) }) ?? true
                 else { continue }
-                let path = String(close.dropFirst(2).dropLast())
-                guard path.first != "/", !path.contains(where: { $0.isWhitespace || $0 == ")" || $0 == ":" }) else { continue }
-                found.append(RenderedBlock(kind: .image, range: lines, content: lines, source: path, label: text.substring(with: content)))
+                let path: String
+                if span.kind == .embed {
+                    // `![[target]]` or `![[target|size]]`, of a file with an image's extension.
+                    let open = NSRange(location: range.location + 3, length: content.location - range.location - 3)
+                    path = open.length > 0 ? String(text.substring(with: open).dropLast()) : text.substring(with: content)
+                    let images: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "heic", "tif", "tiff", "bmp"]
+                    guard images.contains((path as NSString).pathExtension.lowercased()) else { continue }
+                } else {
+                    // A relative path: no scheme, no leading `/`, no title.
+                    guard close.hasPrefix("]("), close.hasSuffix(")"), close.count > 3 else { continue }
+                    path = String(close.dropFirst(2).dropLast())
+                }
+                guard path.first != "/", !path.contains(where: { (span.kind == .image && $0.isWhitespace) || $0 == ")" || $0 == ":" || $0 == "\n" }) else { continue }
+                found.append(RenderedBlock(kind: .image, range: lines, content: lines, source: path, label: span.kind == .embed ? path : text.substring(with: content)))
             default:
                 continue
             }
