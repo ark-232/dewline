@@ -11,7 +11,7 @@ use std::env;
 use std::ffi::{OsStr, OsString};
 use std::io::{self, Read};
 use std::path::PathBuf;
-use std::process::ExitCode;
+use std::process::{Command as Process, ExitCode, Stdio};
 
 use clap::{Parser, Subcommand};
 use dewline_core::{decisions, inbox};
@@ -209,11 +209,31 @@ fn capture(words: Vec<String>) -> Result<(), String> {
     inbox::append(&path, "cli", &text).map_err(|error| format!("{}: {error}", path.display()))
 }
 
-/// The inbox file every capture appends to.
+/// The inbox file every capture appends to: the app's `DewlineInboxPath` setting (Settings > Files), else
+/// ~/Documents/Dewline/Inbox.md.
 fn inbox_path() -> Result<PathBuf, String> {
-    env::home_dir()
-        .map(|home| inbox::default_path(&home))
-        .ok_or_else(|| "there is no home folder for the inbox".into())
+    let home = env::home_dir().ok_or("there is no home folder for the inbox")?;
+    let set = Process::new("/usr/bin/defaults")
+        .args(["read", "dev.arkwerx.dewline", "DewlineInboxPath"])
+        .stderr(Stdio::null())
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok());
+    Ok(set
+        .as_deref()
+        .and_then(|path| setting_path(path, &home))
+        .unwrap_or_else(|| inbox::default_path(&home)))
+}
+
+/// A path setting as the app reads it: absolute, or under `~/`.
+fn setting_path(value: &str, home: &std::path::Path) -> Option<PathBuf> {
+    let value = value.trim_end_matches('\n');
+    if let Some(rest) = value.strip_prefix("~/") {
+        Some(home.join(rest))
+    } else {
+        value.starts_with('/').then(|| PathBuf::from(value))
+    }
 }
 
 /// Paths and the app's messages with control characters replaced, so a
