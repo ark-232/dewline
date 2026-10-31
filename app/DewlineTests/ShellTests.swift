@@ -37,10 +37,12 @@ struct ShellTests {
         #expect(folder.relativePath(of: root.deletingLastPathComponent()) == nil)
     }
 
-    @Test func outlineKeepsH1ToH3WithLineNumbers() {
-        let text = "# Plan\n\nIntro\n\n## **Before** the beta\n\n```\n# not a heading\n```\n\n#### Too deep\n### Monday\n"
-        #expect(outline(of: text).map { [$0.level, $0.line] } == [[1, 1], [2, 5], [3, 12]])
-        #expect(outline(of: text).map(\.title) == ["Plan", "Before the beta", "Monday"])
+    @Test @MainActor func outlineKeepsH1ToH3WithLineNumbers() {
+        let text = "# Plan\n\nIntro\n\n## **Before** the beta\n\n```\n# not a heading\n```\n\n#### Too deep\n### Monday\n" as NSString
+        let map = BlockMap()
+        _ = map.textDidChange(text, edited: NSRange(location: 0, length: text.length), delta: text.length)
+        #expect(outline(of: text, in: map).map { [$0.level, $0.line] } == [[1, 1], [2, 5], [3, 12]])
+        #expect(outline(of: text, in: map).map(\.title) == ["Plan", "Before the beta", "Monday"])
     }
 
     @Test func firstProseLineSkipsFrontMatterHeadingsAndMarkers() {

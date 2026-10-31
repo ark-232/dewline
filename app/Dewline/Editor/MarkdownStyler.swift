@@ -7,6 +7,8 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
     let undoManager = UndoManager()
     let map: BlockMap
     let blocks: RenderedBlocks
+    let tables: Tables
+    let tasks: TaskBoxes
     private(set) var restyles = 0
     private(set) var showsSource = false
     /// Source line height: 22 pt, or prose's 24.5 pt pitch through `DewlineSourceLineHeight`, until the owner picks one.
@@ -61,6 +63,8 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
         let map = BlockMap()
         self.map = map
         blocks = RenderedBlocks(map: map)
+        tables = Tables(map: map)
+        tasks = TaskBoxes(map: map)
         super.init()
         map.merged = { [weak self] changed in self?.restyleLater(changed) }
         for name in [NSNotification.Name.NSUndoManagerDidUndoChange, .NSUndoManagerDidRedoChange] {
@@ -91,13 +95,15 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
         updateReveal()
     }
 
-    /// Spelling and grammar marks skip code, math, front matter, addresses, wikilink targets and HTML tags.
+    /// Spelling and grammar marks skip code, math, front matter, HTML, addresses and wikilink targets.
     func textView(_ textView: NSTextView, shouldSetSpellingState value: Int, range affectedCharRange: NSRange) -> Int {
         guard value != 0 else { return value }
-        let text = textView.textStorage!.mutableString
-        let literal = map.isCode(affectedCharRange)
-            || SpikeTokenizer.literals(in: text, line: text.lineRange(for: affectedCharRange)).contains { NSIntersectionRange($0, affectedCharRange).length > 0 }
-        return literal ? 0 : value
+        return map.literals(in: affectedCharRange).contains { NSIntersectionRange($0, affectedCharRange).length > 0 } ? 0 : value
+    }
+
+    /// Writing Tools leave the same text alone.
+    func textView(_ textView: NSTextView, writingToolsIgnoredRangesInEnclosingRange enclosingRange: NSRange) -> [NSValue] {
+        map.literals(in: enclosingRange).map { NSValue(range: NSIntersectionRange($0, enclosingRange)) }.filter { $0.rangeValue.length > 0 }
     }
 
     nonisolated func textStorage(
@@ -148,6 +154,8 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
             let changed = map.textDidChange(textView!.textStorage!.mutableString, edited: edit, delta: delta)
             LatencyProbe.end(.parse)
             blocks.textDidChange(edited: edit, delta: delta)
+            tables.textDidChange(edited: edit, delta: delta)
+            tasks.textDidChange(edited: edit, delta: delta)
             range = NSUnionRange(range, changed)
             if textView!.defersStyling {
                 pending = range
@@ -261,7 +269,7 @@ extension MarkdownStyler {
 
     private func restyle(_ range: NSRange, in storage: NSTextStorage, selection: [NSRange]) {
         restyles += 1
-        let paragraphs = storage.mutableString.paragraphRange(for: map.covering(storage.mutableString.paragraphRange(for: range)))
+        let paragraphs = storage.mutableString.paragraphRange(for: tables.covering(map.covering(storage.mutableString.paragraphRange(for: range))))
         unstyled.remove(integersIn: Range(paragraphs)!)
         let styled = NSMutableAttributedString(string: storage.mutableString.substring(with: paragraphs))
         let whole = NSRange(location: 0, length: styled.length)
@@ -321,6 +329,10 @@ extension MarkdownStyler {
             }
         }
         blocks.style(styled, at: paragraphs.location, selection: source ? [whole] : selection)
+        if !source {
+            tables.style(styled, at: paragraphs.location, selection: selection)
+            tasks.style(styled, at: paragraphs.location, selection: selection)
+        }
         // Only runs whose styling differs are written, once each, so layout invalidates only what changed. The CF
         // accessors return a run's dictionary without bridging it to Swift, which costs more than the comparison.
         var offset = 0
@@ -378,7 +390,7 @@ extension MarkdownStyler {
         let hide = revealed.subtracting(now)
         let show = now.subtracting(revealed)
         revealed = now
-        let changedBlocks = blocks.revealChanges(selection)
+        let changedBlocks = blocks.revealChanges(selection) + tables.revealChanges(selection) + tasks.revealChanges(selection)
         guard !hide.isEmpty || !show.isEmpty || !changedBlocks.isEmpty else { return }
         storage.beginEditing()
         // In document order, the storage's attribute writes stay linear in the span count.

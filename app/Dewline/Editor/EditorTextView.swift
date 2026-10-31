@@ -12,6 +12,14 @@ final class EditorTextView: CaretTextView {
     private(set) var fadeStarted: ContinuousClock.Instant?
     /// Where images in the document resolve from.
     var documentFolder: URL?
+    /// Vim's keys, while Vim mode is on.
+    var vim: VimEngine? {
+        didSet {
+            vimStatus?.isHidden = vim == nil
+            vimDidRun()
+        }
+    }
+    private var vimStatus: NSTextField?
 
     var defersStyling: Bool {
         composing || hasMarkedText()
@@ -54,6 +62,18 @@ final class EditorTextView: CaretTextView {
         scrollView.hasVerticalScroller = true
         scrollView.backgroundColor = textView.backgroundColor
         scrollView.documentView = textView
+        let status = NSTextField(labelWithString: "")
+        status.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+        status.textColor = ThemeStore.shared.color(.ink2)
+        status.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.addSubview(status)
+        NSLayoutConstraint.activate([
+            status.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor, constant: -16),
+            status.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor, constant: -8),
+        ])
+        status.isHidden = textView.vim == nil
+        textView.vimStatus = status
+        textView.vimDidRun()
         textView.minSize = .zero
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
         textView.isVerticallyResizable = true
@@ -69,7 +89,9 @@ final class EditorTextView: CaretTextView {
         enclosingScrollView?.backgroundColor = backgroundColor
         selectedTextAttributes = [.backgroundColor: store.color(.selection)]
         typingAttributes = styler.baseAttributes
+        vimStatus?.textColor = store.color(.ink2)
         fitColumn(to: frame.width)
+        if store.vimMode != (vim != nil) { vim = store.vimMode ? VimEngine() : nil }
     }
 
     @objc private func themeDidChange(_ notification: Notification) {
@@ -117,17 +139,71 @@ final class EditorTextView: CaretTextView {
         }
     }
 
-    /// The text's children plus one image per rendered block, labeled with its source.
+    /// The text's children plus one image per rendered block, labeled with its source, and one checkbox per task box.
     override func accessibilityChildren() -> [Any]? {
         var children = super.accessibilityChildren() ?? []
         let storage = textStorage!
         storage.enumerateAttribute(.dewlineBlock, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
-            guard case .picture(let picture, let label)? = (value as? BlockLine)?.role else { return }
-            let line = firstRect(forCharacterRange: NSRange(location: range.location, length: 0), actualRange: nil)
-            let frame = NSRect(x: line.minX, y: line.maxY - picture.size.height, width: picture.size.width, height: picture.size.height)
-            children.append(NSAccessibilityElement.element(withRole: .image, frame: frame, label: label, parent: self))
+            switch (value as? BlockLine)?.role {
+            case .picture(let picture, let label)?:
+                let line = firstRect(forCharacterRange: NSRange(location: range.location, length: 0), actualRange: nil)
+                let frame = NSRect(x: line.minX, y: line.maxY - picture.size.height, width: picture.size.width, height: picture.size.height)
+                children.append(NSAccessibilityElement.element(withRole: .image, frame: frame, label: label, parent: self))
+            case .task(let task)?:
+                let box = range.location + task.at
+                let frame = firstRect(forCharacterRange: NSRange(location: box, length: 3), actualRange: nil)
+                children.append(TaskBoxElement(frame: frame, label: task.label, checked: task.checked, parent: self) { [weak self] in
+                    self?.toggleTask(at: box + 1)
+                })
+            default:
+                break
+            }
         }
         return children
+    }
+
+    /// A click on a task box toggles it and leaves the caret where it was.
+    override func mouseDown(with event: NSEvent) {
+        guard let box = taskBox(at: convert(event.locationInWindow, from: nil)) else { return super.mouseDown(with: event) }
+        toggleTask(at: box)
+    }
+
+    /// With Vim on, keys outside insert mode go to Vim and never to the input method; marked text keeps its keys.
+    override func keyDown(with event: NSEvent) {
+        guard let vim, !hasMarkedText(), !event.modifierFlags.contains(.command) else { return super.keyDown(with: event) }
+        let key = Self.vimKey(event)
+        if vim.mode == .insert, key != "<Esc>" { return super.keyDown(with: event) }
+        if let key { vim.handle(key, in: self) }
+        vimDidRun()
+    }
+
+    private static func vimKey(_ event: NSEvent) -> String? {
+        switch event.keyCode {
+        case 53: return "<Esc>"
+        case 36, 76: return "<CR>"
+        case 51: return "<BS>"
+        case 123: return "<Left>"
+        case 124: return "<Right>"
+        case 125: return "<Down>"
+        case 126: return "<Up>"
+        default: break
+        }
+        if event.modifierFlags.contains(.control) {
+            switch event.charactersIgnoringModifiers {
+            case "r": return "<C-r>"
+            case "[": return "<Esc>"
+            default: return nil
+            }
+        }
+        guard let characters = event.characters, characters.count == 1, let scalar = characters.unicodeScalars.first,
+            scalar.value >= 32, scalar.value != 127, !(0xF700...0xF8FF).contains(scalar.value)
+        else { return nil }
+        return characters
+    }
+
+    func vimDidRun() {
+        blockCaret = vim?.mode == .normal
+        vimStatus?.stringValue = vim?.status ?? ""
     }
 
     override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
@@ -280,6 +356,50 @@ final class EditorTextView: CaretTextView {
         guard menuItem.action == #selector(toggleSource(_:)) else { return super.validateMenuItem(menuItem) }
         menuItem.state = styler.showsSource ? .on : .off
         return true
+    }
+}
+
+extension EditorTextView: VimHost {
+    var vimText: NSString { textStorage!.mutableString }
+
+    var vimSelection: NSRange {
+        get { selectedRange() }
+        set {
+            setSelectedRange(newValue)
+            scrollRangeToVisible(newValue)
+        }
+    }
+
+    var vimClipboard: String? {
+        get { NSPasteboard.general.string(forType: .string) }
+        set {
+            NSPasteboard.general.clearContents()
+            if let newValue { NSPasteboard.general.setString(newValue, forType: .string) }
+        }
+    }
+
+    /// Through shouldChangeText and didChangeText, as typing goes, so the styler, the change engine and undo see it.
+    func vimReplace(_ range: NSRange, with string: String) {
+        breakUndoCoalescing()
+        guard shouldChangeText(in: range, replacementString: string) else { return }
+        textStorage!.replaceCharacters(in: range, with: NSAttributedString(string: string, attributes: styler.baseAttributes))
+        didChangeText()
+    }
+
+    func vimUndo() {
+        undoManager?.undo()
+    }
+
+    func vimRedo() {
+        undoManager?.redo()
+    }
+
+    func vimSave() {
+        NSApp.sendAction(#selector(NSDocument.save(_:)), to: nil, from: self)
+    }
+
+    func vimClose() {
+        window?.performClose(nil)
     }
 }
 

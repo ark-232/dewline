@@ -6,7 +6,7 @@ enum MainMenu {
         let main = NSMenu()
         let window = windowMenu()
         let help = helpMenu()
-        for menu in [appMenu(), fileMenu(), editMenu(), viewMenu(), window, help] {
+        for menu in [appMenu(), fileMenu(), editMenu(), viewMenu(), goMenu(), window, help] {
             let item = NSMenuItem()
             item.submenu = menu
             main.addItem(item)
@@ -58,13 +58,21 @@ enum MainMenu {
         menu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         menu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         menu.addItem(.separator())
+        menu.addItem(withTitle: "Find", action: nil, keyEquivalent: "").submenu = findMenu()
+        menu.addItem(withTitle: "Go to Line…", action: #selector(CaretTextView.goToLine(_:)), keyEquivalent: "l")
+        return menu
+    }
+
+    private static func findMenu() -> NSMenu {
+        let menu = NSMenu(title: "Find")
         let find = menu.addItem(withTitle: "Find…", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "f")
         find.tag = NSTextFinder.Action.showFindInterface.rawValue
+        menu.addItem(withTitle: "Find in Files…", action: #selector(MainWindowController.findInFiles(_:)), keyEquivalent: "F")
+        menu.addItem(.separator())
         let next = menu.addItem(withTitle: "Find Next", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "g")
         next.tag = NSTextFinder.Action.nextMatch.rawValue
         let previous = menu.addItem(withTitle: "Find Previous", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "G")
         previous.tag = NSTextFinder.Action.previousMatch.rawValue
-        menu.addItem(withTitle: "Go to Line…", action: #selector(CaretTextView.goToLine(_:)), keyEquivalent: "l")
         return menu
     }
 
@@ -78,6 +86,13 @@ enum MainMenu {
         menu.addItem(.separator())
         let source = menu.addItem(withTitle: "Show Source", action: #selector(EditorTextView.toggleSource(_:)), keyEquivalent: "u")
         source.keyEquivalentModifierMask = [.command, .option]
+        return menu
+    }
+
+    private static func goMenu() -> NSMenu {
+        let menu = NSMenu(title: "Go")
+        menu.addItem(withTitle: "Back", action: #selector(MainWindowController.goBack(_:)), keyEquivalent: "[")
+        menu.addItem(withTitle: "Forward", action: #selector(MainWindowController.goForward(_:)), keyEquivalent: "]")
         return menu
     }
 
