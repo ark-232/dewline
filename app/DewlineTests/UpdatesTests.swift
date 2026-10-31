@@ -57,7 +57,7 @@ struct UpdatesTests {
 
     @Test func theAppAsksSparkleForASignedHTTPSFeedAndSendsNothingElse() {
         let info = Bundle.main.infoDictionary ?? [:]
-        #expect(info["SUFeedURL"] as? String == "https://github.com/ark-232/dewline/releases/latest/download/appcast.xml")
+        #expect(info["SUFeedURL"] as? String == "https://dewline.arkwerx.com/appcast.xml")
         #expect(info["SURequireSignedFeed"] as? Bool == true)
         #expect(info["SUVerifyUpdateBeforeExtraction"] as? Bool == true)
         #expect(info["SUEnableSystemProfiling"] as? Bool == false)

@@ -97,7 +97,7 @@ rm ~/dewline-keys/*.pem
 </rss>
 ```
 
-The app reads the feed from the Latest release's `appcast.xml` asset, `https://github.com/ark-232/dewline/releases/latest/download/appcast.xml` (SUFeedURL), so moving GitHub's Latest flag moves the feed. dewline-updates keeps the signed history each new feed is generated from. The site deploys to the Cloudflare Worker `dewline-site` (dewline.arkwerx.com) with `wrangler deploy`, using the `site` environment's `CLOUDFLARE_API_TOKEN` secret, a token that can deploy that Worker and nothing else.
+The app reads the feed from the site, `https://dewline.arkwerx.com/appcast.xml` (SUFeedURL), so a beta's items reach beta readers before any stable release exists. The release and pull `site` jobs copy the signed feed into `site/appcast.xml` on every channel, deploy, then check the live feed with `scripts/verify-feed.sh`. A deploy from a checkout without that file takes the feed down, so deploy the site only from those jobs. dewline-updates keeps the signed history each new feed is generated from. The site deploys to the Cloudflare Worker `dewline-site` (dewline.arkwerx.com) with `wrangler deploy`, using the `site` environment's `CLOUDFLARE_API_TOKEN` secret, a token that can deploy that Worker and nothing else.
 
 **The tap.** `ark-232/homebrew-tap` holds `Casks/dewline.rb` (spec section 3.6) with exactly one `version` and one `sha256` line, and CI that runs `brew style` and `brew audit --cask`.
 

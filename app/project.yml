@@ -92,7 +92,7 @@ targets:
             NSPortName: Dewline
             NSSendTypes: [public.utf8-plain-text]
             NSRequiredContext: {}
-        SUFeedURL: https://github.com/ark-232/dewline/releases/latest/download/appcast.xml
+        SUFeedURL: https://dewline.arkwerx.com/appcast.xml
         SUPublicEDKey: $(SPARKLE_PUBLIC_ED_KEY)
         SURequireSignedFeed: true
         SUVerifyUpdateBeforeExtraction: true

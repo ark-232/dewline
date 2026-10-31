@@ -2,9 +2,8 @@ name: pull
 
 # An owner-only signed tag, pull/v1.4.0, reverses a release on every channel. Its annotated message is the reason.
 # feed-sign removes the item from the committed feed and re-signs it; after the owner approves, feed commits the feed
-# and pulled.txt to dewline-updates, latest moves GitHub's Latest flag, and with it the live feed (the Latest release's
-# appcast.xml), to the previous stable release and marks the pulled release's notes, site redeploys
-# dewline.arkwerx.com, tap reverts the cask if it was bumped, and check confirms each channel. Each job that needs a secret fails with an error naming it. Spec: docs/release.md.
+# and pulled.txt to dewline-updates, latest moves GitHub's Latest flag to the previous stable release and marks the
+# pulled release's notes, site redeploys dewline.arkwerx.com with the new feed (its appcast.xml is the live feed), tap reverts the cask if it was bumped, and check confirms each channel. Each job that needs a secret fails with an error naming it. Spec: docs/release.md.
 on:
   push:
     tags:
@@ -270,17 +269,26 @@ jobs:
           fi
 
   site:
-    needs: [verify, feed]
-    if: ${{ needs.verify.outputs.channel == 'stable' }}
+    needs: [verify, feed-sign, feed]
     runs-on: ubuntu-24.04
     environment: site
     timeout-minutes: 15
     permissions:
       contents: read
+    env:
+      FEED_SHA256: ${{ needs.feed-sign.outputs.feed-sha256 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: feed
+          path: ${{ runner.temp }}/feed
+      - name: Put the signed feed in the site
+        run: |
+          echo "$FEED_SHA256  $RUNNER_TEMP/feed/appcast.xml" | sha256sum -c -
+          cp "$RUNNER_TEMP/feed/appcast.xml" site/appcast.xml
       - name: Require the site
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -370,10 +378,10 @@ jobs:
           status=0
           bad() { echo "::error::$*"; status=1; }
           dmg() { echo "/v$1/Dewline-$1.dmg"; }
-          if live=$(curl -fsSL https://github.com/ark-232/dewline/releases/latest/download/appcast.xml); then
+          if live=$(curl -fsSL https://dewline.arkwerx.com/appcast.xml); then
             [[ $live != *"$(dmg "$VERSION")\""* ]] || bad "the live feed still offers $VERSION"
           else
-            bad "cannot read https://github.com/ark-232/dewline/releases/latest/download/appcast.xml"
+            bad "cannot read https://dewline.arkwerx.com/appcast.xml"
           fi
           if [[ $CHANNEL == stable && -n $PREVIOUS ]]; then
             latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name) || latest="no release"

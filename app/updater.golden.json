@@ -3,7 +3,7 @@
   "SUEnableAutomaticChecks": true,
   "SUEnableJavaScript": false,
   "SUEnableSystemProfiling": false,
-  "SUFeedURL": "https://github.com/ark-232/dewline/releases/latest/download/appcast.xml",
+  "SUFeedURL": "https://dewline.arkwerx.com/appcast.xml",
   "SUPublicEDKey": "",
   "SURequireSignedFeed": true,
   "SUScheduledCheckInterval": 86400,
