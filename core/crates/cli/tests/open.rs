@@ -263,7 +263,9 @@ fn help_and_version() {
         format!("dewline {}\n", env!("CARGO_PKG_VERSION"))
     );
     let help = String::from_utf8_lossy(&fixture.run(&["--help"]).stdout).into_owned();
-    for command in ["open", "notify", "changes", "capture", "export", "mcp", "doctor"] {
+    for command in [
+        "open", "notify", "changes", "capture", "export", "mcp", "doctor",
+    ] {
         assert!(help.contains(&format!("\n  {command} ")), "{help}");
     }
     let export = String::from_utf8_lossy(&fixture.run(&["export", "--help"]).stdout).into_owned();

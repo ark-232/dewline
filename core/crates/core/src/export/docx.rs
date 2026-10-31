@@ -60,7 +60,11 @@ impl Part {
             r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">{fixed}"#
         );
         for (index, (kind, target, external)) in self.rels.iter().enumerate() {
-            let mode = if *external { r#" TargetMode="External""# } else { "" };
+            let mode = if *external {
+                r#" TargetMode="External""#
+            } else {
+                ""
+            };
             let _ = write!(
                 xml,
                 r#"<Relationship Id="rId{}" Type="{R}/{kind}" Target="{}"{mode}/>"#,
@@ -208,8 +212,15 @@ impl Writer {
         if self.strike > 0 {
             props.push_str("<w:strike/>");
         }
-        let props = if props.is_empty() { props } else { format!("<w:rPr>{props}</w:rPr>") };
-        self.push(&format!(r#"<w:r>{props}<w:t xml:space="preserve">{}</w:t></w:r>"#, escaped(text)));
+        let props = if props.is_empty() {
+            props
+        } else {
+            format!("<w:rPr>{props}</w:rPr>")
+        };
+        self.push(&format!(
+            r#"<w:r>{props}<w:t xml:space="preserve">{}</w:t></w:r>"#,
+            escaped(text)
+        ));
     }
 
     fn event(&mut self, event: Event) {
@@ -218,7 +229,9 @@ impl Writer {
             Event::End(tag) => self.end(tag),
             Event::Text(text) => self.text(&text, None),
             Event::Code(text) => self.text(&text, Some("VerbatimChar")),
-            Event::InlineMath(text) | Event::DisplayMath(text) => self.text(&text, Some("VerbatimChar")),
+            Event::InlineMath(text) | Event::DisplayMath(text) => {
+                self.text(&text, Some("VerbatimChar"))
+            }
             Event::SoftBreak => self.text(" ", None),
             Event::HardBreak => {
                 if self.image.is_none() && self.code.is_none() {
@@ -230,7 +243,9 @@ impl Writer {
                 self.close();
                 self.push(r#"<w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="auto"/></w:pBdr></w:pPr></w:p>"#);
             }
-            Event::TaskListMarker(done) => self.text(if done { "\u{2612} " } else { "\u{2610} " }, None),
+            Event::TaskListMarker(done) => {
+                self.text(if done { "\u{2612} " } else { "\u{2610} " }, None)
+            }
             Event::FootnoteReference(label) => {
                 if self.note.is_some() {
                     self.text(&label, Some("FootnoteReference"));
@@ -292,13 +307,19 @@ impl Writer {
             Tag::Table(columns) => {
                 self.close();
                 let width = TEXT_TWIPS / columns.len().max(1);
-                let mut xml = String::from(r#"<w:tbl><w:tblPr><w:tblStyle w:val="Table"/><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid>"#);
+                let mut xml = String::from(
+                    r#"<w:tbl><w:tblPr><w:tblStyle w:val="Table"/><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid>"#,
+                );
                 for _ in &columns {
                     let _ = write!(xml, r#"<w:gridCol w:w="{width}"/>"#);
                 }
                 xml.push_str("</w:tblGrid>");
                 self.push(&xml);
-                self.table = Some(Table { columns, cell: 0, head: false });
+                self.table = Some(Table {
+                    columns,
+                    cell: 0,
+                    head: false,
+                });
             }
             Tag::TableHead => {
                 self.push("<w:tr><w:trPr><w:tblHeader/></w:trPr>");
@@ -314,8 +335,13 @@ impl Writer {
                 }
             }
             Tag::TableCell => {
-                let width = self.table.as_ref().map_or(TEXT_TWIPS, |table| TEXT_TWIPS / table.columns.len().max(1));
-                self.push(&format!(r#"<w:tc><w:tcPr><w:tcW w:w="{width}" w:type="dxa"/></w:tcPr>"#));
+                let width = self
+                    .table
+                    .as_ref()
+                    .map_or(TEXT_TWIPS, |table| TEXT_TWIPS / table.columns.len().max(1));
+                self.push(&format!(
+                    r#"<w:tc><w:tcPr><w:tcW w:w="{width}" w:type="dxa"/></w:tcPr>"#
+                ));
             }
             Tag::Emphasis => self.italic += 1,
             Tag::Strong => self.bold += 1,
@@ -384,7 +410,10 @@ impl Writer {
                 self.table = None;
             }
             TagEnd::TableHead | TagEnd::TableRow => {
-                let missing = self.table.as_ref().map_or(0, |table| table.columns.len().saturating_sub(table.cell));
+                let missing = self
+                    .table
+                    .as_ref()
+                    .map_or(0, |table| table.columns.len().saturating_sub(table.cell));
                 for _ in 0..missing {
                     self.start(Tag::TableCell);
                     self.end(TagEnd::TableCell);
@@ -411,7 +440,9 @@ impl Writer {
                 }
             }
             TagEnd::Image => {
-                let Some((dest, alt)) = self.image.take() else { return };
+                let Some((dest, alt)) = self.image.take() else {
+                    return;
+                };
                 match self.picture(&dest) {
                     Some((id, cx, cy)) => {
                         self.open();
@@ -449,7 +480,12 @@ impl Writer {
 
     fn package(mut self) -> io::Result<Vec<u8>> {
         // A reference whose definition never came still needs a footnote to point at.
-        let mut missing: Vec<u32> = self.note_ids.values().copied().filter(|id| !self.defined.contains(id)).collect();
+        let mut missing: Vec<u32> = self
+            .note_ids
+            .values()
+            .copied()
+            .filter(|id| !self.defined.contains(id))
+            .collect();
         missing.sort_unstable();
         for id in missing {
             let _ = write!(
@@ -476,16 +512,29 @@ impl Writer {
             ("[Content_Types].xml".into(), CONTENT_TYPES.into()),
             ("_rels/.rels".into(), ROOT_RELS.into()),
             ("word/document.xml".into(), document.into_bytes()),
-            ("word/_rels/document.xml.rels".into(), self.doc.rels_xml(&fixed).into_bytes()),
+            (
+                "word/_rels/document.xml.rels".into(),
+                self.doc.rels_xml(&fixed).into_bytes(),
+            ),
             ("word/styles.xml".into(), STYLES.into()),
-            ("word/numbering.xml".into(), numbering(&self.ordered).into_bytes()),
+            (
+                "word/numbering.xml".into(),
+                numbering(&self.ordered).into_bytes(),
+            ),
             ("word/footnotes.xml".into(), footnotes.into_bytes()),
             ("word/settings.xml".into(), SETTINGS.into()),
         ];
         if !self.notes.rels.is_empty() {
-            files.push(("word/_rels/footnotes.xml.rels".into(), self.notes.rels_xml("").into_bytes()));
+            files.push((
+                "word/_rels/footnotes.xml.rels".into(),
+                self.notes.rels_xml("").into_bytes(),
+            ));
         }
-        files.extend(self.media.into_iter().map(|(name, bytes)| (format!("word/media/{name}"), bytes)));
+        files.extend(
+            self.media
+                .into_iter()
+                .map(|(name, bytes)| (format!("word/media/{name}"), bytes)),
+        );
         let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
         let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
         for (name, bytes) in files {
@@ -502,7 +551,10 @@ impl Writer {
 /// and checked again by the descriptor's own path.
 fn read_image(root: &Path, dest: &str) -> Option<Vec<u8>> {
     let scheme = dest.split_once(':').is_some_and(|(scheme, _)| {
-        scheme.len() > 1 && scheme.chars().all(|c| c.is_ascii_alphanumeric() || "+-.".contains(c))
+        scheme.len() > 1
+            && scheme
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "+-.".contains(c))
     });
     if dest.is_empty() || scheme || dest.starts_with("//") {
         return None;
@@ -512,7 +564,11 @@ fn read_image(root: &Path, dest: &str) -> Option<Vec<u8>> {
     if !real.starts_with(root) {
         return None;
     }
-    let file = OpenOptions::new().read(true).custom_flags(libc::O_NOFOLLOW).open(&real).ok()?;
+    let file = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(&real)
+        .ok()?;
     let metadata = file.metadata().ok()?;
     if !metadata.is_file() || metadata.len() > MAX_IMAGE || !opened_inside(&file, root) {
         return None;
@@ -532,7 +588,8 @@ fn opened_inside(file: &std::fs::File, root: &Path) -> bool {
     if unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETPATH, buffer.as_mut_ptr()) } == -1 {
         return false;
     }
-    CStr::from_bytes_until_nul(&buffer).is_ok_and(|path| Path::new(OsStr::from_bytes(path.to_bytes())).starts_with(root))
+    CStr::from_bytes_until_nul(&buffer)
+        .is_ok_and(|path| Path::new(OsStr::from_bytes(path.to_bytes())).starts_with(root))
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -559,11 +616,19 @@ fn percent_decoded(text: &str) -> Option<String> {
 
 /// The package extension and pixel size of a PNG, JPEG or GIF.
 fn image_size(bytes: &[u8]) -> Option<(&'static str, u64, u64)> {
-    let be = |at: usize, len: usize| bytes.get(at..at + len).map(|b| b.iter().fold(0u64, |n, &x| n << 8 | x as u64));
+    let be = |at: usize, len: usize| {
+        bytes
+            .get(at..at + len)
+            .map(|b| b.iter().fold(0u64, |n, &x| n << 8 | x as u64))
+    };
     let (extension, width, height) = if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         ("png", be(16, 4)?, be(20, 4)?)
     } else if bytes.starts_with(b"GIF8") {
-        let le = |at: usize| bytes.get(at..at + 2).map(|b| u64::from(b[0]) | u64::from(b[1]) << 8);
+        let le = |at: usize| {
+            bytes
+                .get(at..at + 2)
+                .map(|b| u64::from(b[0]) | u64::from(b[1]) << 8)
+        };
         ("gif", le(6)?, le(8)?)
     } else if bytes.starts_with(&[0xff, 0xd8]) {
         let mut at = 2;
@@ -575,7 +640,9 @@ fn image_size(bytes: &[u8]) -> Option<(&'static str, u64, u64)> {
             match marker {
                 0xff => at += 1,
                 0x01 | 0xd0..=0xd8 => at += 2,
-                0xc0..=0xcf if !matches!(marker, 0xc4 | 0xc8 | 0xcc) => break ("jpeg", be(at + 7, 2)?, be(at + 5, 2)?),
+                0xc0..=0xcf if !matches!(marker, 0xc4 | 0xc8 | 0xcc) => {
+                    break ("jpeg", be(at + 7, 2)?, be(at + 5, 2)?);
+                }
                 _ => at += 2 + be(at + 2, 2)? as usize,
             }
         }
@@ -605,9 +672,14 @@ fn escaped(text: &str) -> String {
 
 /// Bullets on every level, and decimal numbers that each ordered list restarts at its own first number.
 fn numbering(ordered: &[(u32, usize, u64)]) -> String {
-    let mut xml = format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering xmlns:w="{W}">"#);
+    let mut xml = format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering xmlns:w="{W}">"#
+    );
     for (id, format) in [(0, "bullet"), (1, "decimal")] {
-        let _ = write!(xml, r#"<w:abstractNum w:abstractNumId="{id}"><w:multiLevelType w:val="hybridMultilevel"/>"#);
+        let _ = write!(
+            xml,
+            r#"<w:abstractNum w:abstractNumId="{id}"><w:multiLevelType w:val="hybridMultilevel"/>"#
+        );
         for level in 0..9 {
             let text = if format == "bullet" {
                 ["\u{2022}", "\u{25e6}", "\u{25aa}"][level % 3].to_owned()
