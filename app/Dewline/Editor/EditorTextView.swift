@@ -43,7 +43,7 @@ final class EditorTextView: CaretTextView {
     var noteFolder: URL?
     /// Opens a note a link points to, at a heading.
     var openNote: ((URL, String?) -> Void)?
-    /// Runs Find in Files for a tag; until there is one, Cmd-clicking a tag beeps.
+    /// Runs Find in Files for a tag; a window without a folder has none, and Cmd-clicking a tag beeps.
     var findInFiles: ((String) -> Void)?
     var footnotePopover: NSPopover?
     /// Counts the storage's character edits; the change engine stamps landings and saves with it.

@@ -184,12 +184,12 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     }
 
     /// Shows Find in Files in place of the tree, with its field focused, opening the sidebar when it is collapsed.
-    func showSearch() {
+    func showSearch(_ query: String? = nil) {
         guard let find else { return }
         (parent as? NSSplitViewController)?.splitViewItem(for: self)?.isCollapsed = false
         outlineView.enclosingScrollView?.isHidden = true
         find.view.isHidden = false
-        find.begin()
+        find.begin(query)
     }
 
     private func showFiles() {

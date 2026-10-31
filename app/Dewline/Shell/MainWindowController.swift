@@ -120,6 +120,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         textView.documentFolder = document.fileURL?.deletingLastPathComponent()
         textView.noteFolder = folder?.url ?? textView.documentFolder
         textView.openNote = { [weak self] url, heading in self?.follow(url, heading: heading) }
+        textView.findInFiles = folder == nil ? nil : { [weak self] tag in self?.sidebar.showSearch(tag) }
         textView.string = document.text
         // Front matter stays folded until the caret goes into it.
         if let first = textView.styler.map.blocks(in: NSRange(location: 0, length: 0)).first, first.kind == .frontMatter {
