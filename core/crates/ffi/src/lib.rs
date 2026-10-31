@@ -17,6 +17,7 @@ mod agentfiles;
 mod markdown;
 mod save;
 mod search;
+mod system;
 
 uniffi::setup_scaffolding!();
 

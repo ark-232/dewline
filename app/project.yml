@@ -16,6 +16,8 @@ settings:
     MARKETING_VERSION: "0.0.1"
     CURRENT_PROJECT_VERSION: "1"
     DEVELOPMENT_TEAM: "7W6LLR2DK7"
+    # The app writes its export stylesheet here for the Quick Look preview, whose sandbox can't read the app's defaults.
+    APP_GROUP: $(DEVELOPMENT_TEAM).dev.arkwerx.dewline
     # The base64 EdDSA public key from Sparkle's generate_keys (docs/release.md). While it is empty the updater
     # refuses to start, so nothing can be checked, downloaded or installed.
     SPARKLE_PUBLIC_ED_KEY: ""
@@ -59,6 +61,7 @@ targets:
     dependencies:
       - package: MdCore
       - package: Sparkle
+      - target: DewlinePreview
     postBuildScripts:
       - name: Embed the dewline command
         script: exec "$SRCROOT/../scripts/embed-cli.sh"
@@ -70,10 +73,25 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_NSHumanReadableCopyright: Copyright 2026 ArkWerx LLC
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.productivity
+    entitlements:
+      path: Dewline/Dewline.entitlements
+      properties:
+        com.apple.security.application-groups: [$(APP_GROUP)]
     info:
       path: Dewline/Info.plist
       properties:
         ATSApplicationFontsPath: Fonts
+        DewlineAppGroup: $(APP_GROUP)
+        CFBundleURLTypes:
+          - CFBundleURLName: dev.arkwerx.dewline
+            CFBundleURLSchemes: [dewline]
+        NSServices:
+          - NSMenuItem:
+              default: Add to Dewline Inbox
+            NSMessage: addToInbox
+            NSPortName: Dewline
+            NSSendTypes: [public.utf8-plain-text]
+            NSRequiredContext: {}
         SUFeedURL: https://updates.dewline.dev/appcast.xml
         SUPublicEDKey: $(SPARKLE_PUBLIC_ED_KEY)
         SURequireSignedFeed: true
@@ -99,6 +117,37 @@ targets:
     scheme:
       testTargets:
         - DewlineTests
+
+  DewlinePreview:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: QuickLook
+    dependencies:
+      - package: MdCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.arkwerx.dewline.preview
+        CODE_SIGN_STYLE: Automatic
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Dewline Preview
+        INFOPLIST_KEY_NSHumanReadableCopyright: Copyright 2026 ArkWerx LLC
+    entitlements:
+      path: QuickLook/DewlinePreview.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.application-groups: [$(APP_GROUP)]
+    info:
+      path: QuickLook/Info.plist
+      properties:
+        DewlineAppGroup: $(APP_GROUP)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.quicklook.preview
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PreviewProvider
+          NSExtensionAttributes:
+            QLIsDataBasedPreview: true
+            QLSupportedContentTypes: [net.daringfireball.markdown]
+            QLSupportsSearchableItems: false
 
   DewlineTests:
     type: bundle.unit-test

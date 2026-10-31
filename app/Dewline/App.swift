@@ -22,6 +22,7 @@ enum DewlineApp {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var launchWindow: LaunchWindowController?
     private var control: ControlSocket?
+    private let inboxService = InboxService()
     private let defaults = UserDefaults.standard
     /// The test host neither resumes nor saves a session.
     private let isTestHost = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
@@ -49,9 +50,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Updates.shared.start()
+        NSApp.servicesProvider = inboxService
         // The test host leaves the real socket alone; ControlSocketTests make their own.
         guard !isTestHost else { return }
         Preferences.shared.keepWindows()
+        Export.publishPreviewStylesheet()
+        NotificationCenter.default.addObserver(forName: ThemeStore.didChange, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { Export.publishPreviewStylesheet() }
+        }
         if !UserDefaults.standard.bool(forKey: Welcome.shownKey) {
             UserDefaults.standard.set(true, forKey: Welcome.shownKey)
             // Opened before AppKit asks for an untitled file, so the guide shows in place of the launch window.
@@ -107,11 +113,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func show(_ document: MarkdownDocument, for request: ControlSocket.Open, _ connection: ControlSocket.Connection) {
         document.showWindows()
-        if let line = request.line {
-            (document.windowControllers.first as? MainWindowController)?.textView?.jump(toLine: line, column: request.column ?? 1)
-        }
+        jump(document, line: request.line, column: request.column)
         if request.wait { document.answerWhenClosed(connection) }
         connection.reply(.opened)
+    }
+
+    /// Opens `url` as Markdown, or brings its window forward, with the caret at `line` and `column`.
+    @discardableResult
+    func show(_ url: URL, line: Int?, column: Int?) throws -> MarkdownDocument {
+        let document = try openMarkdown(at: url)
+        jump(document, line: line, column: column)
+        return document
+    }
+
+    private func jump(_ document: MarkdownDocument, line: Int?, column: Int?) {
+        if let line {
+            (document.windowControllers.first as? MainWindowController)?.textView?.jump(toLine: line, column: column ?? 1)
+        }
     }
 
     /// Opens the file at `url` as Markdown, whatever its extension, or brings its window forward.
@@ -177,7 +195,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
-            if (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
+            if url.scheme == "dewline" {
+                Links.handle(url)
+            } else if (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
                 openFolder(at: url)
             } else {
                 NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { _, _, error in

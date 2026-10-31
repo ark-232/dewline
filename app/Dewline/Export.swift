@@ -57,6 +57,13 @@ enum Export {
         try data.write(to: url, options: .atomic)
     }
 
+    /// Keeps the HTML page's stylesheet, in both palettes, in the app group's defaults for the Quick Look preview,
+    /// whose sandbox can't read the app's settings.
+    static func publishPreviewStylesheet() {
+        guard let group = Bundle.main.object(forInfoDictionaryKey: "DewlineAppGroup") as? String else { return }
+        UserDefaults(suiteName: group)?.set(stylesheet(light: Palette(.aqua), dark: Palette(.darkAqua)), forKey: "PreviewStylesheet")
+    }
+
     private static func rgba(_ token: Token) -> UInt32 {
         let color = ThemeStore.shared.color(token).usingColorSpace(.sRGB)!
         return [color.redComponent, color.greenComponent, color.blueComponent, color.alphaComponent]
