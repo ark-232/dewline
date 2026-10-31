@@ -2,7 +2,8 @@ import AppKit
 import UniformTypeIdentifiers
 
 extension EditorTextView {
-    /// Saves pasted or dropped images beside the document as PNG and links them at the selection, as one edit.
+    /// Saves pasted or dropped images as PNG beside the document, or in an "attachments" folder beside it when Settings >
+    /// Files says so, and links them at the selection, as one edit.
     /// Returns false for a pasteboard without images, or with text beside an image, which pastes as text.
     func insertImages(from pboard: NSPasteboard) -> Bool {
         let files = pboard.readObjects(forClasses: [NSURL.self], options: [
@@ -20,9 +21,12 @@ extension EditorTextView {
             askToSave()
             return true
         }
+        let subfolder = Preferences.shared.attachments == .subfolder ? "attachments/" : ""
+        let target = folder.appending(path: subfolder, directoryHint: .isDirectory)
         var links: [String] = []
         do {
-            for image in images { links.append("![](\(try save(image, in: folder)))") }
+            try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+            for image in images { links.append("![](\(subfolder)\(try save(image, in: target)))") }
         } catch {
             window.map { presentError(error, modalFor: $0, delegate: nil, didPresent: nil, contextInfo: nil) }
             return true
