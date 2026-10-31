@@ -9,8 +9,10 @@ use ratex_layout::LayoutOptions;
 use ratex_types::color::Color;
 use resvg::{tiny_skia, usvg};
 
+mod engine;
 mod markdown;
 mod save;
+mod search;
 
 uniffi::setup_scaffolding!();
 

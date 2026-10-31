@@ -5,7 +5,10 @@ import AppKit
 final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate {
     weak var textView: EditorTextView?
     let undoManager = UndoManager()
-    let blocks = RenderedBlocks()
+    let map: BlockMap
+    let blocks: RenderedBlocks
+    let tables: Tables
+    let tasks: TaskBoxes
     private(set) var restyles = 0
     private(set) var showsSource = false
     /// Source line height: 22 pt, or prose's 24.5 pt pitch through `DewlineSourceLineHeight`, until the owner picks one.
@@ -39,7 +42,7 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
         .dewlineMarkerFont, .dewlineBlock, .dewlineQuote,
     ].map { $0.rawValue as NSString }
     /// The most text one pass styles while more waits: several screens, a few milliseconds of work.
-    private static let chunk = 1 << 14
+    private static let chunk = BlockMap.screen
     private static var base: [NSAttributedString.Key: Any] {
         [
             .font: bodyFont,
@@ -54,6 +57,26 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
     static func code(matching font: NSFont) -> NSFont {
         let store = ThemeStore.shared
         return store.codeFont(size: font.pointSize * font.xHeight / store.codeFont(size: font.pointSize).xHeight)
+    }
+
+    override init() {
+        let map = BlockMap()
+        self.map = map
+        blocks = RenderedBlocks(map: map)
+        tables = Tables(map: map)
+        tasks = TaskBoxes(map: map)
+        super.init()
+        map.merged = { [weak self] changed in self?.restyleLater(changed) }
+        for name in [NSNotification.Name.NSUndoManagerDidUndoChange, .NSUndoManagerDidRedoChange] {
+            NotificationCenter.default.addObserver(self, selector: #selector(undid), name: name, object: undoManager)
+        }
+    }
+
+    /// Undo and redo set the selection after their edit, often to where it was, and then no selection change corrects
+    /// the reveal their restyle guessed.
+    @objc private func undid(_ notification: Notification) {
+        guard textView?.defersStyling == false else { return }
+        updateReveal()
     }
 
     var baseAttributes: [NSAttributedString.Key: Any] {
@@ -72,13 +95,15 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
         updateReveal()
     }
 
-    /// Spelling and grammar marks skip code, math, front matter, addresses, wikilink targets and HTML tags.
+    /// Spelling and grammar marks skip code, math, front matter, HTML, addresses and wikilink targets.
     func textView(_ textView: NSTextView, shouldSetSpellingState value: Int, range affectedCharRange: NSRange) -> Int {
         guard value != 0 else { return value }
-        let text = textView.textStorage!.mutableString
-        let literal = blocks.index.isCode(affectedCharRange, in: text)
-            || SpikeTokenizer.literals(in: text, line: text.lineRange(for: affectedCharRange)).contains { NSIntersectionRange($0, affectedCharRange).length > 0 }
-        return literal ? 0 : value
+        return map.literals(in: affectedCharRange).contains { NSIntersectionRange($0, affectedCharRange).length > 0 } ? 0 : value
+    }
+
+    /// Writing Tools leave the same text alone.
+    func textView(_ textView: NSTextView, writingToolsIgnoredRangesInEnclosingRange enclosingRange: NSRange) -> [NSValue] {
+        map.literals(in: enclosingRange).map { NSValue(range: NSIntersectionRange($0, enclosingRange)) }.filter { $0.rangeValue.length > 0 }
     }
 
     nonisolated func textStorage(
@@ -126,20 +151,20 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
                 range = NSUnionRange(NSRange(location: start, length: moved(NSMaxRange(waiting)) - start), range)
             }
             LatencyProbe.begin(.parse)
-            let changed = blocks.textDidChange(textView!.textStorage!.mutableString, edited: editedRange, delta: delta)
+            let changed = map.textDidChange(textView!.textStorage!.mutableString, edited: edit, delta: delta)
             LatencyProbe.end(.parse)
-            range = blocks.covering(range)
+            blocks.textDidChange(edited: edit, delta: delta)
+            tables.textDidChange(edited: edit, delta: delta)
+            tasks.textDidChange(edited: edit, delta: delta)
+            range = NSUnionRange(range, changed)
             if textView!.defersStyling {
-                pending = changed.reduce(range, NSUnionRange)
+                pending = range
             } else {
                 pending = nil
                 // An edit made on the storage leaves the selection where it is unless the view moves it, and a move
                 // updates the reveal.
                 let selection = caret.map { [NSRange(location: $0, length: 0)] } ?? textView!.selectedRanges.map(\.rangeValue)
                 restyleSoon(range, in: textView!.textStorage!, selection: selection)
-                for block in changed where NSUnionRange(block, range) != range {
-                    restyle(block, in: textView!.textStorage!, selection: selection)
-                }
             }
         }
     }
@@ -211,7 +236,8 @@ extension MarkdownStyler {
     /// source does.
     private func styleSome() {
         scheduled = false
-        guard let textView, !textView.defersStyling, let first = unstyled.first else { return }
+        // Text past the map's blocks waits for the first whole parse, whose landing schedules this again.
+        guard let textView, !textView.defersStyling, let first = unstyled.first, first < map.parsed else { return }
         let storage = textView.textStorage!
         let past = isPast(first)
         var held: (anchor: Int, offset: CGFloat)?
@@ -225,7 +251,7 @@ extension MarkdownStyler {
             let anchor = min(top <= caret && caret <= index(visible.maxX, visible.maxY) ? caret : top, storage.length - 1)
             held = textView.baseline(at: anchor).map { (anchor, $0 - visible.minY) }
         }
-        let length = past ? storage.length - first : min(unstyled.rangeView.first!.count, Self.chunk)
+        let length = past ? map.parsed - first : min(unstyled.rangeView.first!.count, Self.chunk, map.parsed - first)
         storage.beginEditing()
         restyle(NSRange(location: first, length: length), in: storage, selection: textView.selectedRanges.map(\.rangeValue))
         storage.endEditing()
@@ -243,37 +269,38 @@ extension MarkdownStyler {
 
     private func restyle(_ range: NSRange, in storage: NSTextStorage, selection: [NSRange]) {
         restyles += 1
-        let paragraphs = storage.mutableString.paragraphRange(for: blocks.covering(storage.mutableString.paragraphRange(for: range)))
+        let paragraphs = storage.mutableString.paragraphRange(for: tables.covering(map.covering(storage.mutableString.paragraphRange(for: range))))
         unstyled.remove(integersIn: Range(paragraphs)!)
         let styled = NSMutableAttributedString(string: storage.mutableString.substring(with: paragraphs))
-        let text = styled.mutableString
         let whole = NSRange(location: 0, length: styled.length)
         let source = showsSource
         let store = ThemeStore.shared
         styled.addAttributes(baseAttributes, range: whole)
         revealed = revealed.filter { !NSLocationInRange($0.range.location, paragraphs) }
         let selection = selection.map { NSRange(location: $0.location - paragraphs.location, length: $0.length) }
-        text.enumerateSubstrings(in: whole, options: [.byParagraphs, .substringNotRequired]) { _, line, paragraph, _ in
-            guard !self.blocks.contains(NSRange(location: line.location + paragraphs.location, length: line.length)) else { return }
-            LatencyProbe.begin(.parse)
-            let spans = SpikeTokenizer.spans(in: text, line: line)
-            LatencyProbe.end(.parse)
+        for block in map.blocks(in: paragraphs) {
+            let offset = block.range.location - paragraphs.location
+            let lines = NSRange(location: offset, length: block.range.length)
+            switch block.kind {
+            case .heading where source:
+                Self.add(.bold, in: lines, of: styled)
+                styled.addAttribute(.foregroundColor, value: store.color(.heading), range: lines)
+            case .heading(let level):
+                let heading = store.heading(level)
+                styled.addAttributes([
+                    .font: heading.font, .paragraphStyle: store.paragraphStyle(lineHeight: heading.lineHeight),
+                    .foregroundColor: store.color(level < 5 ? .heading : .ink2),
+                ], range: lines)
+                if heading.kern != 0 { styled.addAttribute(.kern, value: heading.kern, range: lines) }
+            case .quote where !source, .callout where !source:
+                styled.addAttributes([.paragraphStyle: store.quoteParagraphStyle, .foregroundColor: store.color(.heading), .dewlineQuote: true], range: lines)
+            default:
+                break
+            }
+            let spans = Self.styled(block).map { $0.shifted(by: offset) }
             for span in spans {
                 switch span.kind {
-                case .heading where source:
-                    Self.add(.bold, in: paragraph, of: styled)
-                    styled.addAttribute(.foregroundColor, value: store.color(.heading), range: paragraph)
-                case .heading(let level):
-                    let heading = store.heading(level)
-                    styled.addAttributes([
-                        .font: heading.font, .paragraphStyle: store.paragraphStyle(lineHeight: heading.lineHeight),
-                        .foregroundColor: store.color(level < 5 ? .heading : .ink2),
-                    ], range: paragraph)
-                    if heading.kern != 0 { styled.addAttribute(.kern, value: heading.kern, range: paragraph) }
-                case .quote where source:
-                    break
-                case .quote:
-                    styled.addAttributes([.paragraphStyle: store.quoteParagraphStyle, .foregroundColor: store.color(.heading), .dewlineQuote: true], range: paragraph)
+                case .quote where !source:
                     Self.add(.italic, in: span.content, of: styled)
                 case .strong:
                     Self.add(.bold, in: span.content, of: styled)
@@ -283,13 +310,13 @@ extension MarkdownStyler {
                     styled.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: span.content)
                 case .link:
                     styled.addAttributes([.underlineStyle: NSUnderlineStyle.single.rawValue, .foregroundColor: store.color(.link)], range: span.content)
-                case .inlineCode where source:
-                    break
-                case .inlineCode:
+                case .inlineCode where !source:
                     styled.enumerateAttribute(.font, in: span.content) { value, run, _ in
                         styled.addAttribute(.font, value: Self.code(matching: value as! NSFont), range: run)
                     }
                     styled.addAttribute(.backgroundColor, value: store.color(.codeBackground), range: span.range)
+                default:
+                    break
                 }
             }
             for span in spans {
@@ -297,11 +324,15 @@ extension MarkdownStyler {
                     styled.addAttribute(.dewlineMarkerFont, value: styled.attribute(.font, at: marker.location, effectiveRange: nil)!, range: marker)
                 }
                 let reveal = Self.touches(span, selection)
-                if reveal { self.revealed.insert(span.shifted(by: paragraphs.location)) }
-                self.mark(span, revealed: reveal || source, in: styled)
+                if reveal { revealed.insert(span.shifted(by: paragraphs.location)) }
+                mark(span, revealed: reveal || source, in: styled)
             }
         }
         blocks.style(styled, at: paragraphs.location, selection: source ? [whole] : selection)
+        if !source {
+            tables.style(styled, at: paragraphs.location, selection: selection)
+            tasks.style(styled, at: paragraphs.location, selection: selection)
+        }
         // Only runs whose styling differs are written, once each, so layout invalidates only what changed. The CF
         // accessors return a run's dictionary without bridging it to Swift, which costs more than the comparison.
         var offset = 0
@@ -348,21 +379,18 @@ extension MarkdownStyler {
         guard !showsSource else { return }
         let textView = textView!
         let storage = textView.textStorage!
-        let text = storage.mutableString
         let selection = textView.selectedRanges.map(\.rangeValue)
         var now: Set<SyntaxSpan> = []
         for range in selection {
-            text.enumerateSubstrings(in: text.paragraphRange(for: range), options: [.byParagraphs, .substringNotRequired]) { _, line, _, _ in
-                guard !self.blocks.contains(line) else { return }
-                // Unstyled text takes the selection's reveal state when it is styled.
-                guard !self.unstyled.intersects(integersIn: Range(line)!) else { return }
-                now.formUnion(SpikeTokenizer.spans(in: text, line: line).filter { Self.touches($0, selection) })
+            // Unstyled text takes the selection's reveal state when it is styled.
+            for block in map.blocks(touching: range) where !unstyled.intersects(integersIn: Range(block.range)!) {
+                now.formUnion(Self.styled(block).map { $0.shifted(by: block.range.location) }.filter { Self.touches($0, selection) })
             }
         }
         let hide = revealed.subtracting(now)
         let show = now.subtracting(revealed)
         revealed = now
-        let changedBlocks = blocks.revealChanges(selection)
+        let changedBlocks = blocks.revealChanges(selection) + tables.revealChanges(selection) + tasks.revealChanges(selection)
         guard !hide.isEmpty || !show.isEmpty || !changedBlocks.isEmpty else { return }
         storage.beginEditing()
         // In document order, the storage's attribute writes stay linear in the span count.
@@ -370,6 +398,32 @@ extension MarkdownStyler {
         for span in show.sorted(by: { $0.range.location < $1.range.location }) { mark(span, revealed: true, in: storage) }
         for range in changedBlocks { restyle(range, in: storage, selection: selection) }
         storage.endEditing()
+    }
+
+    /// Restyles, between events, what a whole parse changed.
+    private func restyleLater(_ changed: [NSRange]) {
+        guard let text = textView?.textStorage?.mutableString else { return }
+        for range in changed {
+            let paragraphs = text.paragraphRange(for: range)
+            unstyled.insert(integersIn: Range(paragraphs)!)
+            revealed = revealed.filter { !NSLocationInRange($0.range.location, paragraphs) }
+        }
+        blocks.textDidParse()
+        schedule()
+    }
+
+    /// A heading's and a quote's spans and the inline ones that style, outside rendered blocks: the spans whose markers
+    /// hide.
+    private static func styled(_ block: BlockMap.Block) -> [SyntaxSpan] {
+        block.spans.filter { span in
+            let styles = switch span.kind {
+            case .heading: if case .heading = block.kind { true } else { false }
+            case .quote: block.kind == .quote || block.kind == .callout
+            case .emphasis, .strong, .strikethrough, .inlineCode, .link: true
+            default: false
+            }
+            return styles && !block.rendered.contains { NSIntersectionRange($0.range, span.range).length > 0 }
+        }
     }
 
     private static func touches(_ span: SyntaxSpan, _ selection: [NSRange]) -> Bool {

@@ -80,14 +80,17 @@ struct EditRestyleTests {
 
     /// A line break written into the storage before a code span's `*` makes the half after it start an emphasis: its
     /// markers carry the font they show in when the caret reveals them, as `MarkdownStyler.mark` needs.
+    /// The break makes a blank line, which ends the code span at it and starts a paragraph with emphasis.
     @Test func aLineBreakInTheStorageStylesTheSpansItMakes() throws {
-        let editor = Editor("Code `a *b` c* end\nNext\n", caret: 0)
+        let editor = Editor("Code `a\n*b` c* end\nNext\n", caret: 0)
         defer { editor.close() }
         let storage = try #require(editor.view.textStorage)
         storage.replaceCharacters(in: NSRange(location: 8, length: 0), with: "\n")
         let text = storage.mutableString
         let tail = text.paragraphRange(for: NSRange(location: 9, length: 0))
-        let markers = SpikeTokenizer.spans(in: text, line: tail).flatMap(\.markers)
+        let markers = editor.view.styler.map.blocks(in: tail)
+            .flatMap { block in block.spans.flatMap { $0.shifted(by: block.range.location).markers } }
+            .filter { NSIntersectionRange($0, tail).length > 0 }
         try #require(!markers.isEmpty)
         for marker in markers {
             #expect(storage.attribute(.dewlineMarkerFont, at: marker.location, effectiveRange: nil) != nil, "marker at \(marker.location)")

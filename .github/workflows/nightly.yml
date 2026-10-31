@@ -1,0 +1,97 @@
+name: nightly
+
+# What pull requests skip, once a day on main: each cargo-fuzz target for 10 minutes, the workspace tests in release
+# with 10,000 proptest cases, and merge3's survey against git merge-file. A step whose files are not on the commit is
+# skipped. A fuzz crash becomes a private advisory (SECURITY.md), so the fuzzer's output and inputs stay on the runner
+# and the job prints the SHA-256 of each input it left.
+on:
+  schedule:
+    - cron: "37 8 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+    working-directory: core
+
+jobs:
+  fuzz:
+    runs-on: xcode-27
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      RUSTUP_TOOLCHAIN: nightly-2026-10-12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        if: hashFiles('core/fuzz/Cargo.toml') != ''
+        with:
+          toolchain: ${{ env.RUSTUP_TOOLCHAIN }}
+      - name: Install cargo-fuzz 0.13.2
+        if: hashFiles('core/fuzz/Cargo.toml') != ''
+        run: cargo install --locked cargo-fuzz@0.13.2
+      - name: Build the fuzz targets
+        if: hashFiles('core/fuzz/Cargo.toml') != ''
+        run: cargo fuzz build
+      - name: Fuzz each target for 10 minutes
+        if: hashFiles('core/fuzz/Cargo.toml') != ''
+        run: |
+          targets=$(cargo fuzz list)
+          [[ -n $targets ]] || { echo "::error::cargo fuzz list reports no targets"; exit 1; }
+          status=0
+          for target in $targets; do
+            # The fuzzer prints a failing input, so its output goes to a file that is never uploaded.
+            code=0
+            cargo fuzz run "$target" -- -max_total_time=600 -timeout=60 > "$RUNNER_TEMP/fuzz-$target.log" 2>&1 || code=$?
+            if ((code == 0)); then
+              echo "$target: $(tail -n 1 "$RUNNER_TEMP/fuzz-$target.log")"
+            else
+              echo "::error::fuzz target $target exited $code"
+              status=1
+            fi
+            for input in "fuzz/artifacts/$target"/*; do
+              [[ -f $input ]] || continue
+              echo "::error::fuzz target $target left ${input##*/}, SHA-256 $(shasum -a 256 "$input" | cut -d' ' -f1)"
+              status=1
+            done
+          done
+          exit "$status"
+
+  proptest:
+    runs-on: xcode-27
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: 1.99.1
+      - name: Workspace tests in release with 10,000 proptest cases
+        env:
+          PROPTEST_CASES: 10000
+        run: cargo test --workspace --release --locked --no-fail-fast
+      - name: Survey merge3 against git merge-file and fail on glue
+        if: hashFiles('core/crates/core/tests/merge_vs_git.rs') != ''
+        env:
+          MERGE_CHECK_CASES: 12000
+          MERGE_CHECK_MODES: lf,cr
+        run: |
+          survey=$RUNNER_TEMP/survey.txt
+          cargo test --workspace --release --locked --test merge_vs_git -- --ignored --exact survey --nocapture | tee "$survey"
+          [[ $(grep -c '^finding counts:' "$survey") == 2 ]] || { echo "::error::the survey did not report both modes"; exit 1; }
+          if grep '^finding counts:.*Glued' "$survey"; then
+            echo "::error::merge3 glued text from both sides together; the survey above lists the triples"
+            exit 1
+          fi

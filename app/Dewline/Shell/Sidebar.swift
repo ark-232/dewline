@@ -1,4 +1,5 @@
 import AppKit
+import MdCore
 import UniformTypeIdentifiers
 
 /// A row in the sidebar.
@@ -29,12 +30,15 @@ final class SidebarNode {
 }
 
 /// Pinned, Recents, and the folder tree with the open file's outline under its row; a window with
-/// no folder shows the outline as its own section.
+/// no folder shows the outline as its own section. A folder's window can show Find in Files in place of them.
 final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NSOutlineViewDelegate, NSMenuDelegate {
     var open: (URL, _ newTab: Bool) -> Void = { _, _ in }
     var jump: (Heading) -> Void = { _ in }
+    /// Opens a file from Find in Files, at a match when there is one.
+    var reveal: (URL, TextMatch?, _ newTab: Bool) -> Void = { _, _, _ in }
 
     private let folder: Folder?
+    private let find: FindInFilesController?
     private let outlineView = SidebarOutlineView()
     private let pinned = SidebarNode(.section("Pinned"))
     private let recents = SidebarNode(.section("Recents"))
@@ -52,6 +56,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
 
     init(folder: Folder?) {
         self.folder = folder
+        find = folder.map(FindInFilesController.init)
         tree = folder.map { folder in
             let listing = folder.children(of: folder.url)
             let rows = listing.entries.map { SidebarNode(.entry($0)) }
@@ -61,6 +66,8 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             )
         }
         super.init(nibName: nil, bundle: nil)
+        find?.reveal = { [weak self] url, match, newTab in self?.reveal(url, match, newTab) }
+        find?.close = { [weak self] in self?.showFiles() }
         watch = folder.map { folder in
             FolderWatch(folder.url) { [weak self] folders in
                 let changed = Set(folders.map(\.standardizedFileURL.path))
@@ -106,12 +113,25 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             }
             return true
         }
-        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 240, height: 600))
+        let scrollView = NSScrollView()
         scrollView.documentView = outlineView
         scrollView.drawsBackground = false
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
-        view = scrollView
+        let root = SidebarGround(frame: NSRect(x: 0, y: 0, width: 240, height: 600))
+        if let find { addChild(find) }
+        for content in [scrollView] + (find.map { [$0.view] } ?? []) {
+            content.translatesAutoresizingMaskIntoConstraints = false
+            root.addSubview(content)
+            NSLayoutConstraint.activate([
+                content.topAnchor.constraint(equalTo: root.topAnchor),
+                content.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+                content.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+                content.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            ])
+        }
+        find?.view.isHidden = true
+        view = root
         NotificationCenter.default.addObserver(self, selector: #selector(libraryChanged), name: Library.changed, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(fillUnderReducedTransparency), name: ThemeStore.didChange, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(
@@ -131,20 +151,32 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         outlineView.sizeLastColumnToFit()
     }
 
-    /// Reduce Transparency makes the sidebar's glass opaque, and the sidebar takes the theme's tint (synthesis 2.1).
     @objc private func fillUnderReducedTransparency() {
-        guard let scrollView = view as? NSScrollView else { return }
-        scrollView.drawsBackground = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
-        scrollView.backgroundColor = ThemeStore.shared.color(.sidebarTint)
+        view.needsDisplay = true
+    }
+
+    /// Shows Find in Files in place of the tree, with its field focused, opening the sidebar when it is collapsed.
+    func showSearch() {
+        guard let find else { return }
+        (parent as? NSSplitViewController)?.splitViewItem(for: self)?.isCollapsed = false
+        outlineView.enclosingScrollView?.isHidden = true
+        find.view.isHidden = false
+        find.begin()
+    }
+
+    private func showFiles() {
+        find?.view.isHidden = true
+        outlineView.enclosingScrollView?.isHidden = false
+        view.window?.makeFirstResponder(outlineView)
     }
 
     /// Shows `url` as the open file: reveals and selects its row and lists its headings.
-    func show(_ url: URL?, text: String) {
+    func show(_ url: URL?, headings: [Heading]) {
         fileNode?.children = nil
         fileNode = url.flatMap(treeNode(for:))
         showsAllHeadings = false
         section = nil
-        updateOutline(text)
+        updateOutline(headings)
         if let fileNode {
             outlineView.expandItem(fileNode)
             let row = outlineView.row(forItem: fileNode)
@@ -155,8 +187,8 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         }
     }
 
-    func updateOutline(_ text: String) {
-        headings = outline(of: text)
+    func updateOutline(_ headings: [Heading]) {
+        self.headings = headings
         listHeadings()
     }
 
@@ -458,6 +490,17 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
 
     private func cell(_ identifier: NSUserInterfaceItemIdentifier) -> SidebarCell {
         outlineView.makeView(withIdentifier: identifier, owner: nil) as? SidebarCell ?? SidebarCell(identifier)
+    }
+}
+
+/// The sidebar's ground. Reduce Transparency makes the sidebar's glass opaque, and the sidebar takes the theme's tint
+/// (synthesis 2.1).
+private final class SidebarGround: NSView {
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        layer?.backgroundColor = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+            ? ThemeStore.shared.color(.sidebarTint).cgColor : nil
     }
 }
 

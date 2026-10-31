@@ -50,6 +50,7 @@ final class ThemeStore {
     var lineHeight: Double { didSet { save(lineHeight, "LineHeight") } }
     var columnWidth: Double { didSet { save(columnWidth, "ColumnWidth") } }
     var headingStyle: HeadingStyle { didSet { save(headingStyle.rawValue, "HeadingStyle") } }
+    var vimMode: Bool { didSet { save(vimMode, "VimMode") } }
 
     init(defaults: UserDefaults) {
         self.defaults = defaults
@@ -68,6 +69,7 @@ final class ThemeStore {
         lineHeight = number("LineHeight", in: Self.lineHeights) ?? 1.44
         columnWidth = number("ColumnWidth", in: Self.columnWidths) ?? 68
         headingStyle = string("HeadingStyle").flatMap(HeadingStyle.init) ?? .standard
+        vimMode = defaults.bool(forKey: "DewlineVimMode")
     }
 
     private func save(_ value: Any, _ key: String) {
