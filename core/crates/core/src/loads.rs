@@ -1,18 +1,11 @@
-//! Which instruction files each agent loads in a folder, with a local token estimate against its documented limit,
-//! and the agent-written memory and plans waiting for review.
+//! Which instruction files each agent loads in a folder, with a local token estimate, and the agent-written memory
+//! and plans waiting for review. The agents' documented limits live in agents.json, under the Agent Files gauges.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use crate::links;
-
-/// The day the limits below were last checked against each agent's documentation.
-pub const LIMITS_DATE: &str = "2026-10-26";
-/// Claude Code warns when one memory file passes 40,000 characters.
-const CLAUDE_TOKENS: u64 = 40_000 / 4;
-/// Codex reads at most `project_doc_max_bytes`, 32 KiB, of AGENTS.md files.
-const CODEX_TOKENS: u64 = 32_768 / 4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Vendor {
@@ -40,14 +33,12 @@ pub struct Loaded {
     pub how: String,
     /// Bytes / 4.
     pub tokens: u64,
-    /// The vendor's documented limit, in the same estimate; None when it documents none.
-    pub limit: Option<u64>,
 }
 
 /// What Claude Code, Codex and Cursor load for a session started in `folder`.
 pub fn what_loads(folder: &Path, home: Option<&Path>) -> Vec<Loaded> {
     let mut found = Vec::new();
-    let mut add = |vendor, path: PathBuf, how: String, limit| {
+    let mut add = |vendor, path: PathBuf, how: String| {
         if let Ok(info) = fs::metadata(&path)
             && info.is_file()
             && !found
@@ -59,7 +50,6 @@ pub fn what_loads(folder: &Path, home: Option<&Path>) -> Vec<Loaded> {
                 path,
                 how,
                 tokens: info.len().div_ceil(4),
-                limit,
             });
         }
     };
@@ -76,23 +66,13 @@ pub fn what_loads(folder: &Path, home: Option<&Path>) -> Vec<Loaded> {
         }
     }
     for path in claude.into_iter().filter(|path| path.is_file()) {
-        add(
-            Vendor::Claude,
-            path.clone(),
-            "walk".into(),
-            Some(CLAUDE_TOKENS),
-        );
+        add(Vendor::Claude, path.clone(), "walk".into());
         for (import, from) in links::imported(&path, home) {
             let name = from
                 .file_name()
                 .map(|name| name.to_string_lossy().into_owned())
                 .unwrap_or_default();
-            add(
-                Vendor::Claude,
-                import,
-                format!("@import from {name}"),
-                Some(CLAUDE_TOKENS),
-            );
+            add(Vendor::Claude, import, format!("@import from {name}"));
         }
     }
 
@@ -116,7 +96,7 @@ pub fn what_loads(folder: &Path, home: Option<&Path>) -> Vec<Loaded> {
             .map(|name| dir.join(name))
             .find(|path| path.is_file());
         if let Some(file) = file {
-            add(Vendor::Codex, file, "walk".into(), Some(CODEX_TOKENS));
+            add(Vendor::Codex, file, "walk".into());
         }
     }
 
@@ -135,7 +115,7 @@ pub fn what_loads(folder: &Path, home: Option<&Path>) -> Vec<Loaded> {
             let how = fs::read_to_string(&rule)
                 .map(|text| rule_trigger(&text))
                 .unwrap_or_default();
-            add(Vendor::Cursor, rule, how, None);
+            add(Vendor::Cursor, rule, how);
         }
     }
     found

@@ -24,26 +24,21 @@ func divergenceFlags(in folder: URL) -> [String: (flag: String, sections: [Strin
     return flags
 }
 
-/// What each agent loads in `folder`: its name with the total, then each file with its estimate against its limit.
+/// What each agent loads in `folder`: its name with the total, then each file with its estimate. Limits and divergence
+/// flags show on the Agent Files section.
 func whatLoadsRows(in folder: URL, root: URL?) -> [AgentRow] {
-    let flags = divergenceFlags(in: folder)
     let loaded = agentFilesLoaded(in: folder.path, home: agentHome)
-    let date = agentLoadLimitsDate()
     var rows: [AgentRow] = []
     for agent in ["Claude Code", "Codex", "Cursor"] {
         let files = loaded.filter { $0.agent == agent }
         guard !files.isEmpty else { continue }
         let total = files.reduce(0) { $0 + $1.tokens }
-        rows.append(AgentRow(url: nil, title: agent, detail: "≈\(tokens(total)) tokens", flag: nil, tip: "Estimated at 4 bytes a token; limits as of \(date)"))
+        rows.append(AgentRow(url: nil, title: agent, detail: "≈\(tokens(total)) tokens", flag: nil, tip: "Estimated at 4 bytes a token"))
         for file in files {
             let url = URL(filePath: file.path)
-            let flag = flags[file.path]
             rows.append(AgentRow(
-                url: url,
-                title: shortPath(url, from: folder, root: root),
-                detail: file.limit.map { "\(tokens(file.tokens)) / \(tokens($0))" } ?? tokens(file.tokens),
-                flag: flag?.flag,
-                tip: ([file.path, file.how] + (flag.map { ["Differs in: " + $0.sections.joined(separator: ", ")] } ?? [])).joined(separator: "\n")
+                url: url, title: shortPath(url, from: folder, root: root), detail: tokens(file.tokens), flag: nil,
+                tip: [file.path, file.how].joined(separator: "\n")
             ))
         }
     }

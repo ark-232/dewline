@@ -37,19 +37,13 @@ public struct LoadedAgentFile: Sendable {
     /// "walk", "@import from CLAUDE.md", or a Cursor rule's trigger.
     public let how: String
     public let tokens: UInt64
-    public let limit: UInt64?
 }
 
 /// What Claude Code, Codex and Cursor load for a session started in `folder`.
 public func agentFilesLoaded(in folder: String, home: String?) -> [LoadedAgentFile] {
     whatLoads(folder: folder, home: home).map {
-        LoadedAgentFile(agent: $0.agent, path: $0.path, how: $0.how, tokens: $0.tokens, limit: $0.limit)
+        LoadedAgentFile(agent: $0.agent, path: $0.path, how: $0.how, tokens: $0.tokens)
     }
-}
-
-/// The day the agents' load limits were last checked, YYYY-MM-DD.
-public func agentLoadLimitsDate() -> String {
-    loadLimitsDate()
 }
 
 /// A sibling instruction file whose sections differ from `other`'s.

@@ -247,9 +247,8 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         }
     }
 
-    /// What Loads Here for `directory`, and the divergence flags of its instruction files.
+    /// What Loads Here for `directory`.
     private func listLoads(in directory: URL?) {
-        flags = directory.map(divergenceFlags(in:)) ?? [:]
         loads.children = directory.map { whatLoadsRows(in: $0, root: folder?.url).map { SidebarNode(.agent($0)) } } ?? []
     }
 
@@ -329,8 +328,15 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         guard let root = folder?.url else { return }
         agentScan?.cancel()
         agentScan = Task { [weak self] in
-            let files = await Task.detached(priority: .utility) { AgentFile.find(in: root) }.value
+            let (files, flags) = await Task.detached(priority: .utility) {
+                let files = AgentFile.find(in: root)
+                let folders = Set(files.map { $0.url.deletingLastPathComponent() })
+                return (files, folders.reduce(into: [String: (flag: String, sections: [String])]()) { flags, folder in
+                    flags.merge(divergenceFlags(in: folder)) { first, _ in first }
+                })
+            }.value
             guard !Task.isCancelled, let self else { return }
+            self.flags = flags
             agentSection.children = files.map { SidebarNode(.agentFile($0)) }
             reload()
         }
@@ -503,8 +509,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             return cell
         case .entry(let entry):
             let cell = cell(SidebarCell.file)
-            cell.show(entry, detail: flags[entry.url.path]?.flag, gone: false)
-            cell.toolTip = flags[entry.url.path].map { "Differs in: " + $0.sections.joined(separator: ", ") }
+            cell.show(entry, detail: nil, gone: false)
             return cell
         case .agent(let row):
             let cell = cell(SidebarCell.file)
@@ -516,7 +521,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             return cell
         case .agentFile(let file):
             let cell = cell(SidebarCell.agent)
-            cell.show(file, path: folder?.relativePath(of: file.url) ?? file.url.lastPathComponent)
+            cell.show(file, path: folder?.relativePath(of: file.url) ?? file.url.lastPathComponent, differs: flags[file.url.path])
             return cell
         case .heading(let heading):
             let cell = cell(SidebarCell.heading)
@@ -729,16 +734,20 @@ private final class SidebarCell: NSTableCellView {
         detail.stringValue = text ?? ""
     }
 
-    /// An agent file at `path` in its folder, with its load gauge when its agent documents a limit.
-    func show(_ file: AgentFile, path: String) {
-        textField?.stringValue = path
-        textField?.textColor = .labelColor
+    /// An agent file at `path` in its folder, with its load gauge when its agent documents a limit, and dim after its
+    /// path the sibling instruction file it `differs` from.
+    func show(_ file: AgentFile, path: String, differs: (flag: String, sections: [String])?) {
+        let title = NSMutableAttributedString(string: path, attributes: [.foregroundColor: NSColor.labelColor])
+        if let differs {
+            title.append(NSAttributedString(string: "  " + differs.flag, attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.tertiaryLabelColor]))
+        }
+        textField?.attributedStringValue = title
         detail.stringValue = file.tokenLabel
         gauge.isHidden = file.load == nil
         gauge.doubleValue = min(file.load ?? 0, 1)
-        let words = file.gaugeText(date: agentFilesDate)
-        toolTip = path + "\n" + words
-        setAccessibilityLabel(path + ". " + words)
+        let words = [file.gaugeText(date: agentFilesDate)] + (differs.map { ["It \($0.flag) in " + $0.sections.joined(separator: ", ") + "."] } ?? [])
+        toolTip = ([path] + words).joined(separator: "\n")
+        setAccessibilityLabel(([path] + words).joined(separator: ". "))
     }
 
     /// An agent's name in secondary text, or one of its files with any divergence flag dim after its name.

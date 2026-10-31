@@ -12,7 +12,6 @@ pub struct LoadedFile {
     pub how: String,
     /// The file's bytes / 4.
     pub tokens: u64,
-    pub limit: Option<u64>,
 }
 
 /// What Claude Code, Codex and Cursor load for a session started in `folder`.
@@ -25,15 +24,8 @@ pub fn what_loads(folder: String, home: Option<String>) -> Vec<LoadedFile> {
             path: loaded.path.to_string_lossy().into_owned(),
             how: loaded.how,
             tokens: loaded.tokens,
-            limit: loaded.limit,
         })
         .collect()
-}
-
-/// The day the load limits were last checked, YYYY-MM-DD.
-#[uniffi::export]
-pub fn load_limits_date() -> String {
-    loads::LIMITS_DATE.into()
 }
 
 /// A sibling instruction file whose sections differ from another's.
