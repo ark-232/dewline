@@ -7,8 +7,8 @@ use std::fs;
 use std::io::{self, BufRead, Read, Write};
 use std::path::{Component, Path, PathBuf};
 
-use dewline_core::inbox;
 use dewline_core::jail::Jail;
+use dewline_core::{decisions, inbox};
 use serde_json::{Value, json};
 
 /// Protocol versions this server speaks, newest first.
@@ -112,6 +112,20 @@ impl Server {
                     .map(|()| "Added to the inbox.".to_owned())
                     .map_err(|error| format!("The inbox: {error}"))
             }),
+            "decisions" => {
+                let optional = |key: &str| match arguments.get(key) {
+                    None | Some(Value::Null) => Ok(None),
+                    Some(Value::String(value)) => Ok(Some(value.as_str())),
+                    Some(_) => Err(format!("{name} takes `{key}` as a string")),
+                };
+                optional("session").and_then(|session| {
+                    let since = optional("since")?;
+                    let root = decisions::standard_root().ok_or("there is no home folder")?;
+                    let records = decisions::read(&root, session, since)
+                        .map_err(|error| format!("The decisions log: {error}"))?;
+                    Ok(Value::Array(records).to_string())
+                })
+            }
             _ => return None,
         })
     }
@@ -334,6 +348,17 @@ fn tools() -> Value {
             "note",
             "The note's path, relative to the folder"
         ),
+        json!({
+            "name": "decisions",
+            "description": "List the agents' changes the user kept or reverted in Dewline, oldest first, as a JSON array.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "session": {"type": "string", "description": "Only this agent session's decisions"},
+                    "since": {"type": "string", "description": "Only decisions at or after this UTC time: 2026-10-30, 2026-10-30T18:00:00Z"},
+                },
+            },
+        }),
         tool(
             "append_to_inbox",
             "Add a dated entry to the end of the user's inbox note. The only change this server can make.",

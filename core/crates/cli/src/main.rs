@@ -78,7 +78,7 @@ enum Command {
         #[arg(short = 'o')]
         out: Option<PathBuf>,
     },
-    /// Serve a folder's notes to an agent over stdio (MCP): read, search, backlinks and append_to_inbox
+    /// Serve a folder's notes to an agent over stdio (MCP): read, search, backlinks, decisions and append_to_inbox
     Mcp {
         /// The folder served; never your home folder or above it, ~/Library, or a folder holding .ssh
         root: PathBuf,
