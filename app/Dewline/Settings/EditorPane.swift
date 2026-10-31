@@ -60,6 +60,12 @@ struct EditorPane: View {
                 Text("Editorial sets the first heading as a display title and section heads in small caps. The file stays plain Markdown.")
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            Section {
+                Toggle("Vim mode", isOn: $store.vimMode)
+            } footer: {
+                Text("Normal, insert and visual modes, with the mode at the window's lower right. :w saves and :q closes.")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
 }

@@ -95,6 +95,18 @@ struct HideSyntaxTests {
         editor.expectTextKitUnchanged()
     }
 
+    @Test func everyLineOfAQuoteOrCalloutHidesItsMarker() {
+        let text = "> one\n> two\n\n> [!note]\n> three\n\nEnd"
+        let editor = Editor(text, caret: (text as NSString).length)
+        for marker in [0, 6, 13, 23] {
+            let width = editor.rect(marker, 2).width
+            #expect(width <= 0.5, "hidden marker at \(marker) is \(width) pt wide")
+        }
+        editor.place(8)
+        #expect(editor.rect(6, 2).width > 2, "revealed beside the caret")
+        editor.expectTextKitUnchanged()
+    }
+
     @Test func arrowKeysVisitEveryOffset() {
         let editor = Editor(Self.soft, caret: 0)
         let length = Self.soft.utf16.count
