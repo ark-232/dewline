@@ -15,6 +15,7 @@ The shortcuts `app/Dewline/MainMenu.swift` puts in the menu bar, written here by
 | Quick Open… | File | ⇧⌘O |
 | Close | File | ⌘W |
 | Save | File | ⌘S |
+| Export as PDF… | File | ⇧⌘E |
 | Undo | Edit | ⌘Z |
 | Redo | Edit | ⇧⌘Z |
 | Cut | Edit | ⌘X |
@@ -28,6 +29,8 @@ The shortcuts `app/Dewline/MainMenu.swift` puts in the menu bar, written here by
 | Go to Line… | Edit | ⌘L |
 | Move Line Up | Edit | ⌥⌘[ |
 | Move Line Down | Edit | ⌥⌘] |
+| Keep Change | Edit | ⌘↩ |
+| Revert Change | Edit | ⌥⌘⌫ |
 | Bold | Format | ⌘B |
 | Italic | Format | ⌘I |
 | Strikethrough | Format | ⇧⌘X |
@@ -46,7 +49,16 @@ The shortcuts `app/Dewline/MainMenu.swift` puts in the menu bar, written here by
 | Numbered List | Format | ⇧⌘7 |
 | Task | Format | ⇧⌘9 |
 | Command Palette… | View | ⇧⌘P |
+| Review Changes | View | ⇧⌘R |
 | Show Sidebar | View | ⌃⌘S |
 | Show Source | View | ⌥⌘U |
+| Focus | View | ⇧⌘D |
+| Typewriter | View | ⇧⌘T |
+| Fold | View | ⌥⌘← |
+| Unfold | View | ⌥⌘→ |
+| Fold All | View | ⌥⇧⌘← |
+| Unfold All | View | ⌥⇧⌘→ |
+| Back | Go | ⌘[ |
+| Forward | Go | ⌘] |
 | Minimize | Window | ⌘M |
 | Launch Window | Window | ⇧⌘1 |

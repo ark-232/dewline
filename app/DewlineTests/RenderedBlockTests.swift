@@ -121,7 +121,7 @@ struct RenderedBlockTests {
         #expect(editor.picture(at: starts[0]) != nil)
         #expect(editor.view.string == edited)
         editor.view.styler.undoManager.endUndoGrouping()
-        editor.window.tryToPerform(Selector(("undo:")), with: nil)
+        editor.view.history.undoManager.undo()
         #expect(editor.view.string == text)
         editor.place(0)
         await editor.wait { editor.picture(at: starts[0]) != nil }
@@ -211,7 +211,7 @@ struct RenderedBlockTests {
         editor.place(start + 4)
         #expect(editor.picture(at: start + 1) == nil)
         editor.view.styler.undoManager.endUndoGrouping()
-        editor.window.tryToPerform(Selector(("undo:")), with: nil)
+        editor.view.history.undoManager.undo()
         #expect(editor.view.string == text)
         editor.place(0)
         #expect(editor.picture(at: start) != nil, "the picture returns once the caret is out")

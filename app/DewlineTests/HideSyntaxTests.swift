@@ -74,7 +74,7 @@ struct HideSyntaxTests {
         editor.view.insertText("x", replacementRange: editor.view.selectedRange())
         #expect(editor.view.string == text.replacingOccurrences(of: "soft", with: "soxft"))
         editor.view.styler.undoManager.endUndoGrouping()
-        editor.window.tryToPerform(Selector(("undo:")), with: nil)
+        editor.view.history.undoManager.undo()
         #expect(editor.view.string == text)
         editor.expectTextKitUnchanged()
     }

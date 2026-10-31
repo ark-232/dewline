@@ -317,7 +317,7 @@ private let table: [VimCase] = [
             }
             if view.vim?.mode == .insert { press("\u{1b}", view, code: 53) }
             #expect(view.string != original, "\(command)")
-            while undo.canUndo { press("u", view) }
+            for _ in 0..<20 where undo.canUndo { press("u", view) }
             #expect(view.string == original, "\(command)")
         }
     }
