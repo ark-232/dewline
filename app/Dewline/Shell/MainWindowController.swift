@@ -119,12 +119,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         document.undoManager = textView.styler.undoManager
         if let old = self.textView {
             NotificationCenter.default.removeObserver(self, name: NSText.didChangeNotification, object: old)
+            NotificationCenter.default.removeObserver(self, name: BlockMap.didParse, object: old.styler.map)
             NotificationCenter.default.removeObserver(self, name: NSView.boundsDidChangeNotification, object: old.enclosingScrollView?.contentView)
         }
         NotificationCenter.default.addObserver(self, selector: #selector(textChanged), name: NSText.didChangeNotification, object: textView)
+        NotificationCenter.default.addObserver(self, selector: #selector(updateOutline), name: BlockMap.didParse, object: textView.styler.map)
         NotificationCenter.default.addObserver(self, selector: #selector(scrolled), name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
         self.textView = textView
-        sidebar.show(document.fileURL, text: document.text)
+        sidebar.show(document.fileURL, headings: outline(of: textView.textStorage!.mutableString, in: textView.styler.map))
         if let url = document.fileURL {
             Library.noteOpened(url)
             if pushing { history.visit(url, leaving: leaving) }
@@ -399,13 +401,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         sidebar.showSearch()
     }
 
+    /// Lists the headings 300 ms after typing stops, or once a whole parse lands.
     @objc private func textChanged() {
         outlineUpdate?.cancel()
         outlineUpdate = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(300))
-            guard !Task.isCancelled, let self, let textView = self.textView else { return }
-            self.sidebar.updateOutline(textView.string)
+            guard !Task.isCancelled else { return }
+            self?.updateOutline()
         }
+    }
+
+    @objc private func updateOutline() {
+        guard let textView else { return }
+        sidebar.updateOutline(outline(of: textView.textStorage!.mutableString, in: textView.styler.map))
     }
 
     /// Marks the section at the top of the page 160 ms after scrolling stops.

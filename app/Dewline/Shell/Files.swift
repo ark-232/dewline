@@ -1,5 +1,4 @@
 import AppKit
-import MdCore
 
 /// A folder's top-level .gitignore, in the subset notes need: globs, a trailing slash for folders only,
 /// and a leading or inner slash to anchor a pattern at the root. Negations are skipped.
@@ -181,20 +180,21 @@ struct Heading: Equatable {
     let line: Int
 }
 
-/// The H1 to H3 headings of `text`, with their 1-based line numbers; none when the parser panics.
-func outline(of text: String) -> [Heading] {
-    guard let parse = try? MarkdownParser().parse(text) else { return [] }
-    let string = text as NSString
+/// The H1 to H3 headings in `map`'s blocks of `text`, with their 1-based line numbers.
+@MainActor func outline(of text: NSString, in map: BlockMap) -> [Heading] {
     var line = 1
     var counted = 0
-    return parse.tokens.compactMap { token in
-        guard case .heading(let level) = token.kind, level <= 3 else { return nil }
-        for index in counted..<token.range.location where string.character(at: index) == 0x0A {
-            line += 1
+    return map.blocks(in: NSRange(location: 0, length: text.length)).flatMap { block in
+        block.spans.compactMap { span in
+            guard case .heading(let level) = span.kind, level <= 3 else { return nil }
+            let location = block.range.location + span.range.location
+            for index in counted..<location where text.character(at: index) == 0x0A {
+                line += 1
+            }
+            counted = location
+            let title = plainInline(text.substring(with: NSRange(location: block.range.location + span.content.location, length: span.content.length)))
+            return title.isEmpty ? nil : Heading(level: level, title: title, location: location, line: line)
         }
-        counted = token.range.location
-        let title = plainInline(string.substring(with: token.content))
-        return title.isEmpty ? nil : Heading(level: level, title: title, location: token.range.location, line: line)
     }
 }
 
