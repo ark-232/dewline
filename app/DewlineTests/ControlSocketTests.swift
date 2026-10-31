@@ -434,15 +434,16 @@ private final class Client {
     private let fd = socket(AF_UNIX, SOCK_STREAM, 0)
 
     init(_ path: String, timeout: Int = 2) throws {
+        // Before connect: a server that refuses the peer may close first, and setsockopt then fails with EINVAL.
+        var limit = timeval(tv_sec: timeout, tv_usec: 0)
+        var on: Int32 = 1
+        #expect(setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &limit, socklen_t(MemoryLayout<timeval>.size)) == 0)
+        #expect(setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size)) == 0)
         var address = try #require(ControlSocket.address(of: path))
         let connected = withUnsafePointer(to: &address) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
         }
         try #require(connected == 0)
-        var limit = timeval(tv_sec: timeout, tv_usec: 0)
-        var on: Int32 = 1
-        #expect(setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &limit, socklen_t(MemoryLayout<timeval>.size)) == 0)
-        #expect(setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size)) == 0)
     }
 
     deinit {
