@@ -118,7 +118,7 @@ impl Drop for Server {
 }
 
 #[test]
-fn the_handshake_lists_four_tools() {
+fn the_handshake_lists_five_tools() {
     let fixture = Fixture::new();
     let mut server = Server::start(&fixture, &fixture.home().join("notes"));
     let reply = server.request(
@@ -137,7 +137,16 @@ fn the_handshake_lists_four_tools() {
         .iter()
         .map(|tool| tool["name"].as_str().unwrap())
         .collect();
-    assert_eq!(names, ["read", "search", "backlinks", "append_to_inbox"]);
+    assert_eq!(
+        names,
+        [
+            "read",
+            "search",
+            "backlinks",
+            "decisions",
+            "append_to_inbox"
+        ]
+    );
     assert_eq!(
         server.request("resources/list", json!({}))["error"]["code"],
         -32601
@@ -200,6 +209,25 @@ fn every_tool_stays_inside_the_folder() {
     );
     assert_eq!(fs::read(&secret).unwrap(), before);
     assert!(server.call("append_to_inbox", json!({"path": "x.md"})).1);
+
+    let store = fixture
+        .home()
+        .join("Library/Application Support/dev.arkwerx.dewline/snapshots");
+    fs::create_dir_all(&store).unwrap();
+    let decision =
+        |file: &Path| json!({"session": "s", "file": file, "decision": "kept"}).to_string();
+    let launch = notes.join("projects/launch.md");
+    fs::write(
+        store.join("decisions.jsonl"),
+        [decision(&secret), decision(&launch)].join("\n"),
+    )
+    .unwrap();
+    let (text, failed) = server.call("decisions", json!({}));
+    assert!(!failed, "{text}");
+    assert_eq!(
+        serde_json::from_str::<Value>(&text).unwrap(),
+        json!([{"session": "s", "file": "projects/launch.md", "decision": "kept"}])
+    );
 }
 
 #[test]

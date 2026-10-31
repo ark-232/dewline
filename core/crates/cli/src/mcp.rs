@@ -123,11 +123,25 @@ impl Server {
                     let root = decisions::standard_root().ok_or("there is no home folder")?;
                     let records = decisions::read(&root, session, since)
                         .map_err(|error| format!("The decisions log: {error}"))?;
-                    Ok(Value::Array(records).to_string())
+                    Ok(Value::Array(self.inside(records)).to_string())
                 })
             }
             _ => return None,
         })
+    }
+
+    /// The decisions on files under the root, each `file` made root-relative; the rest would leak paths outside it.
+    fn inside(&self, records: Vec<Value>) -> Vec<Value> {
+        records
+            .into_iter()
+            .filter_map(|mut record| {
+                let file = PathBuf::from(record["file"].as_str()?);
+                let real = fs::canonicalize(&file).unwrap_or(file);
+                let relative = real.strip_prefix(self.jail.root()).ok()?;
+                record["file"] = relative.to_string_lossy().into();
+                Some(record)
+            })
+            .collect()
     }
 
     /// A served file's text and its root-relative path.
