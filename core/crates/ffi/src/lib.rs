@@ -13,6 +13,7 @@ mod engine;
 mod agents;
 mod highlight;
 mod export;
+mod agentfiles;
 mod markdown;
 mod save;
 mod search;

@@ -139,7 +139,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         NotificationCenter.default.addObserver(self, selector: #selector(updateOutline), name: BlockMap.didParse, object: textView.styler.map)
         NotificationCenter.default.addObserver(self, selector: #selector(scrolled), name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
         self.textView = textView
+        if let url = document.fileURL { Review.noteOpened(url) }
         sidebar.show(document.fileURL, headings: outline(of: textView.textStorage!.mutableString, in: textView.styler.map))
+        markBrokenLinks()
         if let url = document.fileURL {
             Library.noteOpened(url)
             if pushing { history.visit(url, leaving: leaving) }
@@ -461,6 +463,24 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
             self?.updateOutline()
+            self?.markBrokenLinks()
+        }
+    }
+
+    /// A dotted underline under each relative link and CLAUDE.md `@import` whose file is missing, or whose import
+    /// cycles or runs more than 5 deep. Drawn as rendering attributes, so the text's own attributes stay as they are.
+    private func markBrokenLinks() {
+        guard let textView, let layout = textView.textLayoutManager, let content = layout.textContentManager else { return }
+        layout.removeRenderingAttribute(.underlineStyle, for: content.documentRange)
+        layout.removeRenderingAttribute(.underlineColor, for: content.documentRange)
+        guard let url = (document as? MarkdownDocument)?.fileURL else { return }
+        for link in brokenTargets(in: textView.string, path: url.path, home: agentHome) {
+            guard let start = content.location(content.documentRange.location, offsetBy: link.range.location),
+                let end = content.location(start, offsetBy: link.range.length),
+                let range = NSTextRange(location: start, end: end)
+            else { continue }
+            layout.addRenderingAttribute(.underlineStyle, value: NSUnderlineStyle([.single, .patternDot]).rawValue, for: range)
+            layout.addRenderingAttribute(.underlineColor, value: NSColor.systemRed.withAlphaComponent(0.7), for: range)
         }
     }
 
