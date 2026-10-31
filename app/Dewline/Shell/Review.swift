@@ -22,10 +22,11 @@ enum Review {
     /// Groups changes by writer session: "claude:<id>", "git", "external".
     static func key(_ origin: ChangeEngine.Origin) -> String {
         switch origin {
-        case .agent(let vendor, let session): "\(vendor == .claude ? "claude" : "codex"):\(session)"
+        case .agent(let vendor, let session): "\(vendor):\(session)"
         case .git: "git"
         case .external: "external"
         case .user: "user"
+        case .collaborator(let peer, _): "collab:\(peer)"
         }
     }
 
@@ -131,7 +132,7 @@ final class FinishedLine: NSView {
         let (places, files) = Review.count(origin, in: Review.files(in: window))
         guard places > 0 else { return dismiss() }
         let noun = places == 1 ? "place" : "places"
-        label.stringValue = "\(Writer(origin).name) finished · \(places) \(noun) in \(files) \(files == 1 ? "file" : "files") · "
+        label.stringValue = "\(MarkWriter(origin).name) finished · \(places) \(noun) in \(files) \(files == 1 ? "file" : "files") · "
         setAccessibilityLabel(label.stringValue + "Review")
         isHidden = false
     }
@@ -330,7 +331,7 @@ final class ReviewPanel: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegat
         guard let node = item as? Node else { return nil }
         switch node.kind {
         case .session(let origin):
-            let writer = Writer(origin)
+            let writer = MarkWriter(origin)
             let title = NSMutableAttributedString(attributedString: writer.stamp)
             if case .agent(_, let session) = origin {
                 title.append(NSAttributedString(string: "  " + session.prefix(8), attributes: [

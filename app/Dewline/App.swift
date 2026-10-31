@@ -199,7 +199,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if url.host == "join" {
                     Collaboration.join(link: url.absoluteString)
                 } else {
-                    Links.handle(url)
+                    SchemeLinks.handle(url)
                 }
             } else if (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
                 openFolder(at: url)

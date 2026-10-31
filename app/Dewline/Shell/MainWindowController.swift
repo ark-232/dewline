@@ -139,7 +139,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         NotificationCenter.default.addObserver(self, selector: #selector(updateOutline), name: BlockMap.didParse, object: textView.styler.map)
         NotificationCenter.default.addObserver(self, selector: #selector(scrolled), name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
         self.textView = textView
-        if let url = document.fileURL { Review.noteOpened(url) }
+        if let url = document.fileURL { ReviewInbox.noteOpened(url) }
         sidebar.show(document.fileURL, headings: outline(of: textView.textStorage!.mutableString, in: textView.styler.map))
         markBrokenLinks()
         if let url = document.fileURL {

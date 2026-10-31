@@ -5,7 +5,7 @@ import MdCore
 /// jail: inside the home folder, never inside ~/Library or a `.ssh` folder. An export writes only a file named for
 /// its format, so a link can't overwrite anything else.
 @MainActor
-enum Links {
+enum SchemeLinks {
     static func handle(_ url: URL) {
         do {
             try run(url)

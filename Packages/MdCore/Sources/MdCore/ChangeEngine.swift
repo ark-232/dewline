@@ -40,10 +40,12 @@ public final class ChangeEngine: Sendable {
         case git(action: String?)
         /// "Unknown app".
         case external
+        /// Someone editing the shared file live, by node id and the name the host approved.
+        case collaborator(peer: String, name: String)
     }
 
     public enum Vendor: Sendable, Equatable {
-        case claude, codex
+        case claude, codex, cursor
     }
 
     public enum Decision: Sendable {
@@ -291,18 +293,38 @@ extension ChangeEngine.Origin {
     fileprivate init(_ origin: DewlineFFIBindings.Origin) {
         self = switch origin {
         case .user: .user
-        case .agent(let vendor, let session): .agent(vendor == .claude ? .claude : .codex, session: session)
+        case .agent(let vendor, let session): .agent(ChangeEngine.Vendor(vendor), session: session)
         case .git(let action): .git(action: action)
         case .external: .external
+        case .collaborator(let peer, let name): .collaborator(peer: peer, name: name)
         }
     }
 
     fileprivate var ffi: DewlineFFIBindings.Origin {
         switch self {
         case .user: .user
-        case .agent(let vendor, let session): .agent(vendor: vendor == .claude ? .claude : .codex, session: session)
+        case .agent(let vendor, let session): .agent(vendor: vendor.ffi, session: session)
         case .git(let action): .git(action: action)
         case .external: .external
+        case .collaborator(let peer, let name): .collaborator(peer: peer, name: name)
+        }
+    }
+}
+
+extension ChangeEngine.Vendor {
+    fileprivate init(_ vendor: DewlineFFIBindings.Vendor) {
+        self = switch vendor {
+        case .claude: .claude
+        case .codex: .codex
+        case .cursor: .cursor
+        }
+    }
+
+    fileprivate var ffi: DewlineFFIBindings.Vendor {
+        switch self {
+        case .claude: .claude
+        case .codex: .codex
+        case .cursor: .cursor
         }
     }
 }

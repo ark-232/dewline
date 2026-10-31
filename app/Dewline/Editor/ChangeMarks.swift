@@ -2,7 +2,7 @@ import AppKit
 import MdCore
 
 /// A writer's four channels (D21): hue, underline style, small-caps stamp and spoken label.
-struct Writer: Equatable {
+struct MarkWriter: Equatable {
     let name: String
     let light: OKLCH
     let dark: OKLCH
@@ -13,6 +13,8 @@ struct Writer: Equatable {
         (name, light, dark, dashed) = switch origin {
         case .agent(.claude, _): ("Claude", OKLCH(l: 0.60, c: 0.15, h: 45), OKLCH(l: 0.72, c: 0.14, h: 45), false)
         case .agent(.codex, _): ("Codex", OKLCH(l: 0.50, c: 0.16, h: 295), OKLCH(l: 0.70, c: 0.14, h: 295), false)
+        case .agent(.cursor, _): ("Cursor", OKLCH(l: 0.55, c: 0.13, h: 150), OKLCH(l: 0.74, c: 0.13, h: 150), false)
+        case .collaborator(_, let name): (name, OKLCH(l: 0.56, c: 0.20, h: 350), OKLCH(l: 0.72, c: 0.17, h: 350), false)
         case .git: ("git", OKLCH(l: 0.46, c: 0.10, h: 105), OKLCH(l: 0.70, c: 0.11, h: 105), false)
         case .external: ("Unknown app", OKLCH(l: 0.55, c: 0, h: 0), OKLCH(l: 0.70, c: 0, h: 0), true)
         case .user: ("You", OKLCH(l: 0.55, c: 0, h: 0), OKLCH(l: 0.70, c: 0, h: 0), false)
@@ -118,10 +120,10 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
             }
             let change = changes[id]!
             let view: NSView = change.conflict
-                ? ConflictCard(Writer(change.origin), theirs: change.theirs) { [weak self] decision in
+                ? ConflictCard(MarkWriter(change.origin), theirs: change.theirs) { [weak self] decision in
                     self?.live?.decide(id, decision)
                 }
-                : Ghost(change.removed, writer: Writer(change.origin))
+                : Ghost(change.removed, writer: MarkWriter(change.origin))
             textView.addSubview(view)
             hangers[id] = (anchor, view)
             touched.append(anchor)
@@ -206,7 +208,7 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
             hung[id] = y + hanger.view.frame.height
         }
         for (id, change) in changes where NSMaxRange(change.range) <= storage.length {
-            let writer = Writer(change.origin)
+            let writer = MarkWriter(change.origin)
             let color = writer.color.resolved(for: effectiveAppearance)
             let group = CALayer()
             let lines = segments(change.range)
@@ -308,7 +310,7 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
 
     func view(_ view: NSView, stringForToolTip tag: NSView.ToolTipTag, point: NSPoint, userData data: UnsafeMutableRawPointer?) -> String {
         guard let tip = tips.first(where: { $0.rect.contains(point) }), let change = changes[tip.change] else { return "" }
-        return change.conflict ? "\(Writer(change.origin).name) · two versions" : Writer(change.origin).name
+        return change.conflict ? "\(MarkWriter(change.origin).name) · two versions" : MarkWriter(change.origin).name
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -357,7 +359,7 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
         guard let last = lines.last?.frame ?? lineRect(at: change.range.location) else { return }
         var bottom = last.maxY
         if let hanger = hangers[id]?.view { bottom = max(bottom, hanger.frame.maxY) }
-        bar.show(Writer(change.origin)) { [weak self] keep in
+        bar.show(MarkWriter(change.origin)) { [weak self] keep in
             if keep { self?.live?.keep(id) } else { self?.live?.revert(id) }
         }
         let left = textView.textContainerOrigin.x + (textView.textContainer?.lineFragmentPadding ?? 0)
@@ -381,7 +383,7 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
     func announce(_ origin: ChangeEngine.Origin, places: Int) {
         guard let textView, places > 0 else { return }
         NSAccessibility.post(element: textView, notification: .announcementRequested, userInfo: [
-            .announcement: Writer(origin).spoken(places: places),
+            .announcement: MarkWriter(origin).spoken(places: places),
             .priority: NSAccessibilityPriorityLevel.high.rawValue,
         ])
     }

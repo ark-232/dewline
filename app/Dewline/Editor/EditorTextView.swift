@@ -285,11 +285,6 @@ final class EditorTextView: CaretTextView {
         if version == before { history.breakCoalescing() }
     }
 
-    override func mouseDown(with event: NSEvent) {
-        history.breakCoalescing()
-        super.mouseDown(with: event)
-    }
-
     override func breakUndoCoalescing() {
         super.breakUndoCoalescing()
         history.breakCoalescing()
@@ -310,11 +305,6 @@ final class EditorTextView: CaretTextView {
     override func layout() {
         super.layout()
         marks.layoutIfDirty()
-    }
-
-    override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
-        super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
-        marks.caretMoved()
     }
 
     /// Cmd-Return.
@@ -455,6 +445,7 @@ final class EditorTextView: CaretTextView {
 
     override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
         super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
+        marks.caretMoved()
         guard !stillSelecting else { return }
         updateFocus()
         centerCaretSoon()
@@ -526,6 +517,7 @@ final class EditorTextView: CaretTextView {
     /// Cmd-click follows a link, wikilink, embed, footnote or tag. A click in the margin beside a foldable block folds or
     /// unfolds it; a click on a task box toggles it and leaves the caret where it was.
     override func mouseDown(with event: NSEvent) {
+        history.breakCoalescing()
         let point = convert(event.locationInWindow, from: nil)
         if event.modifierFlags.contains(.command), follow(at: point) { return }
         if let box = taskBox(at: point) { return toggleTask(at: box) }

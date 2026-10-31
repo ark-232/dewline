@@ -61,8 +61,10 @@ final class SnapshotsMenu: NSObject, NSMenuDelegate {
         case .user: "You"
         case .agent(.claude, _): "Claude Code"
         case .agent(.codex, _): "Codex"
+        case .agent(.cursor, _): "Cursor"
         case .git(let action): action ?? "git"
         case .external: "Unknown app"
+        case .collaborator(_, let name): name
         }
     }
 

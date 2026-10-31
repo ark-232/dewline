@@ -62,7 +62,7 @@ private final class ActionButton: NSButton {
 final class Ghost: NSView, Hanging {
     private let text = NSTextField(wrappingLabelWithString: "")
 
-    init(_ removed: String, writer: Writer) {
+    init(_ removed: String, writer: MarkWriter) {
         super.init(frame: .zero)
         let shown = removed.hasSuffix("\n") ? String(removed.dropLast()) : removed
         text.attributedStringValue = NSAttributedString(string: shown, attributes: [
@@ -104,7 +104,7 @@ final class ConflictCard: NSView, Hanging {
     let useTheirs: NSButton
     let keepBoth: NSButton
 
-    init(_ writer: Writer, theirs text: String, decide: @escaping (ChangeEngine.Decision) -> Void) {
+    init(_ writer: MarkWriter, theirs text: String, decide: @escaping (ChangeEngine.Decision) -> Void) {
         let shown = text.hasSuffix("\n") ? String(text.dropLast()) : text
         theirs = NSTextField(wrappingLabelWithString: shown)
         theirs.font = ThemeStore.shared.bodyFont
@@ -172,7 +172,7 @@ final class ChangeBar: NSView {
     private let dot = NSView()
     private let stamp = NSTextField(labelWithString: "")
     private var act: (Bool) -> Void = { _ in }
-    private(set) var writer: Writer?
+    private(set) var writer: MarkWriter?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -213,7 +213,7 @@ final class ChangeBar: NSView {
     }
 
     /// Shows `writer`'s change; `act` gets true for Keep and false for Revert.
-    func show(_ writer: Writer, act: @escaping (Bool) -> Void) {
+    func show(_ writer: MarkWriter, act: @escaping (Bool) -> Void) {
         self.act = act
         guard writer != self.writer else { return }
         self.writer = writer

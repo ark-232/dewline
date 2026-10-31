@@ -82,9 +82,8 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         find?.reveal = { [weak self] url, match, newTab in self?.reveal(url, match, newTab) }
         find?.close = { [weak self] in self?.showFiles() }
         watch = folder.map { folder in
-            FolderWatch(folder.url) { [weak self] folders in
-                guard let self else { return }
             FolderWatch([folder.url]) { [weak self] folders in
+                guard let self else { return }
                 let changed = Set(folders.map(\.standardizedFileURL.path))
                 relist { changed.contains($0.path) }
                 let known = (agentSection.children ?? []).compactMap { node -> AgentFile? in
@@ -94,8 +93,10 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
                 if AgentFile.mayChange(known, in: folders) { findAgentFiles() }
             }
         }
-            FolderWatch([folder.url]) { [weak self] folders in
-                guard let self else { return }
+        findAgentFiles()
+        reviewWatch = FolderWatch(ReviewInbox.roots(folder: folder?.url)) { [weak self] folders in
+            if folders.contains(where: ReviewInbox.matters) { self?.listReview() }
+        }
     }
 
     required init?(coder: NSCoder) {
@@ -253,7 +254,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     }
 
     private func listReview() {
-        review.children = Review.rows(folder: folder?.url).map { SidebarNode(.agent($0)) }
+        review.children = ReviewInbox.rows(folder: folder?.url).map { SidebarNode(.agent($0)) }
         reload()
     }
 

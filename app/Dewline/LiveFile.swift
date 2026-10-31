@@ -483,7 +483,7 @@ final class LiveFile {
 
     /// The Edit menu's name for a decision: "Undo Revert Claude's Change".
     private static func name(_ decision: ChangeEngine.Decision, _ change: Change) -> String {
-        let writer = Writer(change.origin)
+        let writer = MarkWriter(change.origin)
         return switch (decision, change.conflict) {
         case (.other, false): "Revert \(writer.dashed ? "Outside" : writer.possessive) Change"
         case (.other, true): "Use \(writer.dashed ? "Other" : writer.possessive) Version"

@@ -65,7 +65,7 @@ private func shortPath(_ url: URL, from folder: URL, root: URL?) -> String {
 /// Agent-written memory and plans changed since they were last opened here, kept in user defaults. Files changed
 /// before the review first ran aren't pending.
 @MainActor
-enum Review {
+enum ReviewInbox {
     private static let since = "ReviewSince"
     private static let opened = "ReviewOpened"
 

@@ -114,7 +114,7 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
 
     /// Whether `range` meets a code block, front matter, math or a code span.
     func isCode(_ range: NSRange) -> Bool {
-        map.isCode(range) || map.blocks(touching: range).contains { block in
+        map.literals(in: range).contains { NSIntersectionRange($0, range).length > 0 } || map.blocks(touching: range).contains { block in
             block.spans.contains { span in
                 let code = span.shifted(by: block.range.location).range
                 return span.kind == .inlineCode && code.location < NSMaxRange(range) && range.location < NSMaxRange(code)
@@ -416,7 +416,7 @@ extension MarkdownStyler {
         highlights.update(map.blocks(in: paragraphs), in: paragraphs, text: storage.mutableString)
         // Removed text and a conflict's other version hang under their paragraph, in space added below it.
         for (anchor, height) in textView?.marks.space(in: paragraphs) ?? [] {
-            let paragraph = text.paragraphRange(for: NSRange(location: anchor - paragraphs.location, length: 0))
+            let paragraph = styled.mutableString.paragraphRange(for: NSRange(location: anchor - paragraphs.location, length: 0))
             guard styled.attribute(.dewlineBlock, at: paragraph.location, effectiveRange: nil) == nil else { continue }
             let style = (styled.attribute(.paragraphStyle, at: paragraph.location, effectiveRange: nil) as? NSParagraphStyle ?? .default)
                 .mutableCopy() as! NSMutableParagraphStyle
