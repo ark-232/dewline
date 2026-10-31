@@ -3,6 +3,7 @@ use std::sync::{Arc, LazyLock};
 use std::thread;
 use std::time::Duration;
 
+use dewline_core::export;
 use mermaid_rs_renderer::{LayoutConfig, RenderOptions, Theme};
 use ratex_layout::LayoutOptions;
 use ratex_types::color::Color;
@@ -26,7 +27,7 @@ pub enum RenderError {
 }
 
 /// The editor theme's colors for a diagram, each sRGB 0xRRGGBBAA.
-#[derive(uniffi::Record)]
+#[derive(Clone, Copy, uniffi::Record)]
 pub struct DiagramColors {
     pub paper: u32,
     pub ink: u32,
@@ -281,6 +282,76 @@ pub fn render_math(tex: String, size: f32, scale: f32, color: u32) -> Result<Vec
     })
 }
 
+/// A standalone HTML page of `text`: `css` inlined, images under `folder` inlined, diagrams as SVG and math as PNG
+/// images at twice the resolution of `math_size` points. Given `dark` colors, each diagram and formula carries a second
+/// picture for a dark page; without them a diagram is inline SVG. A diagram or formula that fails shows its source.
+#[uniffi::export]
+pub fn export_html(
+    text: String,
+    title: String,
+    css: String,
+    folder: Option<String>,
+    colors: DiagramColors,
+    dark: Option<DiagramColors>,
+    math_size: f32,
+) -> String {
+    let svg = |source: &str, colors: DiagramColors| {
+        let svg = render_mermaid(source.to_owned(), colors).ok()?;
+        Some(svg[svg.find("<svg")?..].to_owned())
+    };
+    let diagram = |source: &str| {
+        let light = svg(source, colors)?;
+        let Some(dark) = dark else { return Some(light) };
+        let data = |svg: &str| {
+            format!(
+                "data:image/svg+xml;base64,{}",
+                export::base64(svg.as_bytes())
+            )
+        };
+        Some(picture(
+            &data(&light),
+            svg(source, dark).map(|svg| data(&svg)),
+            "<img alt=\"diagram\"",
+        ))
+    };
+    let math = |tex: &str, display: bool| {
+        let size = if display { math_size * 1.2 } else { math_size };
+        let png = |color: u32| render_math(tex.to_owned(), size, 2.0, color).ok();
+        let light = png(colors.ink)?;
+        let width = u32::from_be_bytes(light.get(16..20)?.try_into().ok()?) as f32 / 2.0;
+        let data = |png: Vec<u8>| format!("data:image/png;base64,{}", export::base64(&png));
+        let img = format!(
+            "<img class=\"math\" alt=\"{}\" style=\"width:{width}px\"",
+            export::escape(tex)
+        );
+        Some(picture(
+            &data(light),
+            dark.and_then(|dark| png(dark.ink)).map(data),
+            &img,
+        ))
+    };
+    export::html(
+        &text,
+        &export::ExportOptions {
+            title: &title,
+            css: &css,
+            diagram: &diagram,
+            math: &math,
+            folder: folder.as_deref().map(std::path::Path::new),
+        },
+    )
+}
+
+/// `img` (an open tag without its source) showing `light`, or `dark` on a dark page.
+fn picture(light: &str, dark: Option<String>, img: &str) -> String {
+    match dark {
+        Some(dark) => format!(
+            "<picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"{dark}\">{img} src=\"{light}\"></picture>"
+        ),
+        None => format!("{img} src=\"{light}\">"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -396,5 +467,50 @@ mod tests {
             render_math("%\n".repeat(MAX_SOURCE), 17.0, 2.0, 0x000000ff),
             Err(RenderError::TooLarge)
         ));
+    }
+
+    #[test]
+    fn export_embeds_diagrams_and_math_in_each_palette() {
+        isolate();
+        let text = "$x^2$\n\n```mermaid\nflowchart LR\n  a[Start] --> b\n```\n";
+        let page = export_html(
+            text.into(),
+            "t".into(),
+            String::new(),
+            None,
+            night(),
+            None,
+            17.0,
+        );
+        assert!(
+            page.contains("<figure class=\"diagram\"><svg") && page.contains("Start"),
+            "{page}"
+        );
+        assert!(
+            page.contains("<img class=\"math\" alt=\"x^2\" style=\"width:"),
+            "{page}"
+        );
+        assert!(
+            page.contains("src=\"data:image/png;base64,iVBORw0KGgo"),
+            "{page}"
+        );
+        assert!(!page.contains("<picture>"), "{page}");
+        let both = export_html(
+            text.into(),
+            "t".into(),
+            String::new(),
+            None,
+            night(),
+            Some(night()),
+            17.0,
+        );
+        assert_eq!(
+            both.matches(
+                "<picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"data:image/"
+            )
+            .count(),
+            2,
+            "{both}"
+        );
     }
 }
