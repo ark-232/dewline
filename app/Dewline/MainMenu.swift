@@ -53,6 +53,8 @@ enum MainMenu {
         html.tag = Export.Format.html.rawValue
         let pdf = menu.addItem(withTitle: "Export as PDF…", action: #selector(MarkdownDocument.exportDocument(_:)), keyEquivalent: "E")
         pdf.tag = Export.Format.pdf.rawValue
+        let docx = menu.addItem(withTitle: "Export as DOCX…", action: #selector(MarkdownDocument.exportDocument(_:)), keyEquivalent: "")
+        docx.tag = Export.Format.docx.rawValue
         return menu
     }
 

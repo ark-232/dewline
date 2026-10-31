@@ -53,6 +53,17 @@ public func exportPage(
     )
 }
 
+/// `text` as a Word document, with relative images read from inside `folder`.
+public func exportWordDocument(_ text: String, folder: URL) throws(RenderFailure) -> Data {
+    do {
+        return try exportDocx(markdown: text, folder: folder.path)
+    } catch ExportError.Io(let message) {
+        throw RenderFailure(message)
+    } catch {
+        throw RenderFailure("\(error)")
+    }
+}
+
 /// Display math typeset by RaTeX at `size` points and `scale` pixels per point, in `color` (0xRRGGBBAA).
 public func ratexImage(_ tex: String, size: Double, scale: Double, color: UInt32) throws(RenderFailure) -> CGImage {
     let png = try engine { try renderMath(tex: tex, size: Float(size), scale: Float(scale), color: color) }

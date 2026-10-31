@@ -30,7 +30,8 @@ enum SchemeLinks {
             try delegate.show(try path("path"), line: line, column: nil)
         case "export":
             let to = value("to")?.lowercased() ?? "pdf"
-            guard let format = Export.Format.allCases.first(where: { $0.name.lowercased() == to }) else {
+            // A link exports what the CLI hands the app; DOCX the CLI writes itself.
+            guard let format = [Export.Format.html, .pdf].first(where: { $0.name.lowercased() == to }) else {
                 throw Refused("Dewline exports HTML or PDF, not \(to).")
             }
             let file = try path("path")

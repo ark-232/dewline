@@ -3,16 +3,29 @@ import MdCore
 import UniformTypeIdentifiers
 import WebKit
 
-/// A document as a standalone HTML page or a paged PDF in the current theme: the PDF in its light palette, as paper
-/// is, and the HTML in both, switched by the reader's appearance. The source file is never read or written: the page
-/// comes from the text passed in, and images inline from the document's folder.
+/// A document as a standalone HTML page or a paged PDF in the current theme, or as a Word document: the PDF in its
+/// light palette, as paper is, and the HTML in both, switched by the reader's appearance. The source file is never read
+/// or written: the page comes from the text passed in, and images inline from the document's folder.
 @MainActor
 enum Export {
     enum Format: Int, CaseIterable {
-        case html, pdf
+        case html, pdf, docx
 
-        var type: UTType { self == .html ? .html : .pdf }
-        var name: String { self == .html ? "HTML" : "PDF" }
+        var type: UTType {
+            switch self {
+            case .html: .html
+            case .pdf: .pdf
+            case .docx: UTType(filenameExtension: "docx") ?? .data
+            }
+        }
+
+        var name: String {
+            switch self {
+            case .html: "HTML"
+            case .pdf: "PDF"
+            case .docx: "DOCX"
+            }
+        }
     }
 
     struct Failure: LocalizedError {
@@ -44,15 +57,19 @@ enum Export {
     }
 
     static func write(_ text: String, title: String, as format: Format, to url: URL, folder: URL?) async throws {
-        let light = Palette(.aqua)
-        let dark = format == .html ? Palette(.darkAqua) : nil
-        let page = exportPage(
-            text, title: title, css: stylesheet(light: light, dark: dark), folder: folder, colors: light.colors, dark: dark?.colors,
-            mathSize: ThemeStore.shared.bodySize
-        )
-        let data = switch format {
-        case .html: Data(page.utf8)
-        case .pdf: try await PDFRenderer().pdf(of: page, paper: light.paper)
+        let data: Data
+        switch format {
+        case .docx:
+            // Without a folder, relative images resolve in an empty one and keep their alt text.
+            data = try exportWordDocument(text, folder: folder ?? URL(filePath: "/var/empty", directoryHint: .isDirectory))
+        case .html, .pdf:
+            let light = Palette(.aqua)
+            let dark = format == .html ? Palette(.darkAqua) : nil
+            let page = exportPage(
+                text, title: title, css: stylesheet(light: light, dark: dark), folder: folder, colors: light.colors, dark: dark?.colors,
+                mathSize: ThemeStore.shared.bodySize
+            )
+            data = format == .html ? Data(page.utf8) : try await PDFRenderer().pdf(of: page, paper: light.paper)
         }
         try data.write(to: url, options: .atomic)
     }
