@@ -153,9 +153,8 @@ fn lines(vendor: Vendor, event: &Event) -> Vec<Vec<u8>> {
         ..fields
     };
     let files = match (vendor, tool) {
-        (Vendor::Claude | Vendor::Cursor, "Read" | "Edit" | "MultiEdit" | "Write") => {
-            claude(event, tool, pre)
-        }
+        // Cursor's docs (checked 2026-10-30) give no tool_input fields for its Write tool, so its calls name no file.
+        (Vendor::Claude, "Read" | "Edit" | "MultiEdit" | "Write") => claude(event, tool, pre),
         (Vendor::Codex, "apply_patch") => codex(event, pre),
         _ => Vec::new(),
     };

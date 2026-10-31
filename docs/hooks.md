@@ -52,7 +52,7 @@ Merge into `~/.cursor/hooks.json`:
 }
 ```
 
-Cursor's tool hooks carry `tool_use_id`, so they bracket a change the way Claude Code's do (record 0007); `afterFileEdit` has no call id and isn't used. `dewline notify --hook cursor` reads `conversation_id` as the session and takes Read, Edit and Write calls whose `tool_input` has Claude Code's fields (`file_path`, `content`, `old_string`, `new_string`); any other tool or shape names nothing, and its change stays Unknown.
+Cursor's changes stay Unknown (record 0007). Its tool hooks carry `conversation_id` and `tool_use_id`, but as of 2026-10-30 Cursor documents no `tool_input` fields for its `Write` tool, the one its edits run as, so `dewline notify --hook cursor` can't declare what an edit wrote and names no file. It still reports the end of each turn.
 
 ## What stays Unknown
 
