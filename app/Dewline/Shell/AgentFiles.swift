@@ -6,6 +6,8 @@ struct AgentFile: Equatable, Sendable {
     let url: URL
     let bytes: Int
     let lines: Int
+    /// UTF-16 units, as Claude Code counts a file's characters.
+    let characters: Int
     let limit: AgentLimit?
 
     init(url: URL, contents: Data, limit: AgentLimit?) {
@@ -13,18 +15,21 @@ struct AgentFile: Equatable, Sendable {
         bytes = contents.count
         let newlines = contents.reduce(0) { $1 == 0x0A ? $0 + 1 : $0 }
         lines = newlines + (contents.last.map { $0 == 0x0A ? 0 : 1 } ?? 0)
+        characters = String(decoding: contents, as: UTF8.self).utf16.count
         self.limit = limit
     }
 
     /// About four bytes to a token, counted here; no vendor is asked.
     var estimatedTokens: Int { (bytes + 3) / 4 }
 
-    /// The larger of the file's line and byte shares of its limit; past 1 the agent cuts it. Nil without a limit.
+    /// The largest of the file's line, byte and character shares of its limit; past 1 the agent cuts it or warns.
+    /// Nil without a limit.
     var load: Double? {
         guard let limit else { return nil }
         return [
             limit.lines.map { Double(lines) / Double($0) },
             limit.bytes.map { Double(bytes) / Double($0) },
+            limit.warnCharacters.map { Double(characters) / Double($0) },
         ].compactMap { $0 }.max()
     }
 
@@ -44,7 +49,10 @@ struct AgentFile: Equatable, Sendable {
             limit.lines.map { "\(lines.formatted()) of \($0.formatted()) lines" },
             limit.bytes.map { "\(bytes.formatted()) of \($0.formatted()) bytes" },
         ].compactMap { $0 }.joined(separator: " and ")
-        return "\(counts) that \(limit.agent) loads, per its docs as of \(date). \(estimate)"
+        let warning = limit.warnCharacters.map {
+            " \(limit.agent) warns past \($0.formatted()) characters; this file has \(characters.formatted())."
+        } ?? ""
+        return "\(counts) that \(limit.agent) loads, per its docs as of \(date).\(warning) \(estimate)"
     }
 
     /// The agent files under `root`, sorted by path. The walk skips .git and node_modules, follows no symbolic

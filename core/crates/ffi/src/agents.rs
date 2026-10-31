@@ -3,12 +3,13 @@ use std::path::Path;
 use dewline_core::agents::AgentFiles;
 
 /// What an agent's documentation says it loads of a file: the first `lines`
-/// lines, or the first `bytes` bytes.
+/// lines, or the first `bytes` bytes, and a warning past `warn_chars` characters.
 #[derive(uniffi::Record)]
 pub struct AgentLimit {
     pub agent: String,
     pub lines: Option<u64>,
     pub bytes: Option<u64>,
+    pub warn_chars: Option<u64>,
 }
 
 /// Whether an agent loads the file at `path` as instructions, rules, skills,
@@ -27,6 +28,7 @@ pub fn agent_file_limit(path: String) -> Option<AgentLimit> {
             agent: limit.agent.clone(),
             lines: limit.lines,
             bytes: limit.bytes,
+            warn_chars: limit.warn_chars,
         })
 }
 

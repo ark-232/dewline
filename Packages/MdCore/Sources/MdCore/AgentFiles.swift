@@ -2,14 +2,15 @@ internal import DewlineFFIBindings
 import Foundation
 
 /// What an agent's documentation says it loads of a file, as of `agentFilesDate`: the first `lines` lines,
-/// or the first `bytes` bytes.
+/// or the first `bytes` bytes, and a warning past `warnCharacters` characters.
 public struct AgentLimit: Sendable, Equatable {
     public let agent: String
     public let lines: Int?
     public let bytes: Int?
+    public let warnCharacters: Int?
 
-    public init(agent: String, lines: Int?, bytes: Int?) {
-        (self.agent, self.lines, self.bytes) = (agent, lines, bytes)
+    public init(agent: String, lines: Int?, bytes: Int?, warnCharacters: Int? = nil) {
+        (self.agent, self.lines, self.bytes, self.warnCharacters) = (agent, lines, bytes, warnCharacters)
     }
 }
 
@@ -21,7 +22,9 @@ public func isAgentFile(_ url: URL) -> Bool {
 /// The load limit documented by the agent that reads `url`, if the list has one.
 public func agentLimit(for url: URL) -> AgentLimit? {
     agentFileLimit(path: url.path).map { limit in
-        AgentLimit(agent: limit.agent, lines: limit.lines.map { Int(clamping: $0) }, bytes: limit.bytes.map { Int(clamping: $0) })
+        AgentLimit(
+            agent: limit.agent, lines: limit.lines.map { Int(clamping: $0) }, bytes: limit.bytes.map { Int(clamping: $0) },
+            warnCharacters: limit.warnChars.map { Int(clamping: $0) })
     }
 }
 
