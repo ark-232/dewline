@@ -31,6 +31,9 @@ impl From<core::EngineError> for EngineError {
             core::EngineError::Closed => EngineError::Closed,
             core::EngineError::Waiting => EngineError::Waiting,
             core::EngineError::NotText => EngineError::NotText,
+            core::EngineError::Misplaced => EngineError::Invalid {
+                message: "the edits are out of order or past the end of the buffer".into(),
+            },
             core::EngineError::Io(error) => error.into(),
         }
     }
@@ -118,6 +121,10 @@ pub enum Origin {
     },
     /// "Unknown app".
     External,
+    Collaborator {
+        peer: String,
+        name: String,
+    },
 }
 
 impl From<core::Origin> for Origin {
@@ -133,6 +140,7 @@ impl From<core::Origin> for Origin {
             },
             core::Origin::Git { action } => Origin::Git { action },
             core::Origin::External => Origin::External,
+            core::Origin::Collaborator { peer, name } => Origin::Collaborator { peer, name },
         }
     }
 }
@@ -374,6 +382,30 @@ impl Engine {
             .0
             .land(DocId(doc), &buffer, version)?
             .map(Landing::from))
+    }
+
+    /// A collaborator's edits to `buffer`, snapshotted first, to apply once no
+    /// IME composition is open.
+    pub fn collaborate(
+        &self,
+        doc: u64,
+        buffer: String,
+        edits: Vec<Edit>,
+    ) -> Result<Vec<Edit>, EngineError> {
+        let edits = edits
+            .into_iter()
+            .map(|edit| merge::Edit {
+                start: edit.start,
+                end: edit.end,
+                text: edit.text,
+            })
+            .collect();
+        Ok(self
+            .0
+            .collaborate(DocId(doc), &buffer, edits)?
+            .into_iter()
+            .map(Edit::from)
+            .collect())
     }
 
     /// On the main thread, in the step that applies the landing.

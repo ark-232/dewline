@@ -196,7 +196,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
             if url.scheme == "dewline" {
-                Links.handle(url)
+                if url.host == "join" {
+                    Collaboration.join(link: url.absoluteString)
+                } else {
+                    Links.handle(url)
+                }
             } else if (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
                 openFolder(at: url)
             } else {

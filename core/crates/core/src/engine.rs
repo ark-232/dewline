@@ -16,7 +16,7 @@ use std::io::{self, Read, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::{Instant, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use blake3::Hash;
 
@@ -33,6 +33,8 @@ const YOU: &str = "You";
 const UNKNOWN: &str = "Unknown app";
 /// Larger files don't open, and a file that grows past it reads as unreadable.
 const MAX_FILE: u64 = 64 << 20;
+/// How often `collaborate` snapshots a buffer that collaborators edit.
+const COLLABORATION_SNAPSHOT: Duration = Duration::from_secs(30);
 
 /// The time now, for claims and git's lock window and for the snapshot store.
 pub type Clock = Box<dyn Fn() -> (Instant, SystemTime) + Send + Sync>;
@@ -65,6 +67,12 @@ pub enum Origin {
     },
     /// "Unknown app".
     External,
+    /// Someone editing the shared file live (D13), by node id and the name
+    /// the host approved.
+    Collaborator {
+        peer: String,
+        name: String,
+    },
 }
 
 impl Origin {
@@ -84,6 +92,7 @@ impl Origin {
                 action: Some(action),
             } => format!("git:{action}"),
             Origin::External => UNKNOWN.into(),
+            Origin::Collaborator { peer, name } => format!("collab:{peer}:{name}"),
         }
     }
 
@@ -101,6 +110,13 @@ impl Origin {
             },
             Some(("claude", session)) => agent(Vendor::Claude, session),
             Some(("codex", session)) => agent(Vendor::Codex, session),
+            Some(("collab", rest)) => match rest.split_once(':') {
+                Some((peer, name)) => Origin::Collaborator {
+                    peer: peer.into(),
+                    name: name.into(),
+                },
+                None => Origin::External,
+            },
             _ => Origin::External,
         }
     }
@@ -146,6 +162,8 @@ pub enum EngineError {
     Waiting,
     /// The document or the file's new version is not UTF-8 text.
     NotText,
+    /// A collaborator's edits are out of order or past the buffer's end.
+    Misplaced,
     Io(io::Error),
 }
 
@@ -301,6 +319,8 @@ struct Doc {
     /// When a landing first waited on git's index lock.
     wait_from: Option<Instant>,
     drafted: bool,
+    /// When `collaborate` last snapshotted the buffer.
+    collaborated: Option<Instant>,
     /// Bumped whenever the base or the disk changes.
     generation: u64,
 }
@@ -404,6 +424,7 @@ impl Engine {
             floor: None,
             wait_from: None,
             drafted: false,
+            collaborated: None,
             generation: 0,
         };
         let mut state = self.state();
@@ -622,7 +643,7 @@ impl Engine {
             && match &origin {
                 Origin::External => !agent_file,
                 Origin::Git { .. } => true,
-                Origin::Agent { .. } | Origin::User => false,
+                Origin::Agent { .. } | Origin::User | Origin::Collaborator { .. } => false,
             };
 
         let (edits, covering, conflicts) = if unmerged && buffer != theirs {
@@ -704,6 +725,51 @@ impl Engine {
             edits: !landing.edits.is_empty(),
         });
         Ok(Some(landing))
+    }
+
+    /// Takes a collaborator's edits to `buffer` (UTF-16, in order, apart) and
+    /// returns them for the editor to apply in one step once no IME
+    /// composition is open. Like a landing it snapshots a buffer that differs
+    /// from the base first, at most every `COLLABORATION_SNAPSHOT`, since
+    /// collaborators type a keystroke at a time. The edits reach only this
+    /// document's buffer; its next save writes them through the
+    /// compare-and-swap.
+    pub fn collaborate(
+        &self,
+        doc: DocId,
+        buffer: &str,
+        edits: Vec<Edit>,
+    ) -> Result<Vec<Edit>, EngineError> {
+        let length = buffer.encode_utf16().count() as u32;
+        let mut from = 0;
+        for edit in &edits {
+            if edit.start < from || edit.end < edit.start || edit.end > length {
+                return Err(EngineError::Misplaced);
+            }
+            from = edit.end;
+        }
+        let serial = self.serial(doc).ok_or(EngineError::Closed)?;
+        let _serial = lock(&serial);
+        let (now, wall) = (self.clock)();
+        let (path, private, bom, base) = {
+            let mut state = self.state();
+            let d = state.docs.get_mut(&doc).ok_or(EngineError::Closed)?;
+            if d.read_only {
+                return Err(EngineError::NotText);
+            }
+            if d.collaborated
+                .is_some_and(|last| now.saturating_duration_since(last) < COLLABORATION_SNAPSHOT)
+            {
+                return Ok(edits);
+            }
+            d.collaborated = Some(now);
+            (d.path.clone(), d.private, d.bom, d.base.clone())
+        };
+        if !private && strip(&base, bom) != Some(buffer) {
+            self.store
+                .put(&path, &text::encode(buffer, bom), YOU, wall)?;
+        }
+        Ok(edits)
     }
 
     /// Moves the base to the landing's disk version and keeps its changes.
@@ -2385,6 +2451,9 @@ mod tests {
                 ),
                 Origin::External => {}
                 Origin::User => prop_assert!(false, "a landing named the user"),
+                Origin::Collaborator { .. } => {
+                    prop_assert!(false, "a landing named a collaborator")
+                }
             }
             Ok(())
         }

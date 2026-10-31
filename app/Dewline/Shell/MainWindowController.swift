@@ -507,8 +507,27 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         }
     }
 
+    /// Shares the file live (D13): starts the share on first use, then shows the Share sheet.
+    @objc func shareDocument(_ sender: Any?) {
+        guard let document = document as? MarkdownDocument, let textView, document.fileURL != nil else {
+            let alert = NSAlert()
+            alert.messageText = "Save the file before sharing it."
+            alert.beginSheetModal(for: window!)
+            return
+        }
+        do {
+            let collaboration = try Collaboration.host(document, textView: textView)
+            window?.contentViewController?.presentAsSheet(ShareSheet(collaboration))
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Dewline couldn’t start sharing."
+            alert.informativeText = error.message
+            alert.beginSheetModal(for: window!)
+        }
+    }
+
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.toggleSidebar, .sidebarTrackingSeparator, .navigation, .breadcrumbs, .flexibleSpace]
+        [.toggleSidebar, .sidebarTrackingSeparator, .navigation, .breadcrumbs, .flexibleSpace, .share]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -546,6 +565,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
                 crumbs.widthAnchor.constraint(lessThanOrEqualToConstant: 560),
             ])
             return item
+        case .share:
+            let item = NSToolbarItem(itemIdentifier: .share)
+            item.label = "Share"
+            item.toolTip = "Edit this file live with someone"
+            item.image = NSImage(systemSymbolName: "person.2", accessibilityDescription: "Share")
+            item.target = self
+            item.action = #selector(shareDocument(_:))
+            return item
         default:
             return nil
         }
@@ -555,6 +582,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
 extension NSToolbarItem.Identifier {
     static let navigation = Self("Navigation")
     static let breadcrumbs = Self("Breadcrumbs")
+    static let share = Self("Share")
 }
 
 /// A view filled with the theme's paper, following the theme and the appearance.

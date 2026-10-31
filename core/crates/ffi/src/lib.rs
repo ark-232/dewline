@@ -9,14 +9,15 @@ use ratex_layout::LayoutOptions;
 use ratex_types::color::Color;
 use resvg::{tiny_skia, usvg};
 
-mod engine;
-mod agents;
-mod highlight;
-mod export;
 mod agentfiles;
+mod agents;
+mod engine;
+mod export;
+mod highlight;
 mod markdown;
 mod save;
 mod search;
+mod sync;
 mod system;
 
 uniffi::setup_scaffolding!();

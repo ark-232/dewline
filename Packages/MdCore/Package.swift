@@ -13,7 +13,9 @@ let package = Package(
         .target(
             name: "DewlineFFIBindings",
             dependencies: ["DewlineFFI"],
-            swiftSettings: [.swiftLanguageMode(.v5)]
+            swiftSettings: [.swiftLanguageMode(.v5)],
+            // iroh reads the network interfaces and watches for changes to them (dewline-sync).
+            linkerSettings: [.linkedFramework("SystemConfiguration")]
         ),
         .target(
             name: "MdCore",

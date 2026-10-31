@@ -101,6 +101,9 @@ targets:
         SUAutomaticallyUpdate: true
         SUEnableSystemProfiling: false
         SUEnableJavaScript: false
+        CFBundleURLTypes:
+          - CFBundleURLName: dev.arkwerx.dewline
+            CFBundleURLSchemes: [dewline]
         CFBundleDocumentTypes:
           - CFBundleTypeName: Markdown
             CFBundleTypeRole: Editor
