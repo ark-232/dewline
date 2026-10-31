@@ -49,4 +49,4 @@ The shortcuts `app/Dewline/MainMenu.swift` puts in the menu bar, written here by
 | Show Sidebar | View | ⌃⌘S |
 | Show Source | View | ⌥⌘U |
 | Minimize | Window | ⌘M |
-| Welcome to Dewline | Window | ⇧⌘1 |
+| Launch Window | Window | ⇧⌘1 |

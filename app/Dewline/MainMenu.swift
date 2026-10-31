@@ -160,7 +160,7 @@ enum MainMenu {
         menu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         menu.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
         menu.addItem(.separator())
-        let welcome = menu.addItem(withTitle: "Welcome to Dewline", action: #selector(AppDelegate.showWelcome(_:)), keyEquivalent: "1")
+        let welcome = menu.addItem(withTitle: "Launch Window", action: #selector(AppDelegate.showWelcome(_:)), keyEquivalent: "1")
         welcome.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(.separator())
         menu.addItem(withTitle: "Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: "")
