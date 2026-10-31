@@ -57,7 +57,7 @@ struct UpdatesTests {
 
     @Test func theAppAsksSparkleForASignedHTTPSFeedAndSendsNothingElse() {
         let info = Bundle.main.infoDictionary ?? [:]
-        #expect(info["SUFeedURL"] as? String == "https://updates.dewline.dev/appcast.xml")
+        #expect(info["SUFeedURL"] as? String == "https://github.com/ark-232/dewline/releases/latest/download/appcast.xml")
         #expect(info["SURequireSignedFeed"] as? Bool == true)
         #expect(info["SUVerifyUpdateBeforeExtraction"] as? Bool == true)
         #expect(info["SUEnableSystemProfiling"] as? Bool == false)
@@ -121,7 +121,7 @@ struct UpdatesTests {
         let line = try #require(first.titlebarAccessoryViewControllers.first as? UpdateLine)
         #expect(defaults.bool(forKey: Updates.lineShownKey))
         let texts = line.view.subviews.flatMap(\.subviews).compactMap { ($0 as? NSTextField)?.stringValue }
-        #expect(texts == ["Dewline checks updates.dewline.dev once a day and downloads updates from GitHub."])
+        #expect(texts == ["Dewline checks GitHub for updates once a day and downloads them from there."])
         #expect(line.buttons.map(\.title) == ["Check daily", "Don\u{2019}t check"])
 
         let second = window()

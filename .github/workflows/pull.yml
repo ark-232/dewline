@@ -2,9 +2,9 @@ name: pull
 
 # An owner-only signed tag, pull/v1.4.0, reverses a release on every channel. Its annotated message is the reason.
 # feed-sign removes the item from the committed feed and re-signs it; after the owner approves, feed commits the feed
-# and pulled.txt to dewline-updates and deploys them, latest moves GitHub's Latest flag to the previous stable release
-# and marks the pulled release's notes, site redeploys dewline.dev, tap reverts the cask if it was bumped, and check
-# confirms each channel. Each job that needs a secret fails with an error naming it. Spec: docs/release.md.
+# and pulled.txt to dewline-updates, latest moves GitHub's Latest flag, and with it the live feed (the Latest release's
+# appcast.xml), to the previous stable release and marks the pulled release's notes, site redeploys
+# dewline.arkwerx.com, tap reverts the cask if it was bumped, and check confirms each channel. Each job that needs a secret fails with an error naming it. Spec: docs/release.md.
 on:
   push:
     tags:
@@ -177,8 +177,7 @@ jobs:
     concurrency:
       group: feed
       cancel-in-progress: false
-    permissions:
-      id-token: write
+    permissions: {}
     env:
       FEED_SHA256: ${{ needs.feed-sign.outputs.feed-sha256 }}
       UPDATES_COMMIT: ${{ needs.feed-sign.outputs.updates-commit }}
@@ -190,11 +189,9 @@ jobs:
         env:
           FEED_APP_ID: ${{ secrets.FEED_APP_ID }}
           FEED_APP_PRIVATE_KEY: ${{ secrets.FEED_APP_PRIVATE_KEY }}
-          FEED_WIF_PROVIDER: ${{ vars.FEED_WIF_PROVIDER }}
-          FEED_DEPLOY_SA: ${{ vars.FEED_DEPLOY_SA }}
         run: |
           missing=0
-          for name in FEED_APP_ID FEED_APP_PRIVATE_KEY FEED_WIF_PROVIDER FEED_DEPLOY_SA; do
+          for name in FEED_APP_ID FEED_APP_PRIVATE_KEY; do
             if [[ -z ${!name} ]]; then echo "::error::The updates environment has no $name (docs/release.md)"; missing=1; fi
           done
           exit "$missing"
@@ -206,9 +203,6 @@ jobs:
           owner: ark-232
           repositories: dewline-updates
           permission-contents: write
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ark-232/dewline-updates
@@ -231,7 +225,6 @@ jobs:
           if [[ $head != "$UPDATES_COMMIT" ]] \
             && gh api "$repo/contents/appcast.xml?ref=$head" --jq .content | base64 -d | sha256sum | grep -q "^$FEED_SHA256 "; then
             echo "::notice::dewline-updates already holds this feed at $head, from an earlier attempt"
-            echo "UPDATES_HEAD=$head" >> "$GITHUB_ENV"
             exit 0
           fi
           pulled=$RUNNER_TEMP/pulled.txt
@@ -247,34 +240,6 @@ jobs:
             '{message: $message, tree: $tree, parents: [$parent]}' | gh api "$repo/git/commits" --input - --jq .sha)
           # Not forced: GitHub refuses the update if dewline-updates moved after feed-sign verified it.
           gh api -X PATCH "$repo/git/refs/heads/main" -f sha="$commit" -F force=false > /dev/null
-          echo "UPDATES_HEAD=$commit" >> "$GITHUB_ENV"
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: ark-232/dewline-updates
-          path: updates
-          token: ${{ steps.token.outputs.token }}
-          persist-credentials: false
-      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
-        with:
-          workload_identity_provider: ${{ vars.FEED_WIF_PROVIDER }}
-          service_account: ${{ vars.FEED_DEPLOY_SA }}
-          create_credentials_file: true
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 24.21.0
-          package-manager-cache: false
-      - name: Deploy the feed and check it live
-        run: |
-          [[ $(git -C updates rev-parse HEAD) == "$UPDATES_HEAD" ]] || { echo "::error::dewline-updates moved during the run"; exit 1; }
-          echo "$FEED_SHA256  updates/appcast.xml" | sha256sum -c -
-          (cd updates && npx --yes firebase-tools@15.5.1 deploy --only hosting --project dewline-updates)
-          key=$(jq -r .SUPublicEDKey app/updater.golden.json)
-          for _ in $(seq 30); do
-            if scripts/verify-feed.sh https://updates.dewline.dev/appcast.xml "$key" "$FEED_SHA256"; then exit 0; fi
-            sleep 10
-          done
-          echo "::error::the live feed still differs from the signed feed without $VERSION after 5 minutes"
-          exit 1
 
   latest:
     needs: [verify, feed-sign, feed]
@@ -415,17 +380,14 @@ jobs:
           status=0
           bad() { echo "::error::$*"; status=1; }
           dmg() { echo "/v$1/Dewline-$1.dmg"; }
-          if live=$(curl -fsSL https://updates.dewline.dev/appcast.xml); then
+          if live=$(curl -fsSL https://github.com/ark-232/dewline/releases/latest/download/appcast.xml); then
             [[ $live != *"$(dmg "$VERSION")\""* ]] || bad "the live feed still offers $VERSION"
           else
-            bad "cannot read https://updates.dewline.dev/appcast.xml"
+            bad "cannot read https://github.com/ark-232/dewline/releases/latest/download/appcast.xml"
           fi
           if [[ $CHANNEL == stable && -n $PREVIOUS ]]; then
             latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name) || latest="no release"
             [[ $latest == "v$PREVIOUS" ]] || bad "GitHub's Latest release is $latest, not v$PREVIOUS"
-            page=$(curl -fsSL https://dewline.dev/) || page=
-            [[ $page == *"$(dmg "$PREVIOUS")"* && $page != *"$(dmg "$VERSION")"* ]] \
-              || bad "https://dewline.dev/ does not link the $PREVIOUS DMG in place of $VERSION"
             cask=$(curl -fsSL https://raw.githubusercontent.com/ark-232/homebrew-tap/main/Casks/dewline.rb) || cask=
             open=$(gh pr list --repo ark-232/homebrew-tap --head "dewline-pull-$VERSION" --state open --json number --jq length) || open=0
             [[ -n $cask && ($cask != *"version \"$VERSION,"* || $open == 1) ]] \
