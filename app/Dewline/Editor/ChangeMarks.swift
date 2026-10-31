@@ -4,26 +4,25 @@ import MdCore
 /// A writer's four channels (D21): hue, underline style, small-caps stamp and spoken label.
 struct MarkWriter: Equatable {
     let name: String
-    let light: OKLCH
-    let dark: OKLCH
+    let writer: Writer
     /// Unknown app's underline is dashed, so the mark holds without its color.
-    let dashed: Bool
+    var dashed: Bool { writer == .unknown }
 
     init(_ origin: ChangeEngine.Origin) {
-        (name, light, dark, dashed) = switch origin {
-        case .agent(.claude, _): ("Claude", OKLCH(l: 0.60, c: 0.15, h: 45), OKLCH(l: 0.72, c: 0.14, h: 45), false)
-        case .agent(.codex, _): ("Codex", OKLCH(l: 0.50, c: 0.16, h: 295), OKLCH(l: 0.70, c: 0.14, h: 295), false)
-        case .agent(.cursor, _): ("Cursor", OKLCH(l: 0.55, c: 0.13, h: 150), OKLCH(l: 0.74, c: 0.13, h: 150), false)
-        case .collaborator(_, let name): (name, OKLCH(l: 0.56, c: 0.20, h: 350), OKLCH(l: 0.72, c: 0.17, h: 350), false)
-        case .git: ("git", OKLCH(l: 0.46, c: 0.10, h: 105), OKLCH(l: 0.70, c: 0.11, h: 105), false)
-        case .external: ("Unknown app", OKLCH(l: 0.55, c: 0, h: 0), OKLCH(l: 0.70, c: 0, h: 0), true)
-        case .user: ("You", OKLCH(l: 0.55, c: 0, h: 0), OKLCH(l: 0.70, c: 0, h: 0), false)
+        (name, writer) = switch origin {
+        case .agent(.claude, _): ("Claude", .claude)
+        case .agent(.codex, _): ("Codex", .codex)
+        case .agent(.cursor, _): ("Cursor", .cursor)
+        case .collaborator(_, let name): (name, .collaborator)
+        case .git: ("git", .git)
+        case .external: ("Unknown app", .unknown)
+        case .user: ("You", .you)
         }
     }
 
-    var color: NSColor {
-        let (light, dark) = (light.color, dark.color)
-        return NSColor(name: nil) { $0.isDark ? dark : light }
+    /// The writer's hue in Settings > Appearance, under the view's appearance.
+    @MainActor var color: NSColor {
+        ThemeStore.shared.writerColor(writer)
     }
 
     /// "Claude's"; "the other" for Unknown app.
@@ -32,7 +31,7 @@ struct MarkWriter: Equatable {
     }
 
     /// The name as a small-caps stamp in the writer's color: CLAUDE, GIT.
-    var stamp: NSAttributedString {
+    @MainActor var stamp: NSAttributedString {
         let base = NSFont.systemFont(ofSize: 11, weight: .semibold)
         let features: [[NSFontDescriptor.FeatureKey: Int]] = [
             [.typeIdentifier: kLowerCaseType, .selectorIdentifier: kLowerCaseSmallCapsSelector],
