@@ -263,7 +263,7 @@ struct RenderedBlockTests {
 
     @Test func brokenBlocksShowTheSourceAndTheErrorWithoutBlockingTyping() async {
         let broken = "```mermaid\nnot a diagram\n```"
-        let text = "Above\n\(broken)\nBetween\n$$\\frac{a$$\nBelow"
+        let text = "Above\n\(broken)\nBetween\n$$\\frac{a}$$\nBelow"
         let fence = 6
         let closing = fence + broken.utf16.count - 3
         let tex = (text as NSString).range(of: "$$").location
