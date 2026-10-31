@@ -11,8 +11,8 @@ use resvg::{tiny_skia, usvg};
 
 mod agentfiles;
 mod agents;
+mod docx;
 mod engine;
-mod export;
 mod highlight;
 mod markdown;
 mod save;

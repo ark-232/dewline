@@ -107,6 +107,7 @@ pub enum ClaimRefused {
 pub enum Vendor {
     Claude,
     Codex,
+    Cursor,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -135,6 +136,7 @@ impl From<core::Origin> for Origin {
                 vendor: match vendor {
                     claims::Vendor::Claude => Vendor::Claude,
                     claims::Vendor::Codex => Vendor::Codex,
+                    claims::Vendor::Cursor => Vendor::Cursor,
                 },
                 session,
             },
