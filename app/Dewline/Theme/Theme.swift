@@ -142,6 +142,7 @@ struct Theme: Identifiable, Hashable, Sendable {
             light[token] = OKLCH(l: values[0], c: values[1], h: values[2])
             dark[token] = OKLCH(l: values[3], c: values[4], h: values[5])
         }
+        let authored = (light: light, dark: dark)
         light = Self.coded(light)
         dark = Self.coded(dark)
         self.name = name
@@ -151,30 +152,32 @@ struct Theme: Identifiable, Hashable, Sendable {
         lightColors = light.mapValues(\.color)
         darkColors = dark.mapValues(\.color)
         // A dark-only port carries its dark block in the light slot too, so contrast rises away from the paper.
-        increasedLightColors = Self.coded(Self.increased(light, dark: light[.paper]!.l < 0.5)).mapValues(\.color)
-        increasedDarkColors = Self.coded(Self.increased(dark, dark: dark[.paper]!.l < 0.5)).mapValues(\.color)
+        increasedLightColors = Self.coded(Self.increased(authored.light, dark: light[.paper]!.l < 0.5)).mapValues(\.color)
+        increasedDarkColors = Self.coded(Self.increased(authored.dark, dark: dark[.paper]!.l < 0.5)).mapValues(\.color)
     }
 
     /// `tokens` with code highlighting's colors: keywords in the accent's hue, the rest at hues turned from the link's,
     /// all at the link's lightness, which reads on the paper; comments in ink2, tags and keys in the heading's color,
-    /// insertions green and deletions red.
-    static func coded(_ tokens: [Token: OKLCH]) -> [Token: OKLCH] {
-        var tokens = tokens
-        let link = tokens[.link]!
-        let accent = tokens[.accent]!
+    /// insertions green and deletions red. A code color the theme authors, as a dev theme does from its editor's
+    /// palette, stays.
+    static func coded(_ authored: [Token: OKLCH]) -> [Token: OKLCH] {
+        let link = authored[.link]!
+        let accent = authored[.accent]!
         func turned(_ hue: Double) -> OKLCH {
             OKLCH(l: link.l, c: min(max(link.c, 0.08), 0.14), h: (hue + 360).truncatingRemainder(dividingBy: 360))
         }
-        tokens[.codeKeyword] = OKLCH(l: link.l, c: min(max(accent.c, 0.08), 0.16), h: accent.h)
-        tokens[.codeString] = turned(link.h + 240)
-        tokens[.codeNumber] = turned(link.h + 60)
-        tokens[.codeType] = turned(link.h + 150)
-        tokens[.codeFunction] = turned(link.h - 35)
-        tokens[.codeComment] = tokens[.ink2]!
-        tokens[.codeTag] = tokens[.heading]!
-        tokens[.codeInserted] = turned(150)
-        tokens[.codeDeleted] = turned(25)
-        return tokens
+        let derived: [Token: OKLCH] = [
+            .codeKeyword: OKLCH(l: link.l, c: min(max(accent.c, 0.08), 0.16), h: accent.h),
+            .codeString: turned(link.h + 240),
+            .codeNumber: turned(link.h + 60),
+            .codeType: turned(link.h + 150),
+            .codeFunction: turned(link.h - 35),
+            .codeComment: authored[.ink2]!,
+            .codeTag: authored[.heading]!,
+            .codeInserted: turned(150),
+            .codeDeleted: turned(25),
+        ]
+        return authored.merging(derived) { authored, _ in authored }
     }
 
     /// `tokens` under Increase Contrast (synthesis 2.1): ink at L 0.15 or 0.97, ink2 at 7:1 on paper and syntax with it,
