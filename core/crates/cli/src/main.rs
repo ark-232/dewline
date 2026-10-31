@@ -298,7 +298,7 @@ mod tests {
             })
         ));
         assert!(command(&["dewline", "export", "a.md"]).is_err());
-        assert!(command(&["dewline", "export", "a.md", "--to", "docx"]).is_err());
+        assert!(command(&["dewline", "export", "a.md", "--to", "rtf"]).is_err());
         assert!(command(&["dewline", "mcp"]).is_err());
         assert!(matches!(
             command(&["dewline", "doctor", "--install-hooks"]),
