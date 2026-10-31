@@ -588,12 +588,12 @@ final class EditorTextView: CaretTextView {
         guard !hasMarkedText(), let command = (sender as? NSMenuItem).flatMap({ MarkdownFormat(rawValue: $0.tag) }),
             let edit = command.edit(in: textStorage!.mutableString, selection: selectedRange())
         else { return }
-        breakUndoCoalescing()
-        guard shouldChangeText(in: edit.range, replacementString: edit.replacement) else { return }
-        textStorage!.replaceCharacters(in: edit.range, with: edit.replacement)
-        setSelectedRange(edit.selection)
-        didChangeText()
-        undoManager?.setActionName(command.name)
+        history.perform(command.name) {
+            guard shouldChangeText(in: edit.range, replacementString: edit.replacement) else { return }
+            textStorage!.replaceCharacters(in: edit.range, with: edit.replacement)
+            setSelectedRange(edit.selection)
+            didChangeText()
+        }
     }
 
     override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
@@ -641,11 +641,11 @@ extension EditorTextView: VimHost {
     }
 
     func vimUndo() {
-        undoManager?.undo()
+        history.undoManager.undo()
     }
 
     func vimRedo() {
-        undoManager?.redo()
+        history.undoManager.redo()
     }
 
     func vimSave() {
