@@ -31,7 +31,7 @@ pub struct Event {
     pub input: Input,
 }
 
-/// `tool_input`: Claude Code's file tools' fields, or Codex's patch.
+/// `tool_input`: Claude Code's and Cursor's file tools' fields, or Codex's patch.
 #[derive(Debug, Default)]
 pub struct Input {
     pub file_path: Option<String>,
@@ -63,7 +63,9 @@ pub fn read(input: impl BufRead, vendor: Vendor) -> io::Result<Event> {
     let mut event = Event::default();
     reader.object(&mut |reader, key| match key {
         "hook_event_name" => reader.text(&mut event.name, MAX_KEY),
-        "session_id" => reader.text(&mut event.session, MAX_ID),
+        "session_id" if vendor != Vendor::Cursor => reader.text(&mut event.session, MAX_ID),
+        // Cursor's session.
+        "conversation_id" if vendor == Vendor::Cursor => reader.text(&mut event.session, MAX_ID),
         "tool_name" => reader.text(&mut event.tool, MAX_KEY),
         "tool_use_id" => reader.text(&mut event.tool_use_id, MAX_ID),
         "cwd" => reader.text(&mut event.cwd, MAX_NAME),
@@ -71,12 +73,20 @@ pub fn read(input: impl BufRead, vendor: Vendor) -> io::Result<Event> {
         "tool_input" => reader.object(&mut |reader, key| {
             let input = &mut event.input;
             match (vendor, key) {
-                (Vendor::Claude, "file_path") => reader.text(&mut input.file_path, MAX_NAME),
-                (Vendor::Claude, "content") => reader.hash(&mut input.content),
-                (Vendor::Claude, "old_string") => reader.text(&mut input.old_string, usize::MAX),
-                (Vendor::Claude, "new_string") => reader.text(&mut input.new_string, usize::MAX),
-                (Vendor::Claude, "replace_all") => reader.boolean(&mut input.replace_all),
-                (Vendor::Claude, "edits") => reader.edits(&mut input.edits),
+                (Vendor::Claude | Vendor::Cursor, "file_path") => {
+                    reader.text(&mut input.file_path, MAX_NAME)
+                }
+                (Vendor::Claude | Vendor::Cursor, "content") => reader.hash(&mut input.content),
+                (Vendor::Claude | Vendor::Cursor, "old_string") => {
+                    reader.text(&mut input.old_string, usize::MAX)
+                }
+                (Vendor::Claude | Vendor::Cursor, "new_string") => {
+                    reader.text(&mut input.new_string, usize::MAX)
+                }
+                (Vendor::Claude | Vendor::Cursor, "replace_all") => {
+                    reader.boolean(&mut input.replace_all)
+                }
+                (Vendor::Claude | Vendor::Cursor, "edits") => reader.edits(&mut input.edits),
                 (Vendor::Codex, "command") => reader.text(&mut input.command, usize::MAX),
                 _ => reader.skip(),
             }

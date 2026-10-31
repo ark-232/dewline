@@ -38,7 +38,7 @@ final class ControlSocket: @unchecked Sendable {
     /// never content, and only labels.
     struct Claim: Sendable, Equatable {
         enum Vendor: String, Sendable {
-            case claude, codex
+            case claude, codex, cursor
         }
 
         enum Tool: String, Sendable {

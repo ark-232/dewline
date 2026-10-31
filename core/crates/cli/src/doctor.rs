@@ -57,7 +57,7 @@ const AGENTS: [Agent; 3] = [
         name: "cursor",
         title: "Cursor",
         settings: ".cursor/hooks.json",
-        events: &[("afterFileEdit", None)],
+        events: &[("preToolUse", None), ("postToolUse", None), ("stop", None)],
         flat: true,
     },
 ];

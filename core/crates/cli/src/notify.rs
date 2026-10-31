@@ -1,4 +1,4 @@
-//! `dewline notify`, the command Claude Code's and Codex's hooks run with each event's JSON on stdin. It tells the
+//! `dewline notify`, the command Claude Code's, Codex's and Cursor's hooks run with each event's JSON on stdin. It tells the
 //! app, one `notify` line per claim on the control socket, which file a tool is about to change or changed and the
 //! BLAKE3 hashes involved: ids, paths and hashes, never content (claims.rs reads them). It never writes a file,
 //! never starts the app, never runs another program, and always exits 0, so a hook can't hold up or refuse a tool
@@ -31,6 +31,7 @@ const UTF8_BOM: &[u8] = b"\xEF\xBB\xBF";
 pub enum Vendor {
     Claude,
     Codex,
+    Cursor,
 }
 
 impl Vendor {
@@ -38,6 +39,7 @@ impl Vendor {
         match self {
             Vendor::Claude => "claude",
             Vendor::Codex => "codex",
+            Vendor::Cursor => "cursor",
         }
     }
 }
@@ -113,6 +115,15 @@ fn lines(vendor: Vendor, event: &Event) -> Vec<Vec<u8>> {
     let (Some(name), Some(session)) = (event.name.as_deref(), event.session.as_deref()) else {
         return Vec::new();
     };
+    // Cursor names its events in camel case.
+    let name = match (vendor, name) {
+        (Vendor::Cursor, "preToolUse") => "PreToolUse",
+        (Vendor::Cursor, "postToolUse") => "PostToolUse",
+        (Vendor::Cursor, "stop") => "Stop",
+        (Vendor::Cursor, "sessionEnd") => "SessionEnd",
+        (Vendor::Cursor, _) => return Vec::new(),
+        _ => name,
+    };
     let fields = Fields {
         event: name,
         vendor: vendor.name(),
@@ -142,7 +153,9 @@ fn lines(vendor: Vendor, event: &Event) -> Vec<Vec<u8>> {
         ..fields
     };
     let files = match (vendor, tool) {
-        (Vendor::Claude, "Read" | "Edit" | "MultiEdit" | "Write") => claude(event, tool, pre),
+        (Vendor::Claude | Vendor::Cursor, "Read" | "Edit" | "MultiEdit" | "Write") => {
+            claude(event, tool, pre)
+        }
         (Vendor::Codex, "apply_patch") => codex(event, pre),
         _ => Vec::new(),
     };

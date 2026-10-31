@@ -88,7 +88,7 @@ struct AgentsPane: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             Section {
-                Text("When Dewline can’t tell who wrote a change, it labels the change Unknown, with a hollow bead and a dashed underline. Claude Code’s Bash edits, Cursor, Gemini, sync and other apps show up this way, because no hook reports exactly what they wrote.")
+                Text("When Dewline can’t tell who wrote a change, it labels the change Unknown, with a hollow bead and a dashed underline. Claude Code’s Bash edits, Gemini, sync and other apps show up this way, because no hook reports exactly what they wrote.")
                     .frame(maxWidth: .infinity, alignment: .leading)
             } header: {
                 Text("Unknown writer")

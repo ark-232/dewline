@@ -54,7 +54,12 @@ enum Review {
     /// A session's turn ended: each window holding its changes shows the finished line. The landing its last write
     /// started gets 500 ms to arrive first.
     static func finished(vendor: ControlSocket.Claim.Vendor, session: String) {
-        let origin = ChangeEngine.Origin.agent(vendor == .claude ? .claude : .codex, session: session)
+        let vendor: ChangeEngine.Vendor = switch vendor {
+        case .claude: .claude
+        case .codex: .codex
+        case .cursor: .cursor
+        }
+        let origin = ChangeEngine.Origin.agent(vendor, session: session)
         Task {
             try? await Task.sleep(for: .milliseconds(500))
             for window in NSApp.windows {

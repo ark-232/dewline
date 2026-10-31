@@ -337,7 +337,6 @@ mod tests {
         }
         for args in [
             &["dewline", "notify"][..],
-            &["dewline", "notify", "--hook", "cursor"],
             &["dewline", "notify", "--hook", "claude", "extra"],
         ] {
             assert!(Cli::try_parse_from(args).is_err(), "{args:?}");
