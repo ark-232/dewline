@@ -155,6 +155,14 @@ public final class ChangeEngine: Sendable {
         )
     }
 
+    /// A collaborator's `edits` to `buffer` (in order, apart), snapshotting a buffer that differs from the file first,
+    /// to apply in one step once no IME composition is open.
+    public func collaborate(_ doc: UInt64, buffer: String, edits: [Edit]) throws(Failure) -> [Edit] {
+        let edits = edits.map { DewlineFFIBindings.Edit(start: UInt32($0.range.location), end: UInt32(NSMaxRange($0.range)), text: $0.text) }
+        return try Self.call { try engine.collaborate(doc: doc, buffer: buffer, edits: edits) }
+            .map { Edit(range: NSRange(location: Int($0.start), length: Int($0.end - $0.start)), text: $0.text) }
+    }
+
     /// On the main thread, in the step that applies the landing: false when it is no longer the current one.
     public func commit(_ doc: UInt64, landing: UInt64) -> Bool {
         (try? engine.commit(doc: doc, landing: landing)) != nil

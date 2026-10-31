@@ -203,19 +203,30 @@ final class Collaboration {
         return (prefix, a.count - suffix, text)
     }
 
-    /// A collaborator's edit, outside the undo history. The caret and selection keep their place in the text.
+    /// A collaborator's edit, outside the undo history, through the change engine, which snapshots the buffer first.
+    /// The caret and selection keep their place in the text.
     private func apply(_ edit: Share.Edit, to textView: EditorTextView) {
         guard let storage = textView.textStorage else { return }
-        let range = NSRange(location: edit.start, length: edit.end - edit.start)
+        var range = NSRange(location: edit.start, length: edit.end - edit.start)
         guard NSMaxRange(range) <= storage.length else { return }
-        let length = edit.text.utf16.count
+        var text = edit.text
+        if let live = (document as? MarkdownDocument)?.live {
+            do {
+                let edits = try live.engine.collaborate(live.doc, buffer: storage.string, edits: [.init(range: range, text: text)])
+                guard let edit = edits.first else { return }
+                (range, text) = (edit.range, edit.text)
+            } catch {
+                return end(saying: "The file stopped taking edits: \(error)")
+            }
+        }
+        let length = text.utf16.count
         func moved(_ offset: Int) -> Int {
             offset >= NSMaxRange(range) ? offset + length - range.length : min(offset, range.location + length)
         }
         let selection = textView.selectedRange()
         applying = true
         storage.beginEditing()
-        storage.replaceCharacters(in: range, with: edit.text)
+        storage.replaceCharacters(in: range, with: text)
         storage.endEditing()
         applying = false
         let start = moved(selection.location)
