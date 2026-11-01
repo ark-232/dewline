@@ -1,0 +1,326 @@
+{
+  "date": "2026-11-01",
+  "commit": "dd9e83c",
+  "mac": "Apple M4 Pro, 24 GB, macOS 27.2",
+  "xcode": "Xcode 27.2",
+  "build": "Release, arm64, unsigned",
+  "load": [
+    2.88,
+    2.89,
+    2.68
+  ],
+  "corpusBytes": {
+    "1MB": 1048633,
+    "10MB": 10485949
+  },
+  "appBytes": 75381702,
+  "dmgBytes": 23695909,
+  "firstLaunchMs": 853.8,
+  "launch1MB": {
+    "coldMs": [
+      736.2,
+      670.4,
+      635.9
+    ],
+    "warmMs": [
+      436.2,
+      435.9,
+      451.4,
+      465.8,
+      436.5
+    ]
+  },
+  "idle1MB": {
+    "footprintMB": 78.7,
+    "cpuPercent": 0.0,
+    "idleWakeups": 0,
+    "contextSwitches": 9,
+    "frontmost": true
+  },
+  "idle10MB": {
+    "footprintMB": 305.0,
+    "cpuPercent": 0.0,
+    "idleWakeups": 0,
+    "contextSwitches": 908,
+    "frontmost": false
+  },
+  "keystrokeParts": {
+    "clockUs": [
+      33.579999999999998,
+      33.630000000000003,
+      33.630000000000003
+    ],
+    "frontmost": [
+      false,
+      false,
+      false
+    ],
+    "1MB": {
+      "attributes": {
+        "p50": 0.73,
+        "p95": 0.86,
+        "p99": 0.92
+      },
+      "caretAndDisplay": {
+        "p50": 1.24,
+        "p95": 1.56,
+        "p99": 1.65
+      },
+      "commit": {
+        "p50": 4.31,
+        "p95": 5.27,
+        "p99": 5.57
+      },
+      "frame": {
+        "p50": 14.83,
+        "p95": 17.49,
+        "p99": 19.53
+      },
+      "invalidation": {
+        "p50": 0.98,
+        "p95": 1.12,
+        "p99": 1.18
+      },
+      "keyDown": {
+        "p50": 2.05,
+        "p95": 4.87,
+        "p99": 6.65
+      },
+      "paragraphLayout": {
+        "p50": 1.88,
+        "p95": 2.31,
+        "p99": 2.48
+      },
+      "parse": {
+        "p50": 0.21,
+        "p95": 0.27,
+        "p99": 0.31
+      },
+      "reveal": {
+        "p50": 0.03,
+        "p95": 0.04,
+        "p99": 0.05
+      },
+      "storageEdit": {
+        "p50": 0.23,
+        "p95": 1.41,
+        "p99": 1.53
+      },
+      "viewportLayout": {
+        "p50": 2.52,
+        "p95": 3.07,
+        "p99": 3.28
+      }
+    },
+    "10MB": {
+      "attributes": {
+        "p50": 1.46,
+        "p95": 1.88,
+        "p99": 1.98
+      },
+      "caretAndDisplay": {
+        "p50": 1.27,
+        "p95": 1.55,
+        "p99": 1.65
+      },
+      "commit": {
+        "p50": 4.08,
+        "p95": 4.99,
+        "p99": 5.33
+      },
+      "frame": {
+        "p50": 15.74,
+        "p95": 18.35,
+        "p99": 20.29
+      },
+      "invalidation": {
+        "p50": 1.02,
+        "p95": 1.22,
+        "p99": 1.25
+      },
+      "keyDown": {
+        "p50": 2.38,
+        "p95": 3.61,
+        "p99": 6.34
+      },
+      "paragraphLayout": {
+        "p50": 1.91,
+        "p95": 2.27,
+        "p99": 2.41
+      },
+      "parse": {
+        "p50": 0.23,
+        "p95": 0.27,
+        "p99": 0.28
+      },
+      "reveal": {
+        "p50": 0.03,
+        "p95": 0.04,
+        "p99": 0.05
+      },
+      "storageEdit": {
+        "p50": 0.14,
+        "p95": 1.42,
+        "p99": 1.5
+      },
+      "viewportLayout": {
+        "p50": 2.9,
+        "p95": 3.47,
+        "p99": 3.66
+      }
+    },
+    "reruns": 0
+  },
+  "keystroke10MB": {
+    "max": 21.25,
+    "p50": 16.01,
+    "p95": 18.94,
+    "p99": 20.25
+  },
+  "keystroke1MB": {
+    "max": 20.03,
+    "p50": 14.73,
+    "p95": 17.64,
+    "p99": 19.16
+  },
+  "open10MB": {
+    "displayMs": 6.17,
+    "ms": 35.9,
+    "setTextMs": 29.73,
+    "styledMs": 1953.44
+  },
+  "open1MB": {
+    "displayMs": 56.5,
+    "ms": 75.57,
+    "setTextMs": 19.08,
+    "styledMs": 238.41
+  },
+  "parse": {
+    "document1MBMs": 5.87,
+    "paragraphUs": 2.63,
+    "paragraphWindowUs": 3.83
+  },
+  "reveal": {
+    "deselect1MB": 68.23,
+    "max": 20.15,
+    "p50": 12.55,
+    "p95": 15.85,
+    "p99": 17.26,
+    "selectAll1MB": 83.87
+  },
+  "scroll": {
+    "max": 37.04,
+    "over8_3ms": 198,
+    "p50": 25.44,
+    "p95": 28.49,
+    "p99": 31.61
+  },
+  "scrollSettled": {
+    "max": 37.35,
+    "over8_3ms": 198,
+    "p50": 26.48,
+    "p95": 29.65,
+    "p99": 32.87
+  },
+  "budgets": [
+    {
+      "metric": "Keystroke, 1 MB, p50",
+      "unit": "ms",
+      "budget": 8,
+      "measured": 14.73,
+      "pass": false
+    },
+    {
+      "metric": "Keystroke, 1 MB, p99",
+      "unit": "ms",
+      "budget": 16,
+      "measured": 19.16,
+      "pass": false
+    },
+    {
+      "metric": "Keystroke, 10 MB, p95",
+      "unit": "ms",
+      "budget": 16,
+      "measured": 18.94,
+      "pass": false
+    },
+    {
+      "metric": "Cold launch, 1 MB, slowest of 3",
+      "unit": "ms",
+      "budget": 300,
+      "measured": 736.2,
+      "pass": false
+    },
+    {
+      "metric": "Warm launch, 1 MB, median of 5",
+      "unit": "ms",
+      "budget": 150,
+      "measured": 436.5,
+      "pass": false
+    },
+    {
+      "metric": "Open 1 MB",
+      "unit": "ms",
+      "budget": 50,
+      "measured": 75.57,
+      "pass": false
+    },
+    {
+      "metric": "Open 10 MB",
+      "unit": "ms",
+      "budget": 250,
+      "measured": 35.9,
+      "pass": true
+    },
+    {
+      "metric": "Idle memory, 1 MB",
+      "unit": "MB",
+      "budget": 80,
+      "measured": 78.7,
+      "pass": true
+    },
+    {
+      "metric": "Idle memory, 10 MB",
+      "unit": "MB",
+      "budget": 150,
+      "measured": 305.0,
+      "pass": false
+    },
+    {
+      "metric": "Idle CPU, 1 MB",
+      "unit": "%",
+      "budget": 0,
+      "measured": 0.0,
+      "pass": true
+    },
+    {
+      "metric": "Idle CPU, 10 MB",
+      "unit": "%",
+      "budget": 0,
+      "measured": 0.0,
+      "pass": true
+    },
+    {
+      "metric": "Idle wakeups in 60 s, 1 MB",
+      "unit": "",
+      "budget": 0,
+      "measured": 0,
+      "pass": true
+    },
+    {
+      "metric": "Idle wakeups in 60 s, 10 MB",
+      "unit": "",
+      "budget": 0,
+      "measured": 0,
+      "pass": true
+    },
+    {
+      "metric": "DMG",
+      "unit": "MB",
+      "budget": 20,
+      "measured": 22.598179817199707,
+      "pass": false
+    }
+  ],
+  "pass": false
+}
