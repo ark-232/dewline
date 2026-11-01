@@ -52,6 +52,10 @@ final class TaskBoxes {
                 let size = (styled.attribute(.font, at: local.range.location, effectiveRange: nil) as? NSFont)?.pointSize ?? CGFloat(store.bodySize)
                 styled.addAttribute(.font, value: store.codeFont(size: size), range: local.range)
                 let paragraph = text.paragraphRange(for: local.range)
+                // The box stands for the item, so its bullet hides with the brackets.
+                if let bullet = Self.bullet(before: local.range.location, from: paragraph.location, in: text) {
+                    styled.addAttributes([.font: MarkdownStyler.hiddenFont, .foregroundColor: NSColor.clear], range: bullet)
+                }
                 var end = NSMaxRange(paragraph)
                 while end > NSMaxRange(local.range), [0x0A, 0x0D].contains(text.character(at: end - 1)) { end -= 1 }
                 let label = text.substring(with: NSRange(location: NSMaxRange(local.range), length: end - NSMaxRange(local.range)))
@@ -71,6 +75,17 @@ final class TaskBoxes {
 
     private static func touches(_ range: NSRange, _ selection: [NSRange]) -> Bool {
         selection.contains { $0.location <= NSMaxRange(range) && NSMaxRange($0) >= range.location }
+    }
+
+    /// The `-`, `*` or `+` and the blanks after it before the box at `box`, when only indentation comes before them
+    /// on the line that starts at `start`.
+    private static func bullet(before box: Int, from start: Int, in text: NSString) -> NSRange? {
+        var marker = box
+        while marker > start, [0x20, 0x09].contains(text.character(at: marker - 1)) { marker -= 1 }
+        guard marker > start, marker < box, [0x2D, 0x2A, 0x2B].contains(text.character(at: marker - 1)) else { return nil }
+        marker -= 1
+        let indent = text.substring(with: NSRange(location: start, length: marker - start))
+        return indent.allSatisfy { $0 == " " || $0 == "\t" } ? NSRange(location: marker, length: box - marker) : nil
     }
 }
 
