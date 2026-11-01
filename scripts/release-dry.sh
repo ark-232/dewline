@@ -40,6 +40,6 @@ EOF
 awk -v v="$version" '$1 == "##" { if (on) exit; on = ($2 == v) } on' "$root/CHANGELOG.md" | tail -n +2 > "$archives/Dewline-$version.md"
 "$work/sparkle/bin/generate_appcast" --ed-key-file "$work/run.key" \
     --download-url-prefix "https://github.com/ark-232/dewline/releases/download/v$version/" \
-    --full-release-notes-url https://dewline.dev/changelog --embed-release-notes \
+    --full-release-notes-url https://github.com/ark-232/dewline/releases --embed-release-notes \
     --maximum-deltas 0 --maximum-versions 26 --phased-rollout-interval 43200 "$archives"
 "$root/scripts/verify-feed.sh" "$archives/appcast.xml" "$public"

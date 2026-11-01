@@ -123,7 +123,7 @@ struct ControlSocketTests {
             String(repeating: "[", count: 15_000): "malformed",
             #"{"v":1,"op":"open","path":"\#(file)"}"# + "\n" + #"{"v":1,"op":"open","path":"\#(file)"}"#: "malformed",
             #"{"v":2,"op":"open","path":"\#(file)"}"#: "version",
-            #"{"v":1,"op":"notify","path":"\#(file)"}"#: "unknown_op",
+            #"{"v":1,"op":"close","path":"\#(file)"}"#: "unknown_op",
         ]
         for (request, error) in refusals {
             let client = try Client(listening.socket.path)
@@ -132,6 +132,102 @@ struct ControlSocketTests {
             #expect(client.line() == nil)
         }
         #expect(await listening.received.requests.isEmpty)
+    }
+
+    @Test func notifyLinesReachTheHandlerAsClaims() async throws {
+        let listening = try await Listening()
+        defer { listening.finish() }
+        let (a, b) = (String(repeating: "a", count: 64), String(repeating: "B", count: 64))
+        let use = ControlSocket.Claim.ToolUse.init
+        let lines: [(String, ControlSocket.Claim)] = [
+            (#""event":"PreToolUse","vendor":"claude","session":"s1","tool_use_id":"toolu_1","tool":"Edit","path":"/r/plan.md","hash":"\#(a)","declared":"\#(b)""#,
+             .init(vendor: .claude, session: "s1", event: .preToolUse(use("toolu_1", .edit, "/r/plan.md", a, b)))),
+            (#""event":"PostToolUse","vendor":"claude","session":"s1","tool_use_id":"toolu_2","tool":"Write","path":"/r/new.md""#,
+             .init(vendor: .claude, session: "s1", event: .postToolUse(use("toolu_2", .write, "/r/new.md", nil, nil)))),
+            (#""event":"PreToolUse","vendor":"codex","session":"c1","tool_use_id":"call_1","tool":"apply_patch","path":"/r/two\nlines.md","hash":"\#(a)""#,
+             .init(vendor: .codex, session: "c1", event: .preToolUse(use("call_1", .applyPatch, "/r/two\nlines.md", a, nil)))),
+            (#""event":"InstructionsLoaded","vendor":"claude","session":"s1","path":"/r/CLAUDE.md""#,
+             .init(vendor: .claude, session: "s1", event: .instructionsLoaded(path: "/r/CLAUDE.md"))),
+            (#""event":"StopFailure","vendor":"claude","session":"s1","hash":"not read""#, .init(vendor: .claude, session: "s1", event: .turnEnd)),
+            (#""event":"UserPromptSubmit","vendor":"codex","session":"c1""#, .init(vendor: .codex, session: "c1", event: .turnEnd)),
+            (#""event":"SessionEnd","vendor":"codex","session":"c1","later":true"#, .init(vendor: .codex, session: "c1", event: .sessionEnd)),
+        ]
+        for (fields, _) in lines {
+            let client = try Client(listening.socket.path)
+            client.send(#"{"v":1,"op":"notify",\#(fields)}"# + "\n")
+            #expect(client.line() == nil, "a claim gets no answer: \(fields)")
+        }
+        #expect(try await listening.claims(lines.count) == lines.map(\.1))
+    }
+
+    @Test func refusesNotifyLinesClaimsRsWouldRefuse() async throws {
+        let listening = try await Listening()
+        defer { listening.finish() }
+        let hash = String(repeating: "a", count: 64)
+        let edit = #""event":"PreToolUse","vendor":"claude","session":"s1","tool_use_id":"t1","tool":"Edit","path":"/r/plan.md""#
+        let refused = [
+            #""event":"Stop","session":"s1""#,
+            #""event":"Stop","vendor":"Claude","session":"s1""#,
+            #""event":"Stop","vendor":"claude","session":"""#,
+            #""event":"Stop","vendor":"claude","session":"\#(String(repeating: "s", count: 129))""#,
+            #""event":"Stop","vendor":"claude","session":"new\nline""#,
+            #""event":"Stop","vendor":"claude","session":"café""#,
+            #""event":"Stop","vendor":"claude","session":"nul\u0000""#,
+            #""event":"Stop","vendor":"claude","session":7"#,
+            #""event":"Notification","vendor":"claude","session":"s1""#,
+            #""event":"pretooluse","vendor":"claude","session":"s1""#,
+            edit.replacingOccurrences(of: #""tool":"Edit""#, with: #""tool":"Bash""#),
+            edit.replacingOccurrences(of: #""tool":"Edit""#, with: #""tool":"apply_patch""#),
+            edit.replacingOccurrences(of: #""vendor":"claude""#, with: #""vendor":"codex""#),
+            edit.replacingOccurrences(of: #""tool_use_id":"t1","#, with: ""),
+            edit.replacingOccurrences(of: #""path":"/r/plan.md""#, with: #""path":"plan.md""#),
+            edit.replacingOccurrences(of: #""/r/plan.md""#, with: #""/r/\#(String(repeating: "p", count: 1024))""#),
+            edit.replacingOccurrences(of: #""/r/plan.md""#, with: #""/r/plan.md\u0000x""#),
+            edit + #","hash":"\#(hash.dropLast())""#,
+            edit + #","hash":"\#(hash.dropLast())g""#,
+            edit + #","declared":"not hex""#,
+            #""event":"InstructionsLoaded","vendor":"claude","session":"s1""#,
+        ]
+        for fields in refused {
+            let client = try Client(listening.socket.path)
+            client.send(#"{"v":1,"op":"notify",\#(fields)}"# + "\n")
+            #expect(client.line() == #"{"error":"malformed","reply":"error","v":1}"#, "\(fields.prefix(120))")
+            #expect(client.line() == nil)
+        }
+        #expect(await listening.received.claims.isEmpty)
+    }
+
+    /// The command embedded in this build, run as a hook runs it.
+    @Test func theDewlineCommandSendsAHooksClaim() async throws {
+        let listening = try await Listening()
+        defer { listening.finish() }
+        let file = try listening.file("plan.md")
+        let real = try #require(realpath(file.path, nil))
+        defer { free(real) }
+        let event = #"{"session_id":"s1","cwd":"/","hook_event_name":"PreToolUse","tool_name":"Edit","tool_input":{"file_path":"\#(file.path)","old_string":"Ship it.","new_string":"Ship it soon."},"tool_use_id":"toolu_1"}"#
+        // The command drops a claim whose connect takes over 50 ms, which a loaded CI runner can hit, so it gets three tries.
+        for _ in 0..<3 {
+            let process = Process()
+            process.executableURL = Bundle.main.bundleURL.appending(path: "Contents/Helpers/dewline")
+            process.arguments = ["notify", "--hook", "claude"]
+            process.environment = ["DEWLINE_SOCKET": listening.socket.path]
+            let stdin = Pipe()
+            process.standardInput = stdin
+            try process.run()
+            try stdin.fileHandleForWriting.write(contentsOf: Data(event.utf8))
+            try stdin.fileHandleForWriting.close()
+            process.waitUntilExit()
+            #expect(process.terminationStatus == 0)
+            try await Task.sleep(for: .milliseconds(500))
+            if !(await listening.received.claims.isEmpty) { break }
+        }
+        let claims = try await listening.claims(1)
+        guard case .preToolUse(let use) = claims.first?.event else {
+            Issue.record("\(claims)")
+            return
+        }
+        #expect(use.id == "toolu_1" && use.tool == .edit && use.path == String(cString: real))
+        #expect(use.hash?.count == 64 && use.declared?.count == 64 && use.hash != use.declared)
     }
 
     @Test func refusesOversizedRequests() async throws {
@@ -239,6 +335,7 @@ struct ControlSocketTests {
 @MainActor
 private final class Received {
     var requests: [ControlSocket.Open] = []
+    var claims: [ControlSocket.Claim] = []
     var connections: [ControlSocket.Connection] = []
     /// When set, waiting requests are answered when it closes.
     var document: MarkdownDocument?
@@ -295,7 +392,8 @@ private struct Listening {
         // Short, because a socket path holds at most 103 bytes.
         folder = FileManager.default.temporaryDirectory.appending(path: "dl-\(UUID().uuidString.prefix(8))")
         let received = await Received()
-        socket = ControlSocket(path: folder.appending(path: "run/control.sock").path, uid: uid) { request, connection in
+        let notify: @MainActor @Sendable (ControlSocket.Claim) -> Void = { received.claims.append($0) }
+        socket = ControlSocket(path: folder.appending(path: "run/control.sock").path, uid: uid, notify: notify) { request, connection in
             received.requests.append(request)
             received.connections.append(connection)
             if request.wait { received.document?.answerWhenClosed(connection) }
@@ -319,6 +417,16 @@ private struct Listening {
         throw CancellationError()
     }
 
+    /// The first `count` claims, once that many have arrived.
+    func claims(_ count: Int) async throws -> [ControlSocket.Claim] {
+        for _ in 0..<50 {
+            let claims = await received.claims
+            if claims.count >= count { return Array(claims.prefix(count)) }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        throw CancellationError()
+    }
+
     func finish() {
         socket.stop()
         try? FileManager.default.removeItem(at: folder)
@@ -330,15 +438,16 @@ private final class Client {
     private let fd = socket(AF_UNIX, SOCK_STREAM, 0)
 
     init(_ path: String, timeout: Int = 2) throws {
+        // Before connect: a server that refuses the peer may close first, and setsockopt then fails with EINVAL.
+        var limit = timeval(tv_sec: timeout, tv_usec: 0)
+        var on: Int32 = 1
+        #expect(setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &limit, socklen_t(MemoryLayout<timeval>.size)) == 0)
+        #expect(setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size)) == 0)
         var address = try #require(ControlSocket.address(of: path))
         let connected = withUnsafePointer(to: &address) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
         }
         try #require(connected == 0)
-        var limit = timeval(tv_sec: timeout, tv_usec: 0)
-        var on: Int32 = 1
-        #expect(setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &limit, socklen_t(MemoryLayout<timeval>.size)) == 0)
-        #expect(setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size)) == 0)
     }
 
     deinit {

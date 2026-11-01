@@ -80,8 +80,9 @@ struct EditRestyleTests {
 
     /// A line break written into the storage before a code span's `*` makes the half after it start an emphasis: its
     /// markers carry the font they show in when the caret reveals them, as `MarkdownStyler.mark` needs.
+    /// The break makes a blank line, which ends the code span at it and starts a paragraph with emphasis.
     @Test func aLineBreakInTheStorageStylesTheSpansItMakes() throws {
-        let editor = Editor("Code `a *b` c* end\nNext\n", caret: 0)
+        let editor = Editor("Code `a\n*b` c* end\nNext\n", caret: 0)
         defer { editor.close() }
         let storage = try #require(editor.view.textStorage)
         storage.replaceCharacters(in: NSRange(location: 8, length: 0), with: "\n")
@@ -164,11 +165,10 @@ struct EditRestyleTests {
                 case 7: if undo.canUndo { undo.undo() }
                 case 8: if undo.canRedo { undo.redo() }
                 case 9:
-                    // Writes into the storage register no undo, so the history before them no longer applies.
+                    // Writes into the storage register no undo; the history moves past them, as past a landing.
                     let location = offset(upTo: storage.length)
                     let length = min(Int(random.next() % 4), storage.length - location)
                     storage.replaceCharacters(in: NSRange(location: location, length: length), with: pick(fragments))
-                    undo.removeAllActions()
                 case 10:
                     grouped {
                         view.setMarkedText("か", selectedRange: NSRange(location: 1, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))

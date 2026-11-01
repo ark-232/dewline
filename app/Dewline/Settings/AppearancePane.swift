@@ -17,17 +17,21 @@ struct AppearancePane: View {
                     }
                 }
             } footer: {
-                Text("Auto follows macOS. Every theme has a light and a dark version.")
+                Text("Auto follows macOS. Every theme but Nord has a light and a dark version.")
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             Section {
                 Picker(selection: $store.lightTheme) {
                     ForEach(Theme.all) { Text($0.name).tag($0) }
+                    Divider()
+                    ForEach(Theme.devPack) { Text($0.name).tag($0) }
                 } label: {
                     Label("In Light", systemImage: "sun.max")
                 }
                 Picker(selection: $store.darkTheme) {
                     ForEach(Theme.all) { Text($0.name).tag($0) }
+                    Divider()
+                    ForEach(Theme.devPack) { Text($0.name).tag($0) }
                 } label: {
                     Label("In Dark", systemImage: "moon")
                 }
@@ -44,6 +48,33 @@ struct AppearancePane: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             Section {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 14), count: 4), spacing: 14) {
+                    ForEach(Theme.devPack) { theme in
+                        ThemeCard(theme: theme, store: store, excerpt: excerpt, dark: scheme == .dark)
+                    }
+                }
+                .padding(.vertical, 6)
+            } header: {
+                Text("Dev Themes")
+            } footer: {
+                Text("Ports of each editor's own palette, code colors included. Nord is dark only, so it looks the same in either slot.")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Section {
+                ForEach(Writer.allCases) { writer in
+                    WriterRow(writer: writer, store: store, dark: scheme == .dark)
+                }
+            } header: {
+                Text("Writers")
+            } footer: {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text("Each writer's changes are marked in its color. A well sets the hue and strength; Dewline keeps the lightness so text on a mark stays readable. A hue within ΔE 8 of a color in your Light or Dark theme shows the clash.")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button("Restore Defaults") { store.writerHues = [:] }
+                        .disabled(store.writerHues.isEmpty)
+                }
+            }
+            Section {
                 Picker("Motion", selection: $motion) {
                     Text("Off").tag(Motion.off)
                     Text("Calm").tag(Motion.calm)
@@ -54,6 +85,56 @@ struct AppearancePane: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+    }
+}
+
+/// A writer's name set as its insertion mark (a wash under a solid underline, dashed for an unknown app), a color well,
+/// and, when a theme color sits within ΔE 8, the clash and a button for the nearest clear hue.
+private struct WriterRow: View {
+    let writer: Writer
+    let store: ThemeStore
+    let dark: Bool
+
+    var body: some View {
+        let color = Color(nsColor: store.writerColor(writer))
+        let clash = store.clash(writer)
+        let well = Binding {
+            color
+        } set: { picked in
+            if let pick = OKLCH(NSColor(picked)) { store.writerHues[writer] = pick }
+        }
+        LabeledContent {
+            HStack(spacing: 10) {
+                if let hue = clash?.clearHue {
+                    Button {
+                        store.writerHues[writer] = hue
+                    } label: {
+                        Label {
+                            Text("Use Clear Hue")
+                        } icon: {
+                            Circle().fill(Color(nsColor: (dark ? writer.colors(hue).dark : writer.colors(hue).light).color)).frame(width: 10, height: 10)
+                        }
+                    }
+                    .controlSize(.small)
+                    .help("Moves \(writer.name) to hue \(Int(hue.h.rounded()))°, the nearest one clear of both themes")
+                }
+                ColorPicker("\(writer.name) color", selection: well, supportsOpacity: false)
+                    .labelsHidden()
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(writer.name)
+                    .underline(pattern: writer == .unknown ? .dash : .solid, color: color)
+                    .padding(.horizontal, 3)
+                    .background(color.opacity(dark ? 0.24 : 0.15), in: .rect(cornerRadius: 2))
+                if let clash {
+                    Text("Close to \(clash.theme.name)'s \(clash.token.label) in \(clash.dark ? "Dark" : "Light") (ΔE \(clash.deltaE.formatted(.number.precision(.fractionLength(1)))))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
     }
 }
 

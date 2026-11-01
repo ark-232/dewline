@@ -6,7 +6,8 @@
 //!
 //! Calls that read or write files or the snapshot store take a document's
 //! own lock, so they run one at a time per document; `commit`, `decide` and
-//! `claim` never touch a file or wait behind one that does.
+//! `claim` never wait behind one that does, and touch no file but the
+//! decisions log, which `decide` appends one line to.
 
 use std::collections::HashMap;
 use std::ffi::OsStr;
@@ -15,12 +16,13 @@ use std::io::{self, Read, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::{Instant, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use blake3::Hash;
 
 use crate::agents::AgentFiles;
 use crate::claims::{Chain, Claim, Claims, Refused, Vendor};
+use crate::decisions;
 use crate::file::{self, SaveError};
 use crate::git::{self, Entry, Repo};
 use crate::merge::{self, Conflict, Edit};
@@ -31,6 +33,8 @@ const YOU: &str = "You";
 const UNKNOWN: &str = "Unknown app";
 /// Larger files don't open, and a file that grows past it reads as unreadable.
 const MAX_FILE: u64 = 64 << 20;
+/// How often `collaborate` snapshots a buffer that collaborators edit.
+const COLLABORATION_SNAPSHOT: Duration = Duration::from_secs(30);
 
 /// The time now, for claims and git's lock window and for the snapshot store.
 pub type Clock = Box<dyn Fn() -> (Instant, SystemTime) + Send + Sync>;
@@ -63,6 +67,12 @@ pub enum Origin {
     },
     /// "Unknown app".
     External,
+    /// Someone editing the shared file live (D13), by node id and the name
+    /// the host approved.
+    Collaborator {
+        peer: String,
+        name: String,
+    },
 }
 
 impl Origin {
@@ -74,6 +84,7 @@ impl Origin {
                 let vendor = match vendor {
                     Vendor::Claude => "claude",
                     Vendor::Codex => "codex",
+                    Vendor::Cursor => "cursor",
                 };
                 format!("{vendor}:{session}")
             }
@@ -82,6 +93,7 @@ impl Origin {
                 action: Some(action),
             } => format!("git:{action}"),
             Origin::External => UNKNOWN.into(),
+            Origin::Collaborator { peer, name } => format!("collab:{peer}:{name}"),
         }
     }
 
@@ -99,6 +111,14 @@ impl Origin {
             },
             Some(("claude", session)) => agent(Vendor::Claude, session),
             Some(("codex", session)) => agent(Vendor::Codex, session),
+            Some(("cursor", session)) => agent(Vendor::Cursor, session),
+            Some(("collab", rest)) => match rest.split_once(':') {
+                Some((peer, name)) => Origin::Collaborator {
+                    peer: peer.into(),
+                    name: name.into(),
+                },
+                None => Origin::External,
+            },
             _ => Origin::External,
         }
     }
@@ -144,6 +164,8 @@ pub enum EngineError {
     Waiting,
     /// The document or the file's new version is not UTF-8 text.
     NotText,
+    /// A collaborator's edits are out of order or past the buffer's end.
+    Misplaced,
     Io(io::Error),
 }
 
@@ -299,6 +321,8 @@ struct Doc {
     /// When a landing first waited on git's index lock.
     wait_from: Option<Instant>,
     drafted: bool,
+    /// When `collaborate` last snapshotted the buffer.
+    collaborated: Option<Instant>,
     /// Bumped whenever the base or the disk changes.
     generation: u64,
 }
@@ -328,6 +352,8 @@ impl State {
 
 pub struct Engine {
     store: Store,
+    /// The store folder, which holds the decisions log.
+    root: PathBuf,
     clock: Clock,
     agents: &'static AgentFiles,
     state: Mutex<State>,
@@ -347,6 +373,7 @@ impl Engine {
     pub fn new(root: &Path, clock: Clock) -> io::Result<Engine> {
         Ok(Engine {
             store: Store::open(root)?,
+            root: root.to_owned(),
             clock,
             agents: AgentFiles::builtin(),
             state: Mutex::default(),
@@ -399,6 +426,7 @@ impl Engine {
             floor: None,
             wait_from: None,
             drafted: false,
+            collaborated: None,
             generation: 0,
         };
         let mut state = self.state();
@@ -617,7 +645,7 @@ impl Engine {
             && match &origin {
                 Origin::External => !agent_file,
                 Origin::Git { .. } => true,
-                Origin::Agent { .. } | Origin::User => false,
+                Origin::Agent { .. } | Origin::User | Origin::Collaborator { .. } => false,
             };
 
         let (edits, covering, conflicts) = if unmerged && buffer != theirs {
@@ -699,6 +727,51 @@ impl Engine {
             edits: !landing.edits.is_empty(),
         });
         Ok(Some(landing))
+    }
+
+    /// Takes a collaborator's edits to `buffer` (UTF-16, in order, apart) and
+    /// returns them for the editor to apply in one step once no IME
+    /// composition is open. Like a landing it snapshots a buffer that differs
+    /// from the base first, at most every `COLLABORATION_SNAPSHOT`, since
+    /// collaborators type a keystroke at a time. The edits reach only this
+    /// document's buffer; its next save writes them through the
+    /// compare-and-swap.
+    pub fn collaborate(
+        &self,
+        doc: DocId,
+        buffer: &str,
+        edits: Vec<Edit>,
+    ) -> Result<Vec<Edit>, EngineError> {
+        let length = buffer.encode_utf16().count() as u32;
+        let mut from = 0;
+        for edit in &edits {
+            if edit.start < from || edit.end < edit.start || edit.end > length {
+                return Err(EngineError::Misplaced);
+            }
+            from = edit.end;
+        }
+        let serial = self.serial(doc).ok_or(EngineError::Closed)?;
+        let _serial = lock(&serial);
+        let (now, wall) = (self.clock)();
+        let (path, private, bom, base) = {
+            let mut state = self.state();
+            let d = state.docs.get_mut(&doc).ok_or(EngineError::Closed)?;
+            if d.read_only {
+                return Err(EngineError::NotText);
+            }
+            if d.collaborated
+                .is_some_and(|last| now.saturating_duration_since(last) < COLLABORATION_SNAPSHOT)
+            {
+                return Ok(edits);
+            }
+            d.collaborated = Some(now);
+            (d.path.clone(), d.private, d.bom, d.base.clone())
+        };
+        if !private && strip(&base, bom) != Some(buffer) {
+            self.store
+                .put(&path, &text::encode(buffer, bom), YOU, wall)?;
+        }
+        Ok(edits)
     }
 
     /// Moves the base to the landing's disk version and keeps its changes.
@@ -884,7 +957,8 @@ impl Engine {
 
     /// Decides a pending change or conflict, given the text of its live
     /// range, and returns the text that replaces that range, or None when
-    /// the buffer stays as it is.
+    /// the buffer stays as it is. An agent's change goes in the decisions
+    /// log, kept or reverted.
     pub fn decide(
         &self,
         doc: DocId,
@@ -892,21 +966,57 @@ impl Engine {
         decision: Decision,
         current: &str,
     ) -> Option<String> {
-        let mut state = self.state();
-        let d = state.docs.get_mut(&doc)?;
-        let at = d.changes.iter().position(|pending| pending.id == change)?;
-        if let (Kind::Edit { original, landed }, Decision::Other) = (&d.changes[at].kind, decision)
+        let (replacement, logged) = {
+            let mut state = self.state();
+            let d = state.docs.get_mut(&doc)?;
+            let at = d.changes.iter().position(|pending| pending.id == change)?;
+            let reverted = match (&d.changes[at].kind, decision) {
+                // A revert that would drop text typed inside the change leaves it pending.
+                (Kind::Edit { original, landed }, Decision::Other) => {
+                    Some(revert(original, landed, current)?)
+                }
+                _ => None,
+            };
+            let decided = d.changes.remove(at);
+            let kept = !matches!(
+                (&decided.kind, decision),
+                (Kind::Edit { .. }, Decision::Other) | (Kind::Conflict { .. }, Decision::Keep)
+            );
+            let excerpt = match &decided.kind {
+                Kind::Edit { landed, .. } => landed.clone(),
+                Kind::Conflict { theirs } => theirs.clone(),
+            };
+            let logged = match &decided.origin {
+                Origin::Agent { .. } if !d.private => {
+                    Some((decided.origin.label(), d.path.clone(), kept, excerpt))
+                }
+                _ => None,
+            };
+            let replacement = match (decided.kind, decision) {
+                (Kind::Edit { .. }, Decision::Other) => reverted,
+                (_, Decision::Keep) | (Kind::Edit { .. }, _) => None,
+                (Kind::Conflict { theirs }, Decision::Other) => Some(theirs),
+                (Kind::Conflict { theirs }, Decision::Both) => Some(both(current, &theirs)),
+            };
+            (replacement, logged)
+        };
+        if let Some((label, path, kept, excerpt)) = logged
+            && let Some((vendor, session)) = label.split_once(':')
         {
-            // A revert that would drop text typed inside the change leaves it pending.
-            let reverted = revert(original, landed, current)?;
-            d.changes.remove(at);
-            return Some(reverted);
+            // The decision stands without its line; only the agent's next read misses it.
+            let _ = decisions::append(
+                &self.root,
+                &decisions::Decision {
+                    vendor,
+                    session,
+                    file: &path,
+                    time: (self.clock)().1,
+                    kept,
+                    excerpt: &excerpt,
+                },
+            );
         }
-        match (d.changes.remove(at).kind, decision) {
-            (_, Decision::Keep) | (Kind::Edit { .. }, _) => None,
-            (Kind::Conflict { theirs }, Decision::Other) => Some(theirs),
-            (Kind::Conflict { theirs }, Decision::Both) => Some(both(current, &theirs)),
-        }
+        replacement
     }
 
     /// The text of `snapshot`, to replace the buffer as one undoable edit.
@@ -2343,6 +2453,9 @@ mod tests {
                 ),
                 Origin::External => {}
                 Origin::User => prop_assert!(false, "a landing named the user"),
+                Origin::Collaborator { .. } => {
+                    prop_assert!(false, "a landing named a collaborator")
+                }
             }
             Ok(())
         }

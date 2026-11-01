@@ -21,10 +21,10 @@ struct MarkdownDocumentTests {
         textView.setSelectedRange(NSRange(location: 7, length: 0))
         textView.insertText("!", replacementRange: textView.selectedRange())
         #expect(textView.string == "# Notes!\n")
-        #expect(textView.undoManager === textView.styler.undoManager)
-        textView.undoManager?.endUndoGrouping()
+        #expect(textView.history.undoManager === document.undoManager)
+        textView.history.undoManager.endUndoGrouping()
         #expect(document.isDocumentEdited)
-        textView.undoManager?.undo()
+        textView.history.undoManager.undo()
         #expect(textView.string == "# Notes\n")
         #expect(!document.isDocumentEdited)
     }

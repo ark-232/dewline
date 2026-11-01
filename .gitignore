@@ -18,6 +18,9 @@
 /app/Dewline.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/*
 !/app/Dewline.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 /app/Dewline/Info.plist
+/app/Dewline/Dewline.entitlements
+/app/QuickLook/Info.plist
+/app/QuickLook/DewlinePreview.entitlements
 
 # Xcode
 /build/

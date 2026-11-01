@@ -14,6 +14,15 @@ class CaretTextView: NSTextView {
         ThemeStore.shared.color(.accent)
     }
 
+    /// Vim's normal mode: a block over the character the caret sits on, in the accent, instead of the bar.
+    var blockCaret = false {
+        didSet {
+            guard blockCaret != oldValue else { return }
+            if !blockCaret { indicator?.displayMode = .automatic }
+            holdSolid()
+        }
+    }
+
     var indicator: NSTextInsertionIndicator? {
         subviews.lazy.compactMap { $0 as? NSTextInsertionIndicator }.first
     }
@@ -82,7 +91,7 @@ class CaretTextView: NSTextView {
         lastInput = .now()
         if solid {
             solid = false
-            indicator?.displayMode = .automatic
+            if !blockCaret { indicator?.displayMode = .automatic }
         }
         if idleTimer == nil { armIdleTimer() }
     }
@@ -122,7 +131,8 @@ class CaretTextView: NSTextView {
     /// NSTextView sets its indicator back to automatic whenever it updates it, and TextKit 2 does so on every
     /// layout pass; at idle the caret stays solid.
     private func holdSolid() {
-        guard solid, window?.isKeyWindow == true, window?.firstResponder === self else { return }
+        placeBlock()
+        guard !blockCaret, solid, window?.isKeyWindow == true, window?.firstResponder === self else { return }
         indicator?.displayMode = .visible
     }
 
@@ -236,6 +246,21 @@ class CaretTextView: NSTextView {
     private func caretRect(at location: Int, in window: NSWindow) -> NSRect {
         let rect = convert(window.convertFromScreen(firstRect(forCharacterRange: NSRange(location: location, length: 0), actualRange: nil)), from: nil)
         return NSRect(x: rect.minX - 1, y: rect.minY, width: 2, height: rect.height)
+    }
+
+    private func placeBlock() {
+        guard blockCaret, let window else { return effects.showBlock(nil, color: nil) }
+        indicator?.displayMode = .hidden
+        let text = textStorage!.mutableString
+        let location = selectedRange().location
+        let caret = caretRect(at: location, in: window)
+        var block = NSRect(x: caret.midX, y: caret.minY, width: max(caret.height * 0.45, 4), height: caret.height)
+        if location < text.length, text.character(at: location) != 10 {
+            let range = text.rangeOfComposedCharacterSequence(at: location)
+            let glyph = convert(window.convertFromScreen(firstRect(forCharacterRange: range, actualRange: nil)), from: nil)
+            if glyph.width > 0 { block = NSRect(x: glyph.minX, y: caret.minY, width: glyph.width, height: caret.height) }
+        }
+        effects.showBlock(block, color: accentColor.copy(alpha: 0.4))
     }
 
     private func line(around caret: NSRect) -> NSRect {

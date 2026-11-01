@@ -13,7 +13,7 @@ import Sparkle
 @Observable
 final class Updates: NSObject, NSMenuItemValidation, SPUUpdaterDelegate, SPUStandardUserDriverDelegate {
     static let shared = Updates(defaults: .standard)
-    static let lineText = "Dewline checks updates.dewline.dev once a day and downloads updates from GitHub."
+    static let lineText = "Dewline checks GitHub for updates once a day and downloads them from there."
     static let lineShownKey = "DewlineUpdateLineShown"
     static let betaKey = "DewlineBetaUpdates"
     static let stagedVersionKey = "DewlineUpdateStagedVersion"

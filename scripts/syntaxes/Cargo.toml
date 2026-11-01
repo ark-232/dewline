@@ -1,0 +1,11 @@
+[package]
+name = "syntaxes"
+description = "Writes app/Dewline/Syntaxes.packdump, the code syntaxes core::highlight loads. A build tool; nothing here ships."
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+syntect = { version = "=5.3.0", default-features = false, features = ["default-syntaxes", "yaml-load", "regex-onig"] }
+
+[workspace]

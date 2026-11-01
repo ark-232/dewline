@@ -190,8 +190,10 @@ final class FindInFilesController: NSViewController, NSSearchFieldDelegate, NSOu
         outlineView.sizeLastColumnToFit()
     }
 
-    /// Focuses the field with its text selected and searches again, since the files may have changed.
-    func begin() {
+    /// Focuses the field with its text selected, or with `query` in it, and searches again, since the files may have
+    /// changed.
+    func begin(_ query: String? = nil) {
+        if let query { field.stringValue = query }
         view.window?.makeFirstResponder(field)
         field.currentEditor()?.selectAll(nil)
         run(after: .zero)

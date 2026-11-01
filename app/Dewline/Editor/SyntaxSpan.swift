@@ -24,23 +24,3 @@ struct SyntaxSpan: Hashable, Sendable {
         )
     }
 }
-
-/// The spike's tokenizer, which spelling still reads.
-enum SpikeTokenizer {
-    /// Code, a link's or image's destination, a link reference definition, an autolink or HTML tag, and a wikilink's
-    /// target.
-    private static let literal = try! NSRegularExpression(pattern: [
-        "(?<!`)(`+)(?!`).+?(?<!`)\\1(?!`)",
-        "\\]\\([^)\\s]*",
-        "^ {0,3}\\[(?!\\^)[^\\]]+\\]:[ \\t]*\\S+",
-        "</?[A-Za-z][^<>]*>",
-        "\\[\\[[^\\]|]*",
-    ].joined(separator: "|"))
-
-    /// Ranges in one line that hold code or addresses rather than prose.
-    static func literals(in text: NSString, line: NSRange) -> [NSRange] {
-        literal.matches(in: text.substring(with: line), range: NSRange(location: 0, length: line.length)).map {
-            NSRange(location: $0.range.location + line.location, length: $0.range.length)
-        }
-    }
-}

@@ -97,14 +97,7 @@ rm ~/dewline-keys/*.pem
 </rss>
 ```
 
-Beside it, `firebase.json` publishes the repository root, which holds only `appcast.xml`, `pulled.txt` and `firebase.json`, with the feed uncached:
-
-```json
-{"hosting": {"public": ".", "ignore": ["firebase.json", "pulled.txt", "**/.*"],
-  "headers": [{"source": "/appcast.xml", "headers": [{"key": "Cache-Control", "value": "no-cache"}]}]}}
-```
-
-The Firebase project `dewline-updates` serves it at `updates.dewline.dev`. Its Workload Identity provider admits only this repository's `updates` environment, through a `feed-deploy` service account with Hosting deploy rights in that project alone; set the provider and the account as the `updates` environment's variables `FEED_WIF_PROVIDER` and `FEED_DEPLOY_SA`. The site does the same with `SITE_WIF_PROVIDER`, `SITE_DEPLOY_SA` and `SITE_PROJECT` in `site`.
+The app reads the feed from the site, `https://dewline.arkwerx.com/appcast.xml` (SUFeedURL), so a beta's items reach beta readers before any stable release exists. The release and pull `site` jobs copy the signed feed into `site/appcast.xml` on every channel, deploy, then check the live feed with `scripts/verify-feed.sh`. A deploy from a checkout without that file takes the feed down, so deploy the site only from those jobs. dewline-updates keeps the signed history each new feed is generated from. The site deploys to the Cloudflare Worker `dewline-site` (dewline.arkwerx.com) with `wrangler deploy`, using the `site` environment's `CLOUDFLARE_API_TOKEN` secret, a token that can deploy that Worker and nothing else.
 
 **The tap.** `ark-232/homebrew-tap` holds `Casks/dewline.rb` (spec section 3.6) with exactly one `version` and one `sha256` line, and CI that runs `brew style` and `brew audit --cask`.
 
