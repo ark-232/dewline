@@ -6,35 +6,37 @@ new IntersectionObserver((entries, observer) => {
   }
 }, { threshold: 0.5 }).observe(landing);
 
-// The page's dew line: the accent segment is the part of the page on screen, as in the app.
-const segment = document.querySelector(".pageline span");
+const header = document.querySelector(".top");
 let queued = false;
-function place() {
+function mark() {
   queued = false;
-  const page = document.documentElement.scrollHeight;
-  const track = segment.parentElement.clientWidth - 2 * segment.offsetLeft;
-  segment.style.width = `${(innerHeight / page) * track}px`;
-  segment.style.transform = `translateX(${(scrollY / page) * track}px)`;
+  header.classList.toggle("scrolled", scrollY > 0);
 }
-function queue() {
+addEventListener("scroll", () => {
   if (!queued) {
     queued = true;
-    requestAnimationFrame(place);
+    requestAnimationFrame(mark);
   }
-}
-addEventListener("scroll", queue, { passive: true });
-addEventListener("resize", queue);
-place();
+}, { passive: true });
+mark();
 
+const status = document.getElementById("copied");
 for (const button of document.querySelectorAll("[data-copy]")) {
-  const status = button.nextElementSibling;
+  const code = document.getElementById(button.dataset.copy);
+  let timer;
   button.addEventListener("click", async () => {
-    await navigator.clipboard.writeText(document.getElementById(button.dataset.copy).textContent);
+    try {
+      await navigator.clipboard.writeText(code.textContent);
+    } catch {
+      getSelection().selectAllChildren(code);
+      return;
+    }
     button.textContent = "Copied";
     status.textContent = "Copied";
-    setTimeout(() => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
       button.textContent = "Copy";
       status.textContent = "";
-    }, 2000);
+    }, 1600);
   });
 }
