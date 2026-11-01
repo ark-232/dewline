@@ -2,8 +2,9 @@ import SwiftUI
 
 struct AppearancePane: View {
     @Bindable var store: ThemeStore
+    let library: FontLibrary
     @Environment(\.colorScheme) private var scheme
-    @AppStorage("DewlineMotion") private var motion = Motion.calm
+    @State private var installing = false
 
     var body: some View {
         let excerpt = Excerpt.open
@@ -16,11 +17,6 @@ struct AppearancePane: View {
                         }
                     }
                 }
-            } footer: {
-                Text("Auto follows macOS. Every theme but Nord has a light and a dark version.")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            Section {
                 Picker(selection: $store.lightTheme) {
                     ForEach(Theme.all) { Text($0.name).tag($0) }
                     Divider()
@@ -35,62 +31,87 @@ struct AppearancePane: View {
                 } label: {
                     Label("In Dark", systemImage: "moon")
                 }
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 14), count: 3), spacing: 14) {
-                    ForEach(Theme.all) { theme in
-                        ThemeCard(theme: theme, store: store, excerpt: excerpt, dark: scheme == .dark)
-                    }
-                }
-                .padding(.vertical, 6)
-            } header: {
-                Text("Theme")
-            } footer: {
-                Text("Click a theme to use it in \(scheme == .dark ? "Dark" : "Light"). Control-click to pick the slot.")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            Section {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 14), count: 4), spacing: 14) {
-                    ForEach(Theme.devPack) { theme in
+                    ForEach(Theme.all + Theme.devPack) { theme in
                         ThemeCard(theme: theme, store: store, excerpt: excerpt, dark: scheme == .dark)
                     }
                 }
                 .padding(.vertical, 6)
             } header: {
-                Text("Dev Themes")
+                FontPreview(store: store, colors: scheme == .dark ? store.darkTheme.darkColors : store.lightTheme.lightColors)
             } footer: {
-                Text("Ports of each editor's own palette, code colors included. Nord is dark only, so it looks the same in either slot.")
+                Text("Auto follows macOS. Click a theme to use it in \(scheme == .dark ? "Dark" : "Light"); Control-click to pick the slot. The dev themes port each editor's own palette, and Nord is dark only.")
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            FontSlots(store: store, library: library, installing: $installing)
             Section {
-                ForEach(Writer.allCases.filter { $0 != .demo }) { writer in
-                    WriterRow(writer: writer, store: store, dark: scheme == .dark)
+                LabeledContent("Text size") {
+                    Stepper(value: $store.bodySize, in: ThemeStore.bodySizes, step: 1) {
+                        Text("\(Int(store.bodySize)) pt").monospacedDigit()
+                    }
+                    .accessibilityLabel("Text size")
+                    .accessibilityValue("\(Int(store.bodySize)) points")
                 }
-            } header: {
-                Text("Writers")
+                LabeledContent("Line height") {
+                    HStack(spacing: 10) {
+                        Slider(value: Binding { store.lineHeight } set: { store.lineHeight = ($0 * 100).rounded() / 100 }, in: ThemeStore.lineHeights) {
+                            EmptyView()
+                        } minimumValueLabel: {
+                            Text("Tight")
+                        } maximumValueLabel: {
+                            Text("Loose")
+                        }
+                        .accessibilityLabel("Line height")
+                        .accessibilityValue(store.lineHeight.formatted(.number.precision(.fractionLength(2))))
+                        Text(store.lineHeight, format: .number.precision(.fractionLength(2)))
+                            .monospacedDigit()
+                            .frame(width: 34, alignment: .trailing)
+                    }
+                    .frame(width: 300)
+                }
+                LabeledContent("Line width") {
+                    HStack(spacing: 10) {
+                        Slider(value: Binding { store.columnWidth } set: { store.columnWidth = $0.rounded() }, in: ThemeStore.columnWidths) {
+                            EmptyView()
+                        } minimumValueLabel: {
+                            Text("50")
+                        } maximumValueLabel: {
+                            Text("90")
+                        }
+                        .accessibilityLabel("Line width")
+                        .accessibilityValue("\(Int(store.columnWidth)) characters")
+                        Text("\(Int(store.columnWidth)) characters")
+                            .monospacedDigit()
+                            .frame(width: 92, alignment: .trailing)
+                    }
+                    .frame(width: 358)
+                }
             } footer: {
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text("Each writer's changes are marked in its color. A well sets the hue and strength; Dewline keeps the lightness so text on a mark stays readable. A hue within ΔE 8 of a color in your Light or Dark theme shows the clash.")
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Button("Restore Defaults") { store.writerHues = [:] }
-                        .disabled(store.writerHues.isEmpty)
-                }
-            }
-            Section {
-                Picker("Motion", selection: $motion) {
-                    Text("Off").tag(Motion.off)
-                    Text("Calm").tag(Motion.calm)
-                    Text("Lively").tag(Motion.lively)
-                }
-            } footer: {
-                Text("Calm streaks the caret to where a jump such as Find Next or Go to Line lands; Lively does it for clicks and long moves too. With Reduce Motion on, Dewline uses Off.")
+                Text("Line width counts characters per line at this size; a narrower window fills its width.")
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            RestoreDefaults {
+                let factory = ThemeStore.factory
+                store.appearance = factory.appearance
+                store.lightTheme = factory.lightTheme
+                store.darkTheme = factory.darkTheme
+                store.bodyFace = factory.bodyFace
+                store.headingFace = factory.headingFace
+                store.codeFace = factory.codeFace
+                store.bodySize = factory.bodySize
+                store.lineHeight = factory.lineHeight
+                store.columnWidth = factory.columnWidth
+            }
+        }
+        .sheet(isPresented: $installing) {
+            FontLibrarySheet(store: store, library: library)
         }
     }
 }
 
 /// A writer's name set as its insertion mark (a wash under a solid underline, dashed for an unknown app), a color well,
 /// and, when a theme color sits within ΔE 8, the clash and a button for the nearest clear hue.
-private struct WriterRow: View {
+struct WriterRow: View {
     let writer: Writer
     let store: ThemeStore
     let dark: Bool

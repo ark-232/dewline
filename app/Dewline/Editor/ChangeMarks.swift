@@ -21,7 +21,7 @@ struct MarkWriter: Equatable {
         }
     }
 
-    /// The writer's hue in Settings > Appearance, under the view's appearance.
+    /// The writer's hue in Settings > Agents (Collaboration for a collaborator), under the view's appearance.
     @MainActor var color: NSColor {
         ThemeStore.shared.writerColor(writer)
     }

@@ -50,6 +50,8 @@ struct HookStatus: Equatable, Sendable {
 }
 
 struct AgentsPane: View {
+    let store: ThemeStore
+    @Environment(\.colorScheme) private var scheme
     @State private var hooks = HookStatus(claude: false, codex: false)
     private let command = HookStatus.installCommand()
 
@@ -93,9 +95,25 @@ struct AgentsPane: View {
             } header: {
                 Text("Unknown writer")
             }
+            Section {
+                ForEach(Self.writers) { writer in
+                    WriterRow(writer: writer, store: store, dark: scheme == .dark)
+                }
+            } header: {
+                Text("Writers")
+            } footer: {
+                Text("Each writer's changes are marked in its color. A well sets the hue and strength; Dewline keeps the lightness so text on a mark stays readable. A hue within ΔE 8 of a color in your Light or Dark theme shows the clash.")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            RestoreDefaults {
+                store.writerHues = store.writerHues.filter { !Self.writers.contains($0.key) }
+            }
         }
         .task { hooks = await Task.detached { HookStatus.read() }.value }
     }
+
+    /// Every writer but the collaborator, whose color is in Collaboration, and the demo.
+    private static let writers = Writer.allCases.filter { $0 != .collaborator && $0 != .demo }
 
     private func installed(_ on: Bool) -> some View {
         Label(on ? "Installed" : "Not installed", systemImage: on ? "checkmark.circle.fill" : "circle.dashed")

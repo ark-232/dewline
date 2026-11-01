@@ -23,6 +23,8 @@ final class ThemeStore {
     }()
 
     static let didChange = Notification.Name("DewlineThemeDidChange")
+    /// The settings as a fresh install has them, for Restore Defaults.
+    static var factory: ThemeStore { ThemeStore(defaults: .factory) }
     static let bodySizes = 12.0...28.0
     static let lineHeights = 1.25...1.8
     static let columnWidths = 50.0...90.0
@@ -55,6 +57,10 @@ final class ThemeStore {
     var vimMode: Bool { didSet { save(vimMode, "VimMode") } }
     /// The system's smart quotes and dashes, outside code; off by default.
     var smartPunctuation: Bool { didSet { save(smartPunctuation, "SmartPunctuation") } }
+    /// Spelling marked as you type; on by default.
+    var spellCheck: Bool { didSet { save(spellCheck, "SpellCheck") } }
+    /// The spaces Tab inserts outside a list, or 0 for a tab character.
+    var tabWidth: Int { didSet { save(tabWidth, "TabWidth") } }
     /// The hues the owner picked, by writer, as chroma and hue; a writer without one keeps its default.
     var writerHues: [Writer: OKLCH] {
         didSet { save(Dictionary(uniqueKeysWithValues: writerHues.map { ($0.key.rawValue, [$0.value.c, $0.value.h]) }), "WriterHues") }
@@ -79,6 +85,8 @@ final class ThemeStore {
         headingStyle = string("HeadingStyle").flatMap(HeadingStyle.init) ?? .standard
         vimMode = defaults.bool(forKey: "DewlineVimMode")
         smartPunctuation = defaults.bool(forKey: "DewlineSmartPunctuation")
+        spellCheck = defaults.object(forKey: "DewlineSpellCheck") as? Bool ?? true
+        tabWidth = [2, 4].contains(defaults.integer(forKey: "DewlineTabWidth")) ? defaults.integer(forKey: "DewlineTabWidth") : 0
         let hues = defaults.dictionary(forKey: "DewlineWriterHues") as? [String: [Double]] ?? [:]
         writerHues = hues.reduce(into: [:]) { picks, entry in
             guard let writer = Writer(rawValue: entry.key), entry.value.count == 2 else { return }

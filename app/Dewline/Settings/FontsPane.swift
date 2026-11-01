@@ -1,17 +1,15 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct FontsPane: View {
+/// The body, heading and code faces and the pairings, as sections of Settings > Appearance. Install Fonts opens the
+/// catalog and the added fonts in a sheet.
+struct FontSlots: View {
     @Bindable var store: ThemeStore
     let library: FontLibrary
-    @Environment(\.colorScheme) private var scheme
-    @State private var filter = CatalogFilter.all
+    @Binding var installing: Bool
     @State private var applying: String?
     @State private var pairingFailure: String?
-    @State private var notice: String?
-    @State private var outcomes: [FontLibrary.Outcome] = []
-    @State private var importing = false
-    @State private var targeted = false
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         let colors = scheme == .dark ? store.darkTheme.darkColors : store.lightTheme.lightColors
@@ -23,96 +21,44 @@ struct FontsPane: View {
             ("System", Faces.system), ("Bundled", Faces.bundled), ("Catalog", library.installed.sorted()),
             ("Added", library.addedFamilies), ("This Mac", mac.all.filter { !ours.contains($0) }),
         ]
-        Form {
-            Section {
-                FacePicker(title: "Body", selection: $store.bodyFace, sections: text)
-                FacePicker(title: "Headings", selection: $store.headingFace, sections: text)
-                FacePicker(title: "Code", selection: $store.codeFace, sections: [
-                    ("System", ["SF Mono"]), ("Bundled", Faces.bundled), ("Catalog", catalogMono.sorted()),
-                    ("Added", addedMono.sorted()), ("This Mac", mac.monospaced.filter { !ours.contains($0) }),
-                ])
-            } header: {
-                FontPreview(store: store, colors: colors)
-            } footer: {
-                Group {
-                    if let notice {
-                        Label(notice, systemImage: "arrow.uturn.backward")
-                    } else {
-                        Text("Code is sized to the body font's x-height. Source mode (⌥⌘U) sets the whole page in the code font.")
-                    }
-                }
+        Section {
+            FacePicker(title: "Body", selection: $store.bodyFace, sections: text)
+            FacePicker(title: "Headings", selection: $store.headingFace, sections: text)
+            FacePicker(title: "Code", selection: $store.codeFace, sections: [
+                ("System", ["SF Mono"]), ("Bundled", Faces.bundled), ("Catalog", catalogMono.sorted()),
+                ("Added", addedMono.sorted()), ("This Mac", mac.monospaced.filter { !ours.contains($0) }),
+            ])
+            LabeledContent("More fonts") {
+                Button("Install Fonts…") { installing = true }
+            }
+        } header: {
+            Text("Fonts")
+        } footer: {
+            Text("Code is sized to the body font's x-height. Source mode (⌥⌘U) sets the whole page in the code font.")
                 .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            Section {
-                HStack(alignment: .top, spacing: 14) {
-                    ForEach(Pairing.all) { pairing in
-                        PairingButton(pairing: pairing, store: store, colors: colors, busy: applying == pairing.name) {
-                            apply(pairing)
-                        }
-                        .disabled(applying != nil)
-                    }
-                }
-                .padding(.vertical, 6)
-            } header: {
-                Text("Pairings")
-            } footer: {
-                Group {
-                    if let pairingFailure {
-                        Label(pairingFailure, systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.red)
-                    } else {
-                        Text("A pairing sets the body, heading and code fonts at once, downloading any it needs from the catalog.")
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            Section {
-                Picker("Show", selection: $filter) {
-                    ForEach(CatalogFilter.allCases) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                let families = FontCatalog.families.filter { filter.includes($0, installed: library.installed.contains($0.name)) }
-                ForEach(families) { family in
-                    CatalogRow(family: family, library: library, store: store) { remove(family.name) }
-                }
-                if families.isEmpty {
-                    Text("Nothing installed from the catalog yet.")
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                }
-            } header: {
-                Text("Catalog")
-            } footer: {
-                Text("Fonts download from google/fonts only when you click Install, and each file must match the catalog's SHA-256 before anything is installed.")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            Section {
-                ForEach(library.addedFamilies, id: \.self) { family in
-                    AddedRow(family: family, files: library.fonts(of: family), monospaced: addedMono.contains(family), library: library, store: store) {
-                        remove(family)
-                    }
-                }
-                DropZone(targeted: targeted) { importing = true }
-                ForEach(Array(outcomes.enumerated()), id: \.offset) { _, outcome in
-                    OutcomeRow(outcome: outcome)
-                }
-            } header: {
-                Text("Added")
-            } footer: {
-                Text("Fonts install for Dewline only. Other apps can't see them unless you choose Install for All Apps.")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
         }
-        .frame(minHeight: 520, idealHeight: 760)
-        .dropDestination(for: URL.self) { urls, _ in
-            outcomes = library.add(urls)
-            return true
-        } isTargeted: {
-            targeted = $0
-        }
-        .fileImporter(isPresented: $importing, allowedContentTypes: [.font], allowsMultipleSelection: true) { result in
-            if case .success(let urls) = result { outcomes = library.add(urls) }
+        Section {
+            HStack(alignment: .top, spacing: 14) {
+                ForEach(Pairing.all) { pairing in
+                    PairingButton(pairing: pairing, store: store, colors: colors, busy: applying == pairing.name) {
+                        apply(pairing)
+                    }
+                    .disabled(applying != nil)
+                }
+            }
+            .padding(.vertical, 6)
+        } header: {
+            Text("Pairings")
+        } footer: {
+            Group {
+                if let pairingFailure {
+                    Label(pairingFailure, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                } else {
+                    Text("A pairing sets the body, heading and code fonts at once, downloading any it needs from the catalog.")
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -140,10 +86,87 @@ struct FontsPane: View {
         store.bodyFace = pairing.body
         store.headingFace = pairing.heading
         store.codeFace = pairing.code
-        notice = nil
+    }
+}
+
+/// Settings > Appearance > Install Fonts: the catalog and the fonts added from files.
+struct FontLibrarySheet: View {
+    let store: ThemeStore
+    let library: FontLibrary
+    @Environment(\.dismiss) private var dismiss
+    @State private var filter = CatalogFilter.all
+    @State private var notice: String?
+    @State private var outcomes: [FontLibrary.Outcome] = []
+    @State private var importing = false
+    @State private var targeted = false
+
+    var body: some View {
+        let addedMono = Set(library.added.filter(\.monospaced).map(\.family))
+        VStack(spacing: 0) {
+            Form {
+                Section {
+                    Picker("Show", selection: $filter) {
+                        ForEach(CatalogFilter.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    let families = FontCatalog.families.filter { filter.includes($0, installed: library.installed.contains($0.name)) }
+                    ForEach(families) { family in
+                        CatalogRow(family: family, library: library, store: store) { remove(family.name) }
+                    }
+                    if families.isEmpty {
+                        Text("Nothing installed from the catalog yet.")
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                } header: {
+                    Text("Catalog")
+                } footer: {
+                    Text("Fonts download from google/fonts only when you click Install, and each file must match the catalog's SHA-256 before anything is installed.")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                Section {
+                    ForEach(library.addedFamilies, id: \.self) { family in
+                        AddedRow(family: family, files: library.fonts(of: family), monospaced: addedMono.contains(family), library: library, store: store) {
+                            remove(family)
+                        }
+                    }
+                    DropZone(targeted: targeted) { importing = true }
+                    ForEach(Array(outcomes.enumerated()), id: \.offset) { _, outcome in
+                        OutcomeRow(outcome: outcome)
+                    }
+                } header: {
+                    Text("Added")
+                } footer: {
+                    Text("Fonts install for Dewline only. Other apps can't see them unless you choose Install for All Apps.")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .formStyle(.grouped)
+            HStack {
+                if let notice {
+                    Label(notice, systemImage: "arrow.uturn.backward")
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.defaultAction)
+            }
+            .padding(16)
+        }
+        .frame(width: 600, height: 620)
+        .dropDestination(for: URL.self) { urls, _ in
+            outcomes = library.add(urls)
+            return true
+        } isTargeted: {
+            targeted = $0
+        }
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.font], allowsMultipleSelection: true) { result in
+            if case .success(let urls) = result { outcomes = library.add(urls) }
+        }
     }
 
-    /// Moves any slot off `family` before its files go, and says so under the slots.
+    /// Moves any slot off `family` before its files go, and says so.
     private func remove(_ family: String) {
         let slots = store.release(family)
         do {
@@ -453,9 +476,9 @@ private struct OutcomeRow: View {
     }
 }
 
-/// A heading, a paragraph and a code line set as the editor sets them, on the current theme's paper. It heads the
-/// face pickers' section rather than sitting in a section of its own, so it is one card, not a card in a card.
-private struct FontPreview: View {
+/// A heading, a paragraph and a code line set as the editor sets them, on the current theme's paper. It heads
+/// Appearance's first section rather than sitting in a section of its own, so it is one card, not a card in a card.
+struct FontPreview: View {
     let store: ThemeStore
     let colors: [Token: NSColor]
 
