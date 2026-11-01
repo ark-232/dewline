@@ -86,26 +86,25 @@
         <h2>When something else writes to your file</h2>
         <div class="cols">
           <div class="col">
-            <div class="spec spec-empty" aria-hidden="true"></div>
             <h3>Claude edits the plan while you type in it.</h3>
             <p>The edit appears in place. Your cursor, selection and unsaved text stay where they were.</p>
           </div>
           <div class="col">
+            <h3>Three tools write to the same folder.</h3>
+            <p>Each change carries its writer's name, or Unknown when Dewline can't tell who wrote it.</p>
             <div class="spec" aria-hidden="true">
               <span class="chip w-claude"><i class="dot"></i><span>Claude</span></span>
               <span class="chip w-codex"><i class="dot"></i><span>Codex</span></span>
               <span class="chip w-git"><i class="dot"></i><span>git</span></span>
               <span class="chip w-unknown"><i class="dot"></i><span>Unknown</span></span>
             </div>
-            <h3>Three tools write to the same folder.</h3>
-            <p>Each change carries its writer's name, or Unknown when Dewline can't tell who wrote it.</p>
           </div>
           <div class="col">
+            <h3>You want half of it back.</h3>
+            <p>Dewline snapshots the file before any outside write lands. Revert restores what the agent replaced and leaves what you typed since.</p>
             <div class="spec" aria-hidden="true">
               <span class="keys"><span class="k keep">Keep</span><span class="k">Revert</span></span>
             </div>
-            <h3>You want half of it back.</h3>
-            <p>Dewline snapshots the file before any outside write lands. Revert restores what the agent replaced and leaves what you typed since.</p>
           </div>
         </div>
       </div>
@@ -118,7 +117,7 @@
         <h2>It saves exactly what you wrote.</h2>
         <div class="split-body">
           <p>Dewline opens any <code>.md</code> file where it lives, Obsidian vaults included. Saves are byte-identical, and the change marks never enter the file.</p>
-          <p class="mono">No account. No telemetry.</p>
+          <p class="facts">No account. No telemetry.</p>
         </div>
       </div>
     </div>
@@ -129,10 +128,12 @@
       <div class="sec-in split">
         <h2>Also in the app</h2>
         <div class="split-body">
-          <p class="features">Live inline rendering&nbsp;<span class="sep">·</span> Source mode&nbsp;<span class="sep">·</span> Vim mode&nbsp;<span class="sep">·</span> Mermaid diagrams and math without JavaScript&nbsp;<span class="sep">·</span> Tables&nbsp;<span class="sep">·</span> Wikilinks&nbsp;<span class="sep">·</span> Review Changes across a folder (<kbd>⇧⌘R</kbd>)&nbsp;<span class="sep">·</span> Agent Files sidebar for CLAUDE.md, AGENTS.md and Cursor rules&nbsp;<span class="sep">·</span> Quick Look&nbsp;<span class="sep">·</span> HTML, PDF and DOCX export&nbsp;<span class="sep">·</span> Live collaboration by invite link&nbsp;<span class="sep">·</span> Six themes</p>
+          <p class="features">Live preview&nbsp;<span class="sep">·</span> Source and Vim modes&nbsp;<span class="sep">·</span> Mermaid and math&nbsp;<span class="sep">·</span> Wikilinks&nbsp;<span class="sep">·</span> Review Changes (<kbd>⇧⌘R</kbd>)&nbsp;<span class="sep">·</span> Agent Files sidebar&nbsp;<span class="sep">·</span> Quick Look&nbsp;<span class="sep">·</span> HTML, PDF, DOCX export&nbsp;<span class="sep">·</span> Live collaboration&nbsp;<span class="sep">·</span> Six themes</p>
           <p>The dewline CLI hands your decisions back to the agent.</p>
-          <pre class="term" tabindex="0"><code><span class="p">$</span> dewline changes --json   <span class="c"># what you kept and reverted</span>
-<span class="p">$</span> dewline mcp              <span class="c"># the same, as an MCP server</span></code></pre>
+          <pre class="term" tabindex="0"><code><span class="c"># what you kept and reverted</span>
+<span class="p">$</span> dewline changes --json
+<span class="c"># the same, as an MCP server</span>
+<span class="p">$</span> dewline mcp</code></pre>
         </div>
       </div>
     </div>
@@ -143,12 +144,7 @@
       <p class="close-line">Nothing changes behind your back.</p>
       <div class="get">
         <a class="btn" href="https://github.com/ark-232/dewline/releases/latest">Download for macOS 26</a>
-        <div class="brew">
-          <code id="brew2">brew install --cask ark-232/tap/dewline</code>
-          <button type="button" class="copy" data-copy="brew2" aria-label="Copy the Homebrew command">Copy</button>
-        </div>
       </div>
-      <p class="meta mono">macOS 26 or later · Apple Silicon and Intel · Free and source-available</p>
     </div>
   </section>
 </main>
