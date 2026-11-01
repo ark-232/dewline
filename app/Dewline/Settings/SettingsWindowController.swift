@@ -8,9 +8,14 @@ final class SettingsWindowController: NSWindowController {
     static let paneKey = "DewlineSettingsPane"
 
     @objc static func showSettings(_ sender: Any?) {
+        let opening = shared == nil
         let controller = shared ?? SettingsWindowController()
         shared = controller
         controller.showWindow(sender)
+        // The window opens with nothing focused; Tab moves into the pane list.
+        if opening {
+            Task { @MainActor in controller.window?.makeFirstResponder(nil) }
+        }
     }
 
     private convenience init() {
@@ -119,8 +124,8 @@ private struct SettingsRoot: View {
     }
 }
 
-/// The panes as rows: Bricolage 13 in `ink2`, the open pane in `ink` on the signal wash with the tick. The up and down
-/// arrows move through them.
+/// The panes as rows: Bricolage 13 in `ink2`, the open pane in `ink` on the signal wash with the tick, which widens
+/// to 3 pt while the list has focus. The up and down arrows move through them.
 private struct PaneList: View {
     @Binding var selection: SettingsPane
 
@@ -176,13 +181,11 @@ private struct PaneRow: View {
                         .overlay(alignment: .leading) {
                             RoundedRectangle(cornerRadius: 1)
                                 .fill(Station.color(.signal))
-                                .frame(width: contrast == .increased ? 3 : 2, height: 14)
+                                .frame(width: contrast == .increased || focused ? 3 : 2, height: 14)
                                 .padding(.leading, 4)
                         }
                 }
             }
-            // Every row hears the focusable list's focus; only the open pane's row shows it.
-            .overlay { FocusRing(on: focused && selected) }
             .contentShape(.rect)
             .focusEffectDisabled()
     }
