@@ -51,6 +51,35 @@ enum Review {
         }
     }
 
+    /// Next Change and Previous Change: reveals the marked change after or before the caret, then the first or last
+    /// one in each of the window's other tabs in order, wrapping back to `textView`'s file.
+    static func step(from textView: EditorTextView, forward: Bool) {
+        guard let live = textView.marks.live else { return }
+        let files = files(in: textView.window)
+        let caret = textView.selectedRange().location
+        func marked(_ file: LiveFile) -> [UInt64] {
+            file.changes.filter(\.value.marked).sorted { $0.value.range.location < $1.value.range.location }.map(\.key)
+        }
+        let here = marked(live)
+        let ahead = here.filter { id in
+            let at = live.changes[id]!.range.location
+            return forward ? at > caret : at < caret
+        }
+        if let id = forward ? ahead.first : ahead.last { return live.reveal(id, caret: true) }
+        let start = files.firstIndex { $0 === live } ?? 0
+        for offset in 1..<max(files.count, 1) {
+            let file = files[(start + (forward ? offset : files.count - offset)) % files.count]
+            let ids = marked(file)
+            if let id = forward ? ids.first : ids.last { return file.reveal(id, caret: true) }
+        }
+        if let id = forward ? here.first : here.last { live.reveal(id, caret: true) }
+    }
+
+    /// Whether any of the window's tabs holds a marked change.
+    static func hasMarked(in window: NSWindow?) -> Bool {
+        files(in: window).contains { $0.changes.values.contains(where: \.marked) }
+    }
+
     /// A session's turn ended: each window holding its changes shows the finished line. The landing its last write
     /// started gets 500 ms to arrive first.
     static func finished(vendor: ControlSocket.Claim.Vendor, session: String) {
@@ -145,8 +174,8 @@ final class FinishedLine: NSView {
 }
 
 /// Review Changes (Shift-Cmd-R): every undecided marked change in the main window's open files, by writer session,
-/// then file, then change. A click jumps to the change; Keep and Revert decide one, and with Option every change of
-/// its session.
+/// then file, then change. A click jumps to the change; Keep and Revert decide one, and with Option every change in
+/// its file.
 @MainActor
 final class ReviewPanel: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate {
     static let shared = ReviewPanel()
@@ -300,18 +329,10 @@ final class ReviewPanel: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegat
         }
     }
 
-    /// Keep or Revert on a change's row; with Option, every change of its session in this window.
+    /// Keep or Revert on a change's row; with Option, Keep All or Revert All in its file.
     fileprivate func decide(_ live: LiveFile, _ id: UInt64, keep: Bool) {
-        var targets = [(live, id)]
-        if NSEvent.modifierFlags.contains(.option), let origin = live.changes[id]?.origin {
-            let key = Review.key(origin)
-            targets = files.flatMap { file in
-                file.changes.filter { $0.value.marked && Review.key($0.value.origin) == key }.keys.map { (file, $0) }
-            }
-        }
-        for (file, id) in targets {
-            keep ? file.keep(id) : file.revert(id)
-        }
+        if NSEvent.modifierFlags.contains(.option) { return live.decideAll(keep: keep) }
+        keep ? live.keep(id) : live.revert(id)
     }
 
     // MARK: Outline
@@ -358,7 +379,7 @@ final class ReviewPanel: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegat
             row.addDecisions(
                 keep: { [weak self, weak live] in if let live { self?.decide(live, id, keep: true) } },
                 revert: { [weak self, weak live] in if let live { self?.decide(live, id, keep: false) } })
-            row.toolTip = "Line \(live.line(id)). Option-click Keep or Revert for every change in this session."
+            row.toolTip = "Line \(live.line(id)). Option-click Keep or Revert for every change in this file."
             return row
         }
     }

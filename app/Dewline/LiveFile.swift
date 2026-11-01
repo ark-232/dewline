@@ -449,6 +449,16 @@ final class LiveFile {
         decide(change, changes[change]?.conflict == true ? .keep : .other)
     }
 
+    /// Keep All and Revert All: decides every marked change in the file, last first, as one undoable edit.
+    func decideAll(keep: Bool) {
+        guard let textView = document?.textView else { return }
+        let marked = changes.filter(\.value.marked).sorted { $0.value.range.location > $1.value.range.location }.map(\.key)
+        guard !marked.isEmpty else { return }
+        textView.history.perform(keep ? "Keep All Changes" : "Revert All Changes") {
+            for id in marked { keep ? self.keep(id) : self.revert(id) }
+        }
+    }
+
     /// The change's first line of text, for a list: what it put there, else what it took out.
     func excerpt(_ change: UInt64) -> String {
         guard let pending = changes[change], let text = document?.textView?.string as NSString? else { return "" }

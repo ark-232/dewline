@@ -88,6 +88,10 @@ final class EditorTextView: CaretTextView {
         marks.wantsLayer = true
         addSubview(marks, positioned: .below, relativeTo: nil)
         applyTheme()
+        // The product's own name is not a misspelling, in any document.
+        for word in ["Dewline", "dewline"] {
+            NSSpellChecker.shared.ignoreWord(word, inSpellDocumentWithTag: spellCheckerDocumentTag)
+        }
         NotificationCenter.default.addObserver(self, selector: #selector(themeDidChange(_:)), name: ThemeStore.didChange, object: nil)
     }
 
@@ -316,6 +320,26 @@ final class EditorTextView: CaretTextView {
     /// Option-Cmd-Delete.
     @objc func revertChange(_ sender: Any?) {
         marks.revertAtCaret()
+    }
+
+    /// Shift-Cmd-Return: keeps every marked change in this file.
+    @objc func keepAllChanges(_ sender: Any?) {
+        marks.live?.decideAll(keep: true)
+    }
+
+    /// Option-Shift-Cmd-Delete: reverts every marked change in this file.
+    @objc func revertAllChanges(_ sender: Any?) {
+        marks.live?.decideAll(keep: false)
+    }
+
+    /// Control-Cmd-Down.
+    @objc func nextChange(_ sender: Any?) {
+        Review.step(from: self, forward: true)
+    }
+
+    /// Control-Cmd-Up.
+    @objc func previousChange(_ sender: Any?) {
+        Review.step(from: self, forward: false)
     }
 
     func storageDidEdit(_ range: NSRange, delta: Int) {
@@ -608,6 +632,10 @@ final class EditorTextView: CaretTextView {
             return marks.changeAtCaret != nil
         }
         switch menuItem.action {
+        case #selector(keepAllChanges(_:)), #selector(revertAllChanges(_:)):
+            return marks.live?.changes.values.contains(where: \.marked) == true
+        case #selector(nextChange(_:)), #selector(previousChange(_:)):
+            return Review.hasMarked(in: window)
         case #selector(toggleSource(_:)): menuItem.state = styler.showsSource ? .on : .off
         case #selector(toggleFocusMode(_:)): menuItem.state = focusMode ? .on : .off
         case #selector(toggleTypewriterMode(_:)): menuItem.state = typewriterMode ? .on : .off
