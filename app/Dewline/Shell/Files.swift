@@ -228,7 +228,7 @@ func firstProseLine(of text: String) -> String? {
 }
 
 /// `markdown` without link targets, wikilink brackets and emphasis or code markers.
-private func plainInline(_ markdown: String) -> String {
+func plainInline(_ markdown: String) -> String {
     markdown
         .replacingOccurrences(of: #"!?\[([^\]]*)\]\([^)]*\)"#, with: "$1", options: .regularExpression)
         .replacingOccurrences(of: #"\[\[([^\]|]*)(?:\|([^\]]*))?\]\]"#, with: "$1", options: .regularExpression)
