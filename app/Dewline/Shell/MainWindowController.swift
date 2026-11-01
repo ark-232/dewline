@@ -3,6 +3,7 @@ import MdCore
 
 /// One tab: the sidebar beside the open file, or beside an empty page in a folder window until a file opens. The
 /// window is Station's: no toolbar, a title band on the theme's frame, and the sidebar and the editor as two islands.
+/// Each tab has its own window; its `TabSet` keeps only the selected one on screen and draws the tab row.
 final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuItemValidation {
     /// Every tab, kept here because a folder window has no document to own its controller.
     private static var all: Set<MainWindowController> = []
@@ -13,9 +14,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     private let sidebar: SidebarViewController
     private let split = StationSplitController()
     private let band: TitleBand
-    /// The editor island: the horizon along its top, the page, and the Keep/Revert bar along its bottom.
+    /// The editor island: the tab row along its top with the horizon on its bottom edge, the page, and the Keep/Revert
+    /// bar along its bottom.
     private let editor = IslandView(.islandEditor)
+    private let tabRow = TabRow()
     private let horizon = HorizonView()
+    /// This window's tabs, shared with the tabs beside this one.
+    private(set) var tabs: TabSet!
     private let keepBar = KeepBar()
     private let page = NSView()
     private var pageContent: NSView?
@@ -32,7 +37,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     private var countUpdate: Task<Void, Never>?
     private var edited = false
 
-    init(folder: Folder?) {
+    /// A tab beside `neighbor`, in its window, or a window of its own.
+    init(folder: Folder?, joining neighbor: MainWindowController? = nil) {
         self.folder = folder
         index = folder.map(FolderIndex.of)
         sidebar = SidebarViewController(folder: folder)
@@ -59,8 +65,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         window.contentViewController = root
         window.setContentSize(NSSize(width: 1000, height: 700))
         window.contentMinSize = NSSize(width: 560, height: 360)
-        window.tabbingMode = .preferred
-        window.tabbingIdentifier = folder.map { "folder " + $0.url.path } ?? "files"
+        // Dewline draws the tabs; the system's tab bar can't take Station's look.
+        window.tabbingMode = .disallowed
         // Resume reopens every window at launch, so AppKit restores none.
         window.isRestorable = false
         window.titleVisibility = .hidden
@@ -68,14 +74,25 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         window.backgroundColor = Chrome.color(.frame)
         window.identifier = NSUserInterfaceItemIdentifier("Document")
         MainWindowController.lay(band: band, split: split.view, editor: editor, in: root.view, window: window)
-        MainWindowController.lay(horizon: horizon, page: page, bar: keepBar, in: editor)
+        MainWindowController.lay(tabs: tabRow, horizon: horizon, page: page, bar: keepBar, in: editor)
         sidebar.view.setFrameSize(NSSize(width: 248, height: sidebar.view.frame.height))
-        if let front = NSApp.orderedWindows.first(where: { $0.windowController is MainWindowController }) {
-            window.cascadeTopLeft(from: front.cascadeTopLeft(from: .zero))
+        if let front = neighbor?.window ?? NSApp.orderedWindows.first(where: { $0.isVisible && $0.windowController is MainWindowController }) {
+            if neighbor == nil {
+                window.cascadeTopLeft(from: front.cascadeTopLeft(from: .zero))
+            } else {
+                window.setFrame(front.frame, display: false)
+            }
         } else {
             window.center()
         }
         super.init(window: window)
+        if let neighbor {
+            tabs = neighbor.tabs
+            tabs.insert(self, after: neighbor)
+        } else {
+            tabs = TabSet(self)
+        }
+        tabRow.tabs = tabs
         window.delegate = self
         sidebar.open = { [weak self] url, newTab in self?.open(url, newTab: newTab) }
         sidebar.jump = { [weak self] heading in self?.jump(to: heading) }
@@ -110,7 +127,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     }
 
     /// The band across the top of the frame; under it the islands, 6 pt from the window's sides and bottom, and below
-    /// the system's tab bar when the window shows one.
+    /// the content area's top.
     private static func lay(band: TitleBand, split: NSView, editor: NSView, in frame: NSView, window: NSWindow) {
         for view in [band, split] {
             view.translatesAutoresizingMaskIntoConstraints = false
@@ -135,17 +152,22 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         band.align(with: editor)
     }
 
-    private static func lay(horizon: HorizonView, page: NSView, bar: KeepBar, in island: NSView) {
-        for view in [horizon, page, bar] {
+    private static func lay(tabs: TabRow, horizon: HorizonView, page: NSView, bar: KeepBar, in island: NSView) {
+        for view in [tabs, page, bar, horizon] {
             view.translatesAutoresizingMaskIntoConstraints = false
             island.addSubview(view)
         }
         NSLayoutConstraint.activate([
-            horizon.topAnchor.constraint(equalTo: island.topAnchor),
+            tabs.topAnchor.constraint(equalTo: island.topAnchor),
+            tabs.leadingAnchor.constraint(equalTo: island.leadingAnchor),
+            tabs.trailingAnchor.constraint(equalTo: island.trailingAnchor),
+            tabs.heightAnchor.constraint(equalToConstant: TabRow.height),
+            // The horizon's line runs along the tab row's bottom edge, over the page's top.
+            horizon.centerYAnchor.constraint(equalTo: tabs.bottomAnchor),
             horizon.leadingAnchor.constraint(equalTo: island.leadingAnchor),
             horizon.trailingAnchor.constraint(equalTo: island.trailingAnchor),
             horizon.heightAnchor.constraint(equalToConstant: HorizonView.height),
-            page.topAnchor.constraint(equalTo: horizon.bottomAnchor),
+            page.topAnchor.constraint(equalTo: tabs.bottomAnchor),
             page.leadingAnchor.constraint(equalTo: island.leadingAnchor),
             page.trailingAnchor.constraint(equalTo: island.trailingAnchor),
             page.bottomAnchor.constraint(equalTo: bar.topAnchor),
@@ -160,6 +182,29 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         guard dirtyFlag != edited else { return }
         edited = dirtyFlag
         updateBreadcrumbs()
+        tabs?.post()
+    }
+
+    /// The tab's name: its file's, or its folder's while the page is empty.
+    var tabName: String {
+        (document as? NSDocument)?.displayName ?? folder.map { FileManager.default.displayName(atPath: $0.url.path) } ?? "Untitled"
+    }
+
+    /// The tab's dot: the writer's color while an agent's changes wait, `ink2` for unsaved edits, else none.
+    var tabDot: NSColor? {
+        let live = (document as? MarkdownDocument)?.live
+        if let change = live?.changes.values.filter(\.marked).min(by: { $0.range.location < $1.range.location }) {
+            return MarkWriter(change.origin).color
+        }
+        return edited ? Chrome.color(.ink2) : nil
+    }
+
+    @objc func showNextTab(_ sender: Any?) {
+        tabs.tab(1)?.showWindow(sender)
+    }
+
+    @objc func showPreviousTab(_ sender: Any?) {
+        tabs.tab(-1)?.showWindow(sender)
     }
 
     func windowWillEnterFullScreen(_ notification: Notification) {
@@ -192,7 +237,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         band.show(people: people)
     }
 
+    /// Selects this tab, in its window's place, and brings it front.
     override func showWindow(_ sender: Any?) {
+        tabs.select(self)
         super.showWindow(sender)
         (NSApp.delegate as? AppDelegate)?.closeLaunchWindow()
         if let window { Updates.shared.windowDidShow(window) }
@@ -249,6 +296,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         }
         updateBreadcrumbs()
         countWords()
+        tabs?.post()
         window?.makeFirstResponder(textView)
     }
 
@@ -281,7 +329,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     /// Opens `url` here, in a new tab when asked or when this tab's text has edits, or selects its tab.
     func open(_ url: URL, newTab: Bool) {
         if let open = NSDocumentController.shared.document(for: url) {
-            open.windowControllers.first?.window?.makeKeyAndOrderFront(nil)
+            open.showWindows()
             return
         }
         guard let document = Self.load(url) else { return }
@@ -325,10 +373,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
 
     @discardableResult
     private func addTab(_ document: MarkdownDocument) -> MainWindowController {
-        let tab = MainWindowController(folder: folder)
+        let tab = MainWindowController(folder: folder, joining: self)
         tab.display(document)
-        window?.addTabbedWindow(tab.window!, ordered: .above)
-        tab.window?.makeKeyAndOrderFront(nil)
+        tab.showWindow(nil)
         return tab
     }
 
@@ -383,7 +430,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         var tab = self
         if (document as? NSDocument)?.fileURL?.standardizedFileURL != entry.url.standardizedFileURL {
             if let open = NSDocumentController.shared.document(for: entry.url) {
-                open.windowControllers.first?.window?.makeKeyAndOrderFront(nil)
+                open.showWindows()
                 return
             }
             guard let document = Self.load(entry.url) else { return }
@@ -406,6 +453,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         case #selector(goBack(_:)): history.canGoBack
         case #selector(goForward(_:)): history.canGoForward
         case #selector(findInFiles(_:)): folder != nil
+        case #selector(showNextTab(_:)), #selector(showPreviousTab(_:)): tabs.tabs.count > 1
         default: true
         }
     }
@@ -420,6 +468,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             names = [name]
         }
         band.show(path: names, edited: edited)
+        updateMeta()
     }
 
     /// Lists the Markdown files of the clicked folder, or of the file's folder, under the crumb.
@@ -452,19 +501,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     static func session() -> Session {
         var windows: [Session.Window] = []
         var seen: Set<ObjectIdentifier> = []
-        for window in NSApp.orderedWindows.reversed() where window.windowController is MainWindowController {
-            let group = window.tabGroup?.windows ?? [window]
-            guard seen.insert(ObjectIdentifier(group[0])).inserted else { continue }
-            // The selected tab is the group's window in front.
-            let front = window.tabGroup?.selectedWindow ?? window
-            let tabs = group.compactMap { $0.windowController as? MainWindowController }
-            let saved = tabs.compactMap { tab -> (Session.Tab, NSWindow)? in
+        for window in NSApp.orderedWindows.reversed() {
+            guard let set = (window.windowController as? MainWindowController)?.tabs, seen.insert(ObjectIdentifier(set)).inserted else { continue }
+            let saved = set.tabs.compactMap { tab -> (Session.Tab, MainWindowController)? in
                 guard let url = (tab.document as? NSDocument)?.fileURL, let place = tab.place else { return nil }
-                return (Session.Tab(path: url.path, place: place), tab.window!)
+                return (Session.Tab(path: url.path, place: place), tab)
             }
-            let folder = tabs.first?.folder?.url.path
+            let folder = set.tabs.first?.folder?.url.path
             guard folder != nil || !saved.isEmpty else { continue }
-            let selected = saved.firstIndex { $0.1 === front } ?? 0
+            let selected = saved.firstIndex { $0.1 === set.selected } ?? 0
             windows.append(Session.Window(folder: folder, tabs: saved.map(\.0), selected: selected))
         }
         return Session(windows: windows)
@@ -484,21 +529,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
                 guard files.fileExists(atPath: tab.path), NSDocumentController.shared.document(for: url) == nil,
                     let document = load(url)
                 else { continue }
-                let controller = MainWindowController(folder: folder)
+                let controller = MainWindowController(folder: folder, joining: first?.tabs.tabs.last)
                 controller.display(document)
-                if let first {
-                    first.window?.addTabbedWindow(controller.window!, ordered: .above)
-                } else {
-                    controller.showWindow(nil)
-                    first = controller
-                }
+                controller.showWindow(nil)
+                if first == nil { first = controller }
                 controller.restore(tab.place)
                 if index == saved.selected || selected == nil { selected = controller }
             }
             if first == nil, let folder {
                 MainWindowController(folder: folder).showWindow(nil)
             }
-            selected?.window?.makeKeyAndOrderFront(nil)
+            selected?.showWindow(nil)
         }
     }
 
@@ -536,7 +577,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             guard !Task.isCancelled else { return }
             let words = WordCount.label(total: count.total, selected: selection.length > 0 ? count.selected : nil)
             self.window?.subtitle = words
+            self.updateMeta()
         }
+    }
+
+    /// The mono line over the text: the file's path in its folder and the word count, `plans / v2.md · 1,204 words`.
+    private func updateMeta() {
+        guard let textView else { return }
+        let names = crumbURLs.map { FileManager.default.displayName(atPath: $0.path) }
+        let path = names.isEmpty ? (document as? NSDocument)?.displayName ?? "" : names.joined(separator: " / ")
+        textView.metaLine = [path, window?.subtitle ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     /// Lists the headings 300 ms after typing stops, or once a whole parse lands.
@@ -585,6 +635,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     }
 
     func windowWillClose(_ notification: Notification) {
+        tabs.remove(self)
         Self.all.remove(self)
         Task {
             if Self.all.isEmpty { (NSApp.delegate as? AppDelegate)?.nothingIsOpen() }

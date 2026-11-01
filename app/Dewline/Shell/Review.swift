@@ -16,7 +16,8 @@ enum Review {
     /// The window's tabs' files.
     static func files(in window: NSWindow?) -> [LiveFile] {
         guard let window else { return [] }
-        return (window.tabGroup?.windows ?? [window]).compactMap { ($0.windowController?.document as? MarkdownDocument)?.live }
+        let windows = (window.windowController as? MainWindowController)?.tabs.tabs.compactMap(\.window) ?? [window]
+        return windows.compactMap { ($0.windowController?.document as? MarkdownDocument)?.live }
     }
 
     /// Groups changes by writer session: "claude:<id>", "git", "external".

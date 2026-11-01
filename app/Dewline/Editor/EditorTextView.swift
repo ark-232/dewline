@@ -52,6 +52,26 @@ final class EditorTextView: CaretTextView {
     var edited: ((NSRange, Int) -> Void)?
     /// Called when a composition or a Writing Tools session ends.
     var inputEnded: (() -> Void)?
+    /// The mono line over the text, in `ink3`, such as the file's path and word count; nil leaves the room to the text.
+    var metaLine: String? {
+        didSet {
+            guard metaLine != oldValue else { return }
+            if metaLine != nil, meta == nil {
+                let label = NSTextField(labelWithString: "")
+                label.font = Chrome.mono(11.5)
+                label.lineBreakMode = .byTruncatingMiddle
+                addSubview(label)
+                meta = label
+            }
+            meta?.stringValue = metaLine ?? ""
+            meta?.isHidden = metaLine == nil
+            if (metaLine == nil) != (oldValue == nil) { fitColumn(to: frame.width) }
+            placeMeta()
+        }
+    }
+    private var meta: NSTextField?
+    /// The room the meta line takes over the text.
+    private static let metaRoom: CGFloat = 36
 
     var defersStyling: Bool {
         composing || hasMarkedText()
@@ -135,6 +155,7 @@ final class EditorTextView: CaretTextView {
         selectedTextAttributes = [.backgroundColor: store.color(.selection)]
         typingAttributes = styler.baseAttributes
         vimStatus?.textColor = store.color(.ink2)
+        meta?.textColor = store.color(.ink3)
         isAutomaticQuoteSubstitutionEnabled = store.smartPunctuation
         isAutomaticDashSubstitutionEnabled = store.smartPunctuation
         if isContinuousSpellCheckingEnabled != store.spellCheck { isContinuousSpellCheckingEnabled = store.spellCheck }
@@ -165,10 +186,21 @@ final class EditorTextView: CaretTextView {
     private func fitColumn(to width: CGFloat) {
         let padding = textContainer?.lineFragmentPadding ?? 0
         let margin = max(32, ((width - ThemeStore.shared.measure) / 2 - padding).rounded(.down))
-        let height = typewriterMode ? max(24, ((enclosingScrollView?.contentView.bounds.height ?? 0) / 2).rounded()) : 24
+        let top: CGFloat = metaLine == nil ? 24 : 24 + Self.metaRoom
+        let height = typewriterMode ? max(top, ((enclosingScrollView?.contentView.bounds.height ?? 0) / 2).rounded()) : top
         if textContainerInset != NSSize(width: margin, height: height) {
             textContainerInset = NSSize(width: margin, height: height)
         }
+        placeMeta()
+    }
+
+    /// The meta line sits over the column's first line, as wide as the column.
+    private func placeMeta() {
+        guard let meta, metaLine != nil else { return }
+        let padding = textContainer?.lineFragmentPadding ?? 0
+        let size = meta.fittingSize
+        let width = max((textContainer?.size.width ?? 0) - 2 * padding, 0)
+        meta.frame = NSRect(x: textContainerInset.width + padding, y: textContainerInset.height - Self.metaRoom + 4, width: min(size.width, width), height: size.height)
     }
 
     /// Draws the fold disclosures, code wells, callouts, each quote's rule at the column's left edge (a callout's well

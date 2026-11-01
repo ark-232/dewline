@@ -239,7 +239,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Library.noteOpened(folder.url, folder: true)
         let open = NSApp.windows.first { ($0.windowController as? MainWindowController)?.folder?.url.path == folder.url.path }
         if let open {
-            open.makeKeyAndOrderFront(nil)
+            open.windowController?.showWindow(nil)
         } else {
             MainWindowController(folder: folder).showWindow(nil)
         }

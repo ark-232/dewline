@@ -712,7 +712,7 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
             }
             return
         }
-        controller.window?.makeKeyAndOrderFront(nil)
+        controller.showWindow(nil)
         controller.open(url, newTab: newTab)
         guard let tab = NSDocumentController.shared.document(for: url)?.windowControllers.first as? MainWindowController else { return }
         if let textView = tab.textView { tab.window?.makeFirstResponder(textView) }

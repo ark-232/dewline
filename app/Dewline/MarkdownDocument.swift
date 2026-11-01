@@ -278,12 +278,13 @@ final class MarkdownDocument: NSDocument {
 
     override func makeWindowControllers() {
         // A file inside the folder of the window in front opens there: in place of its empty page, else in a new tab.
-        let front = NSApp.orderedWindows.lazy.compactMap { $0.windowController as? MainWindowController }.first
-        guard let front, let folder = front.folder, fileURL.map({ folder.relativePath(of: $0) != nil }) ?? true else {
-            MainWindowController(folder: nil).display(self)
+        // Any other file opens in a new tab of the front window without a folder, or in a window of its own.
+        let windows = NSApp.orderedWindows.lazy.filter(\.isVisible).compactMap { $0.windowController as? MainWindowController }
+        guard let front = windows.first, let folder = front.folder, fileURL.map({ folder.relativePath(of: $0) != nil }) ?? true else {
+            MainWindowController(folder: nil, joining: windows.first { $0.folder == nil }).display(self)
             return
         }
-        (front.document == nil ? front : MainWindowController(folder: folder)).display(self)
+        (front.document == nil ? front : MainWindowController(folder: folder, joining: front)).display(self)
     }
 
     override func showWindows() {

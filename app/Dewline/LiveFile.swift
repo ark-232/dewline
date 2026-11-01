@@ -481,7 +481,7 @@ final class LiveFile {
         guard let pending = changes[change], let textView = document?.textView, let window = textView.window,
             let scrollView = textView.enclosingScrollView
         else { return }
-        if let group = window.tabGroup, group.selectedWindow !== window { group.selectedWindow = window }
+        if !window.isVisible { window.windowController?.showWindow(nil) }
         if caret {
             window.makeKeyAndOrderFront(nil)
             textView.setSelectedRange(NSRange(location: pending.range.location, length: 0))
