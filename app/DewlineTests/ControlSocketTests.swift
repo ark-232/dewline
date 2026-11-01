@@ -105,6 +105,7 @@ struct ControlSocketTests {
         await MainActor.run { NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: nil) }
         try await again.waitForInstall()
         #expect(await again.installs == 1)
+        await MainActor.run { again.document.close() }
     }
 
     @Test func refusesMalformedRequests() async throws {

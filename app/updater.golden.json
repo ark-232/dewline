@@ -4,7 +4,7 @@
   "SUEnableJavaScript": false,
   "SUEnableSystemProfiling": false,
   "SUFeedURL": "https://dewline.arkwerx.com/appcast.xml",
-  "SUPublicEDKey": "",
+  "SUPublicEDKey": "94Y+kagskoAjGbG5ax2itxReV31KOO9cW1VTHJkG4Ws=",
   "SURequireSignedFeed": true,
   "SUScheduledCheckInterval": 86400,
   "SUVerifyUpdateBeforeExtraction": true

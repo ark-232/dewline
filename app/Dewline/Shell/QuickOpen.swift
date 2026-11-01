@@ -110,6 +110,32 @@ struct FuzzyText: Sendable {
         }
         return (previous[end], positions)
     }
+
+    /// `match` with positions, or failing that the best match with one adjacent pair of a query of three or more
+    /// letters swapped ("oepn" for "open"), scored lower.
+    func forgivingMatch(_ query: [UInt16]) -> (score: Int, positions: [Int])? {
+        if let match = match(query, positions: true) { return match }
+        guard query.count >= 3 else { return nil }
+        var best: (score: Int, positions: [Int])?
+        for index in 0..<(query.count - 1) where query[index] != query[index + 1] {
+            var swapped = query
+            swapped.swapAt(index, index + 1)
+            if let match = match(swapped, positions: true), match.score > best?.score ?? .min { best = match }
+        }
+        return best.map { ($0.score - Self.base * 2, $0.positions) }
+    }
+
+    /// `query` with each adjacent pair of its characters swapped in turn, for a search that found nothing.
+    static func transpositions(of query: String) -> [String] {
+        let characters = Array(query)
+        guard characters.count >= 3 else { return [] }
+        return (0..<(characters.count - 1)).compactMap { index in
+            guard characters[index] != characters[index + 1] else { return nil }
+            var swapped = characters
+            swapped.swapAt(index, index + 1)
+            return String(swapped)
+        }
+    }
 }
 
 /// A Markdown file Quick Open can offer, matched by its path under the open folder, or by its full path outside it.
@@ -311,16 +337,22 @@ struct MenuCommand {
     let title: FuzzyText
     /// The path and other words for the command, matched when the title is not.
     let synonyms: FuzzyText
+    /// Other names for the command, which the palette shows beside its title when one matches.
+    let aliases: [String]
 
     /// Words people type for commands whose titles say it differently, by action.
-    private static let words: [String: String] = [
-        "showSettings:": "Preferences Options",
-        "toggleSource:": "Markdown Raw Syntax",
-        "goToLine:": "Jump",
-        "performFindPanelAction:": "Search",
-        "openFolder:": "Directory Project",
-        "quickOpen:": "Go to File",
-        "toggleSidebar:": "Files Tree",
+    private static let words: [String: [String]] = [
+        "showSettings:": ["Preferences", "Options"],
+        "toggleSource:": ["Markdown", "Raw", "Syntax"],
+        "goToLine:": ["Jump"],
+        "performFindPanelAction:": ["Search"],
+        "openFolder:": ["Directory", "Project"],
+        "quickOpen:": ["Go to File"],
+        "toggleSidebar:": ["Files", "Tree"],
+        "keepChange:": ["Accept", "Approve"],
+        "revertChange:": ["Discard", "Reject"],
+        "toggleReview:": ["Diff"],
+        "toggleFocusMode:": ["Zen"],
     ]
 
     /// Every enabled item in `menu` and its submenus, in menu order, after the menus validate their items against the
@@ -335,8 +367,9 @@ struct MenuCommand {
             }
             guard item.isEnabled, let action = item.action, action != excluding, !item.title.isEmpty else { return [] }
             let menus = path.joined(separator: " › ")
-            let synonyms = [menus, words[NSStringFromSelector(action)] ?? ""].joined(separator: " ")
-            return [MenuCommand(item: item, path: menus, title: FuzzyText(item.title), synonyms: FuzzyText(synonyms))]
+            let aliases = words[NSStringFromSelector(action)] ?? []
+            let synonyms = ([menus] + aliases).joined(separator: " ")
+            return [MenuCommand(item: item, path: menus, title: FuzzyText(item.title), synonyms: FuzzyText(synonyms), aliases: aliases)]
         }
     }
 
@@ -402,8 +435,13 @@ struct KeyEquivalent {
     }
 
     var glyphs: String {
-        guard !key.isEmpty else { return "" }
-        return Self.order.filter { modifiers.contains($0.0) }.map(\.glyph).joined() + keyName.glyph
+        caps.joined()
+    }
+
+    /// One keycap per modifier, then the key's.
+    var caps: [String] {
+        guard !key.isEmpty else { return [] }
+        return Self.order.filter { modifiers.contains($0.0) }.map(\.glyph) + [keyName.glyph]
     }
 
     var spoken: String {
