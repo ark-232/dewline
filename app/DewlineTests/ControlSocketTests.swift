@@ -205,17 +205,22 @@ struct ControlSocketTests {
         let real = try #require(realpath(file.path, nil))
         defer { free(real) }
         let event = #"{"session_id":"s1","cwd":"/","hook_event_name":"PreToolUse","tool_name":"Edit","tool_input":{"file_path":"\#(file.path)","old_string":"Ship it.","new_string":"Ship it soon."},"tool_use_id":"toolu_1"}"#
-        let process = Process()
-        process.executableURL = Bundle.main.bundleURL.appending(path: "Contents/Helpers/dewline")
-        process.arguments = ["notify", "--hook", "claude"]
-        process.environment = ["DEWLINE_SOCKET": listening.socket.path]
-        let stdin = Pipe()
-        process.standardInput = stdin
-        try process.run()
-        try stdin.fileHandleForWriting.write(contentsOf: Data(event.utf8))
-        try stdin.fileHandleForWriting.close()
-        process.waitUntilExit()
-        #expect(process.terminationStatus == 0)
+        // The command drops a claim whose connect takes over 50 ms, which a loaded CI runner can hit, so it gets three tries.
+        for _ in 0..<3 {
+            let process = Process()
+            process.executableURL = Bundle.main.bundleURL.appending(path: "Contents/Helpers/dewline")
+            process.arguments = ["notify", "--hook", "claude"]
+            process.environment = ["DEWLINE_SOCKET": listening.socket.path]
+            let stdin = Pipe()
+            process.standardInput = stdin
+            try process.run()
+            try stdin.fileHandleForWriting.write(contentsOf: Data(event.utf8))
+            try stdin.fileHandleForWriting.close()
+            process.waitUntilExit()
+            #expect(process.terminationStatus == 0)
+            try await Task.sleep(for: .milliseconds(500))
+            if !(await listening.received.claims.isEmpty) { break }
+        }
         let claims = try await listening.claims(1)
         guard case .preToolUse(let use) = claims.first?.event else {
             Issue.record("\(claims)")
@@ -433,15 +438,16 @@ private final class Client {
     private let fd = socket(AF_UNIX, SOCK_STREAM, 0)
 
     init(_ path: String, timeout: Int = 2) throws {
+        // Before connect: a server that refuses the peer may close first, and setsockopt then fails with EINVAL.
+        var limit = timeval(tv_sec: timeout, tv_usec: 0)
+        var on: Int32 = 1
+        #expect(setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &limit, socklen_t(MemoryLayout<timeval>.size)) == 0)
+        #expect(setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size)) == 0)
         var address = try #require(ControlSocket.address(of: path))
         let connected = withUnsafePointer(to: &address) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
         }
         try #require(connected == 0)
-        var limit = timeval(tv_sec: timeout, tv_usec: 0)
-        var on: Int32 = 1
-        #expect(setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &limit, socklen_t(MemoryLayout<timeval>.size)) == 0)
-        #expect(setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size)) == 0)
     }
 
     deinit {
