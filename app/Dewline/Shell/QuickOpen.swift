@@ -351,6 +351,10 @@ struct MenuCommand {
         "toggleSidebar:": ["Files", "Tree"],
         "keepChange:": ["Accept", "Approve"],
         "revertChange:": ["Discard", "Reject"],
+        "keepAllChanges:": ["Accept All", "Approve All"],
+        "revertAllChanges:": ["Discard All", "Reject All"],
+        "nextChange:": ["Next Edit"],
+        "previousChange:": ["Previous Edit"],
         "toggleReview:": ["Diff"],
         "toggleFocusMode:": ["Zen"],
     ]

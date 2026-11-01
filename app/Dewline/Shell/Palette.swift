@@ -12,10 +12,9 @@ struct PaletteCommand {
     }
 
     let id: String
-    /// "Edit" or "Settings", shown dim before the title.
+    /// "Edit" or "Settings", shown dim after the title.
     let group: String
     let title: String
-    let symbol: String
     let aliases: [String]
     let keys: KeyEquivalent?
     /// A setting's current value, shown at the right.
@@ -23,12 +22,11 @@ struct PaletteCommand {
     let action: Action
     let text: FuzzyText
 
-    init(id: String, group: String, title: String, symbol: String, aliases: [String] = [], keys: KeyEquivalent? = nil,
+    init(id: String, group: String, title: String, aliases: [String] = [], keys: KeyEquivalent? = nil,
          value: (() -> String)? = nil, action: Action) {
         self.id = id
         self.group = group
         self.title = title
-        self.symbol = symbol
         self.aliases = aliases
         self.keys = keys
         self.value = value
@@ -38,13 +36,8 @@ struct PaletteCommand {
 
     init(_ command: MenuCommand) {
         let group = command.path.components(separatedBy: " › ").first ?? command.path
-        let symbols = [
-            "Dewline": "app", "File": "doc", "Edit": "pencil", "Format": "textformat", "View": "eye", "Go": "arrow.right",
-            "Window": "macwindow", "Help": "questionmark.circle",
-        ]
         self.init(
-            id: "menu:\(command.path) › \(command.item.title)", group: group, title: command.item.title,
-            symbol: symbols[group] ?? "command", aliases: command.aliases,
+            id: "menu:\(command.path) › \(command.item.title)", group: group, title: command.item.title, aliases: command.aliases,
             keys: KeyEquivalent(command.item.keyEquivalent, command.item.keyEquivalentModifierMask), action: .menu(command))
     }
 
@@ -63,37 +56,34 @@ struct PaletteCommand {
         let appearances: [(ThemeStore.Appearance, String)] = [(.light, "Light"), (.dark, "Dark"), (.auto, "Auto")]
         return [
             PaletteCommand(
-                id: "settings:theme", group: "Settings", title: "Theme…", symbol: "paintpalette", aliases: ["Colors"],
+                id: "settings:theme", group: "Settings", title: "Theme…", aliases: ["Colors"],
                 value: { (dark ? store.darkTheme : store.lightTheme).name },
                 action: .choose {
                     let current = dark ? store.darkTheme : store.lightTheme
-                    return PaletteChoices(title: "Theme", symbol: "paintpalette", names: themes.map(\.name),
+                    return PaletteChoices(title: "Theme", names: themes.map(\.name),
                                           current: themes.firstIndex(of: current) ?? 0) { index in
                         if dark { store.darkTheme = themes[index] } else { store.lightTheme = themes[index] }
                     }
                 }),
             PaletteCommand(
-                id: "settings:appearance", group: "Settings", title: "Appearance…", symbol: "circle.lefthalf.filled",
-                aliases: ["Dark Mode", "Light Mode"],
+                id: "settings:appearance", group: "Settings", title: "Appearance…", aliases: ["Dark Mode", "Light Mode"],
                 value: { appearances.first { $0.0 == store.appearance }?.1 ?? "" },
                 action: .choose {
-                    PaletteChoices(title: "Appearance", symbol: "circle.lefthalf.filled", names: appearances.map(\.1),
+                    PaletteChoices(title: "Appearance", names: appearances.map(\.1),
                                    current: appearances.firstIndex { $0.0 == store.appearance } ?? 2) { index in
                         store.appearance = appearances[index].0
                     }
                 }),
             PaletteCommand(
-                id: "settings:smartPunctuation", group: "Settings", title: "Smart Punctuation", symbol: "quote.opening",
-                aliases: ["Smart Quotes"], value: { onOff(store.smartPunctuation) }, action: .toggle { store.smartPunctuation.toggle() }),
+                id: "settings:smartPunctuation", group: "Settings", title: "Smart Punctuation", aliases: ["Smart Quotes"], value: { onOff(store.smartPunctuation) }, action: .toggle { store.smartPunctuation.toggle() }),
             PaletteCommand(
-                id: "settings:vim", group: "Settings", title: "Vim Mode", symbol: "keyboard",
-                value: { onOff(store.vimMode) }, action: .toggle { store.vimMode.toggle() }),
+                id: "settings:vim", group: "Settings", title: "Vim Mode", value: { onOff(store.vimMode) }, action: .toggle { store.vimMode.toggle() }),
             PaletteCommand(
-                id: "settings:headingStyle", group: "Settings", title: "Heading Style", symbol: "textformat.size",
+                id: "settings:headingStyle", group: "Settings", title: "Heading Style",
                 aliases: ["Editorial"], value: { store.headingStyle == .editorial ? "Editorial" : "Standard" },
                 action: .toggle { store.headingStyle = store.headingStyle == .editorial ? .standard : .editorial }),
             PaletteCommand(
-                id: "settings:showsIgnored", group: "Settings", title: "Show Ignored Files", symbol: "eye.slash",
+                id: "settings:showsIgnored", group: "Settings", title: "Show Ignored Files",
                 aliases: ["gitignore"], value: { onOff(preferences.showsIgnored) }, action: .toggle { preferences.showsIgnored.toggle() }),
         ]
     }
@@ -104,7 +94,6 @@ struct PaletteCommand {
 @MainActor
 struct PaletteChoices {
     let title: String
-    let symbol: String
     let names: [String]
     let current: Int
     let apply: (Int) -> Void
