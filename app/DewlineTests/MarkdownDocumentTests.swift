@@ -15,6 +15,7 @@ struct MarkdownDocumentTests {
         let document = MarkdownDocument()
         try document.read(from: Data("# Notes\n".utf8), ofType: "net.daringfireball.markdown")
         document.makeWindowControllers()
+        defer { document.close() }
         let textView = try #require((document.windowControllers.first as? MainWindowController)?.textView)
         #expect(textView.string == "# Notes\n")
         #expect(textView.isEditable)
@@ -32,7 +33,10 @@ struct MarkdownDocumentTests {
     @Test func saveWritesTheEditAndKeepsEveryOtherByte() throws {
         let bom = Data([0xEF, 0xBB, 0xBF])
         let (url, document, textView) = try open(bom + Data("# Launch plan\r\n\r\nShip the béta on Friday.\nThen “rest”.\rNo newline".utf8))
-        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        defer {
+            document.close()
+            try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
+        }
         textView.insertText("Monday", replacementRange: (textView.string as NSString).range(of: "Friday"))
         try document.writeSafely(to: url, ofType: Self.type, for: .saveOperation)
         #expect(try Data(contentsOf: url) == bom + Data("# Launch plan\r\n\r\nShip the béta on Monday.\nThen “rest”.\rNo newline".utf8))
@@ -44,7 +48,10 @@ struct MarkdownDocumentTests {
 
     @Test func saveRefusesAChangeOnDiskAndWritesNothing() throws {
         let (url, document, textView) = try open(Data("# Launch plan\r\n".utf8))
-        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        defer {
+            document.close()
+            try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
+        }
         textView.insertText("Ship on Friday.\r\n", replacementRange: NSRange(location: 15, length: 0))
         let theirs = Data("# Launch plan\r\nAn agent wrote this.\r\n".utf8)
         try theirs.write(to: url)
