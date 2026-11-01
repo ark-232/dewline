@@ -118,6 +118,83 @@ struct LiveFileTests {
         #expect(file.textView.marks.hangers[id]?.view is Ghost)
     }
 
+    @Test func inlineGhostsSitInTheirOwnGapsBeforeWhatReplacedThem() async throws {
+        let before = "# Field Notes\n\nDewline keeps the **file** as the source of truth. Edits from agents land as *changes* you can keep or revert.\n"
+        let after = before.replacingOccurrences(of: "*changes* you can keep or revert.", with: "*changes*, marked in place, that you keep or revert one at a time.")
+        let file = try OpenFile(before)
+        defer { file.close() }
+        file.textView.window!.setContentSize(NSSize(width: 1000, height: 700))
+        let use = { (hash: String, declared: String?) in
+            ControlSocket.Claim.ToolUse(id: "toolu_1", tool: .edit, path: file.realpath, hash: hash, declared: declared)
+        }
+        file.claim(.preToolUse(use(Self.hex(before), Self.hex(after))))
+        try Data(after.utf8).write(to: file.url)
+        file.claim(.postToolUse(use(Self.hex(after), nil)))
+        try await until { file.live.changes.values.contains { $0.marked } }
+        let marks = file.textView.marks
+        let storage = try #require(file.textView.textStorage)
+        let ghosts = file.live.changes.compactMap { id, change in
+            (marks.hangers[id]?.view as? Ghost).flatMap { ghost in ghost.inlineWidth.map { (ghost, $0, change) } }
+        }
+        #expect(ghosts.map { $0.2.removed }.sorted() == ["can", "you"])
+        // The styler opens each gap, then the marks lay out again.
+        try await until {
+            ghosts.allSatisfy { storage.attribute(.kern, at: $0.2.range.location - 1, effectiveRange: nil) as? CGFloat == $0.1 }
+        }
+        marks.relayout()
+        // The closing * of *changes* is the same character before and after, so nothing struck shows it.
+        let star = file.location(of: "*,")
+        #expect(file.live.changes.values.allSatisfy { !$0.removed.contains("*") && !NSLocationInRange(star, $0.range) })
+        #expect(storage.attribute(.foregroundColor, at: star, effectiveRange: nil) as? NSColor == .clear)
+        // Where CoreText sets each glyph of the changed line, against which every ghost must stay clear of text.
+        let layout = try #require(file.textView.textLayoutManager)
+        let content = try #require(layout.textContentManager)
+        let location = try #require(content.location(content.documentRange.location, offsetBy: star))
+        let fragment = try #require(layout.textLayoutFragment(for: location))
+        let offset = content.offset(from: fragment.rangeInElement.location, to: location)
+        let line = try #require(fragment.textLineFragments.first { NSLocationInRange(offset, $0.characterRange) })
+        let ctLine = CTLineCreateWithAttributedString(line.attributedString.attributedSubstring(from: line.characterRange))
+        let paragraph = star - offset
+        let left = file.textView.textContainerOrigin.x + fragment.layoutFragmentFrame.minX + line.typographicBounds.minX
+        var glyphs: [Int: (minX: CGFloat, maxX: CGFloat)] = [:]
+        for run in CTLineGetGlyphRuns(ctLine) as! [CTRun] {
+            let count = CTRunGetGlyphCount(run)
+            var positions = [CGPoint](repeating: .zero, count: count)
+            var advances = [CGSize](repeating: .zero, count: count)
+            var indices = [CFIndex](repeating: 0, count: count)
+            CTRunGetPositions(run, CFRange(), &positions)
+            CTRunGetAdvances(run, CFRange(), &advances)
+            CTRunGetStringIndices(run, CFRange(), &indices)
+            for k in 0..<count {
+                let x = left + positions[k].x
+                let width = advances[k].width - (storage.attribute(.kern, at: paragraph + line.characterRange.location + indices[k], effectiveRange: nil) as? CGFloat ?? 0)
+                glyphs[paragraph + line.characterRange.location + indices[k]] = (x, x + width)
+            }
+        }
+        let inserted = file.live.changes.values.flatMap { change in (change.range.location..<NSMaxRange(change.range)).compactMap { glyphs[$0] } }
+        #expect(inserted.count > 20)
+        for (ghost, width, change) in ghosts {
+            let start = try #require(glyphs[change.range.location])
+            #expect(abs(ghost.frame.minX + width - start.minX) < 0.5)
+            for glyph in inserted where glyph.maxX - glyph.minX > 0.5 {
+                #expect(ghost.frame.maxX <= glyph.minX + 0.5 || ghost.frame.minX >= glyph.maxX - 0.5)
+            }
+        }
+    }
+
+    @Test func aPageAtTheTopKeepsItsPlaceAtTheFirstLine() throws {
+        let file = try OpenFile("# Field Notes\n\n" + String(repeating: "A line of the notes.\n\n", count: 80))
+        defer { file.close() }
+        let tab = try #require(file.textView.window?.windowController as? MainWindowController)
+        let clip = try #require(file.textView.enclosingScrollView?.contentView)
+        #expect(clip.bounds.minY == 0)
+        let place = try #require(tab.place)
+        #expect(place.top == 0)
+        clip.scroll(to: NSPoint(x: 0, y: 400))
+        tab.restore(place)
+        #expect(clip.bounds.minY == 0)
+    }
+
     @Test func revertTakesTheChangeOutAsOneUndo() async throws {
         let file = try OpenFile("# Plan\n\nShip on Friday.\n", events: true)
         defer { file.close() }

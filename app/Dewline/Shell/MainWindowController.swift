@@ -394,11 +394,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     // MARK: Back and forward
 
     /// The caret and the top of the page, or nil without a file on the page.
-    private var place: Place? {
+    var place: Place? {
         guard let textView, let scrollView = textView.enclosingScrollView else { return nil }
         let visible = textView.visibleRect
+        // TextKit 2 answers a point in the top inset with an index near the end of the text, so the probe stays below it.
         let top = textView.characterIndexForInsertion(
-            at: NSPoint(x: textView.textContainerOrigin.x + 4, y: visible.minY + scrollView.contentInsets.top + 8))
+            at: NSPoint(x: textView.textContainerOrigin.x + 4, y: max(visible.minY + scrollView.contentInsets.top + 8, textView.textContainerOrigin.y)))
         let baseline = textView.baseline(at: top)
         return Place(caret: textView.selectedRange().location, top: baseline == nil ? 0 : top, offset: visible.minY - (baseline ?? visible.minY))
     }
@@ -629,7 +630,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         sectionUpdate = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(160))
             guard !Task.isCancelled, let self, let textView = self.textView, let scrollView = textView.enclosingScrollView else { return }
-            let top = NSPoint(x: textView.textContainerOrigin.x + 4, y: textView.visibleRect.minY + scrollView.contentInsets.top + 8)
+            let top = NSPoint(
+                x: textView.textContainerOrigin.x + 4, y: max(textView.visibleRect.minY + scrollView.contentInsets.top + 8, textView.textContainerOrigin.y))
             self.sidebar.markSection(at: textView.characterIndexForInsertion(at: top))
         }
     }
