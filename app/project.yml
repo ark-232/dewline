@@ -20,7 +20,7 @@ settings:
     APP_GROUP: $(DEVELOPMENT_TEAM).dev.arkwerx.dewline
     # The base64 EdDSA public key from Sparkle's generate_keys (docs/release.md). While it is empty the updater
     # refuses to start, so nothing can be checked, downloaded or installed.
-    SPARKLE_PUBLIC_ED_KEY: ""
+    SPARKLE_PUBLIC_ED_KEY: "94Y+kagskoAjGbG5ax2itxReV31KOO9cW1VTHJkG4Ws="
   configs:
     Release:
       ENABLE_HARDENED_RUNTIME: YES
