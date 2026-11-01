@@ -473,7 +473,6 @@ final class EditorTextView: CaretTextView {
 
     override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
         super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
-        marks.caretMoved()
         guard !stillSelecting else { return }
         updateFocus()
         centerCaretSoon()

@@ -476,7 +476,7 @@ final class LiveFile {
     }
 
     /// Brings the change's tab forward and scrolls its line a third of the way down the page; `caret` puts the caret
-    /// in it, which shows its change bar.
+    /// in it, which makes it the one the Keep bar shows.
     func reveal(_ change: UInt64, caret: Bool) {
         guard let pending = changes[change], let textView = document?.textView, let window = textView.window,
             let scrollView = textView.enclosingScrollView

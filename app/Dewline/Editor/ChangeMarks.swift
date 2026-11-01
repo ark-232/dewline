@@ -51,7 +51,7 @@ struct MarkWriter: Equatable {
 /// Paints marked changes over the text at render time, never as text edits: a wash in the writer's hue under
 /// inserted text with an underline in the writer's style, a 3 pt tick in the left gutter and the writer's name on
 /// hover. Short removed text reads inline at its deletion point as a struck ghost, in a gap the styler opens; longer
-/// removed text and a conflict's other version hang under the paragraph, in space the styler reserves below it. The marks sit under the text; ghosts, cards and the bar sit over it.
+/// removed text and a conflict's other version hang under the paragraph, in space the styler reserves below it. The marks sit under the text; ghosts and cards sit over it.
 @MainActor
 final class ChangeMarks: NSView, NSViewToolTipOwner {
     weak var textView: EditorTextView?
@@ -67,7 +67,6 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
     private var tips: [(rect: NSRect, change: UInt64)] = []
     private var dirty = false
     private var observing: NSView?
-    let bar = ChangeBar()
 
     static let fade: CFTimeInterval = 0.2
     private static let gap: CGFloat = 6
@@ -285,7 +284,6 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
         }
         CATransaction.commit()
         for tip in tips { addToolTip(tip.rect, owner: self, userData: nil) }
-        placeBar()
     }
 
     private struct Segment {
@@ -370,30 +368,6 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
         guard let caret = textView?.selectedRanges.first?.rangeValue.location else { return nil }
         let holding = changes.filter { NSLocationInRange(caret, $0.value.range) || caret == NSMaxRange($0.value.range) }
         return holding.first { $0.value.conflict }?.key ?? holding.keys.min()
-    }
-
-    /// The bar follows the caret at the next layout.
-    func caretMoved() {
-        guard !changes.isEmpty || bar.superview != nil else { return }
-        dirty = true
-        textView?.needsLayout = true
-    }
-
-    private func placeBar() {
-        guard let textView, let id = changeAtCaret, let change = changes[id], !change.conflict else {
-            bar.removeFromSuperview()
-            return
-        }
-        let lines = segments(change.range)
-        guard let last = lines.last?.frame ?? lineRect(at: change.range.location) else { return }
-        var bottom = last.maxY
-        if let hanger = hangers[id]?.view { bottom = max(bottom, hanger.frame.maxY) }
-        bar.show(MarkWriter(change.origin)) { [weak self] keep in
-            if keep { self?.live?.keep(id) } else { self?.live?.revert(id) }
-        }
-        let left = textView.textContainerOrigin.x + (textView.textContainer?.lineFragmentPadding ?? 0)
-        bar.frame = NSRect(origin: NSPoint(x: left, y: bottom + 8), size: bar.fittingSize)
-        if bar.superview !== textView { textView.addSubview(bar) }
     }
 
     /// Cmd-Return: keeps the change under the caret, or both versions of a conflict.

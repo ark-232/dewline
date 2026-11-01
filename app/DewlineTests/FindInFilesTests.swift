@@ -121,7 +121,8 @@ struct FindInFilesTests {
         }
         let tree = try #require(visible(NSOutlineView.self).first)
         #expect(visible(NSSearchField.self).isEmpty)
-        let sidebar = try #require((window.contentViewController as? NSSplitViewController)?.splitViewItems.first)
+        let split = window.contentViewController?.children.lazy.compactMap { $0 as? NSSplitViewController }.first
+        let sidebar = try #require(split?.splitViewItems.first)
         sidebar.isCollapsed = true
 
         NSApp.sendAction(#selector(MainWindowController.findInFiles(_:)), to: window.windowController, from: nil)

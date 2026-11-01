@@ -121,7 +121,7 @@ struct UpdatesTests {
         let line = try #require(first.titlebarAccessoryViewControllers.first as? UpdateLine)
         #expect(defaults.bool(forKey: Updates.lineShownKey))
         let texts = line.view.subviews.flatMap(\.subviews).compactMap { ($0 as? NSTextField)?.stringValue }
-        #expect(texts == ["Dewline checks GitHub for updates once a day and downloads them from there."])
+        #expect(texts == ["Dewline checks dewline.arkwerx.com for updates once a day and downloads them from GitHub."])
         #expect(line.buttons.map(\.title) == ["Check daily", "Don\u{2019}t check"])
 
         let second = window()

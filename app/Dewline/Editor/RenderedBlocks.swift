@@ -96,6 +96,8 @@ final class RenderedBlocks {
                 .font: MarkdownStyler.code(matching: MarkdownStyler.bodyFont), .foregroundColor: ThemeStore.shared.color(.ink), .paragraphStyle: Self.sourceLines,
             ]
             styled.addAttributes(source, range: local)
+            // The whole paragraph takes the source's lines, its line break included, so no paragraph mixes two styles.
+            styled.addAttribute(.paragraphStyle, value: Self.sourceLines, range: NSIntersectionRange(text.paragraphRange(for: local), whole))
             for marker in [NSRange(location: block.range.location, length: block.content.location - block.range.location),
                            NSRange(location: NSMaxRange(block.content), length: NSMaxRange(block.range) - NSMaxRange(block.content))] {
                 let part = NSIntersectionRange(marker, paragraphs)
