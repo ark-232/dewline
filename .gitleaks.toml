@@ -1,0 +1,6 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Sparkle's public EdDSA key, which ships in the app's Info.plist"
+regexes = ['''94Y\+kagskoAjGbG5ax2itxReV31KOO9cW1VTHJkG4Ws=''']
