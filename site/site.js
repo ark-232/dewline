@@ -20,7 +20,7 @@ addEventListener("scroll", () => {
 }, { passive: true });
 mark();
 
-const status = document.getElementById("copied");
+const copied = document.getElementById("copied");
 for (const button of document.querySelectorAll("[data-copy]")) {
   const code = document.getElementById(button.dataset.copy);
   let timer;
@@ -32,11 +32,11 @@ for (const button of document.querySelectorAll("[data-copy]")) {
       return;
     }
     button.textContent = "Copied";
-    status.textContent = "Copied";
+    copied.textContent = "Copied";
     clearTimeout(timer);
     timer = setTimeout(() => {
       button.textContent = "Copy";
-      status.textContent = "";
+      copied.textContent = "";
     }, 1600);
   });
 }
