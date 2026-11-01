@@ -1227,7 +1227,8 @@ private final class PaletteHeader: NSView {
 private final class PaletteRowView: NSTableRowView {
     override var isSelected: Bool {
         didSet {
-            guard isSelected != oldValue else { return }
+            // A row view being set up has no columns yet; `didAddSubview` passes the state on once its cell arrives.
+            guard isSelected != oldValue, numberOfColumns > 0 else { return }
             (view(atColumn: 0) as? ChromeSelectable)?.selected = isSelected
         }
     }

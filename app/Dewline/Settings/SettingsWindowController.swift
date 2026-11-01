@@ -181,7 +181,8 @@ private struct PaneRow: View {
                         }
                 }
             }
-            .overlay { FocusRing(on: focused) }
+            // Every row hears the focusable list's focus; only the open pane's row shows it.
+            .overlay { FocusRing(on: focused && selected) }
             .contentShape(.rect)
             .focusEffectDisabled()
     }
