@@ -73,6 +73,9 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_NSHumanReadableCopyright: Copyright 2026 ArkWerx LLC
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.productivity
+        # Ink, not Apple blue, fills the controls AppKit draws: default buttons, checkboxes, selected segments. Signal
+        # draws lines and never fills a control (Station rule 1).
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
     entitlements:
       path: Dewline/Dewline.entitlements
       properties:

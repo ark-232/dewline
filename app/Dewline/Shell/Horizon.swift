@@ -7,7 +7,7 @@ import MdCore
 /// lit segment, since both map heights the same way. A new bead drops in and pulses once. A click on a bead jumps to
 /// its change; a drag on the segment scrolls; a click elsewhere on the line scrolls there.
 final class HorizonView: NSView {
-    static let height: CGFloat = 14
+    static let height: CGFloat = 18
 
     /// Where each bead sits, by change, for the Keep/Revert bar's segment.
     private(set) var beadX: [UInt64: CGFloat] = [:]
@@ -481,12 +481,14 @@ final class KeepBar: NSView {
     private func show(_ visible: Bool) {
         guard visible != shown else { return }
         shown = visible
-        height.constant = visible ? Self.height : 0
         let reduce = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         guard window?.isVisible == true, let layer else {
+            height.constant = visible ? Self.height : 0
             isHidden = !visible
             return
         }
+        // The page gives up its room at once on the way in and takes it back once the bar has faded.
+        if visible { height.constant = Self.height }
         isHidden = false
         let fade = CABasicAnimation(keyPath: "opacity")
         fade.fromValue = visible ? 0 : 1
@@ -504,10 +506,13 @@ final class KeepBar: NSView {
         group.animations = animations
         group.duration = duration
         group.timingFunction = curve
+        group.fillMode = .forwards
+        group.isRemovedOnCompletion = visible
         CATransaction.begin()
         CATransaction.setCompletionBlock { [weak self] in
             guard let self, !self.shown else { return }
             self.isHidden = true
+            self.height.constant = 0
         }
         layer.add(group, forKey: "show")
         CATransaction.commit()

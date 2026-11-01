@@ -19,7 +19,8 @@ final class FrameView: NSView {
         layer?.backgroundColor = Chrome.color(.frame).resolved(for: effectiveAppearance).cgColor
     }
 
-    override var mouseDownCanMoveWindow: Bool { true }
+    /// The click comes here, so a double-click acts once.
+    override var mouseDownCanMoveWindow: Bool { false }
 
     override func mouseDown(with event: NSEvent) {
         Self.titleBarClick(event, in: window)
@@ -207,7 +208,7 @@ final class TitleBand: NSView {
     private var islandAlignment: NSLayoutConstraint?
 
     override var isFlipped: Bool { true }
-    override var mouseDownCanMoveWindow: Bool { true }
+    override var mouseDownCanMoveWindow: Bool { false }
 
     override func mouseDown(with event: NSEvent) {
         FrameView.titleBarClick(event, in: window)

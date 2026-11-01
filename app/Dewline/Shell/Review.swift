@@ -82,10 +82,10 @@ final class FinishedLine: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         isHidden = true
-        label.font = .systemFont(ofSize: 12)
+        label.font = Chrome.label
         label.lineBreakMode = .byTruncatingTail
         review.isBordered = false
-        review.font = .systemFont(ofSize: 12, weight: .medium)
+        review.font = Chrome.labelActive
         review.target = ReviewPanel.shared
         review.toolTip = "Review Changes (⇧⌘R)"
         let row = NSStackView(views: [label, review])
@@ -109,7 +109,7 @@ final class FinishedLine: NSView {
     override var wantsUpdateLayer: Bool { true }
 
     override func updateLayer() {
-        layer?.backgroundColor = ThemeStore.shared.color(.paper).cgColor
+        layer?.backgroundColor = ThemeStore.shared.color(.islandEditor).resolved(for: effectiveAppearance).cgColor
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -119,7 +119,7 @@ final class FinishedLine: NSView {
 
     @objc private func themeDidChange() {
         label.textColor = ThemeStore.shared.color(.ink2)
-        review.contentTintColor = ThemeStore.shared.color(.accent)
+        review.contentTintColor = ThemeStore.shared.color(.ink)
         needsDisplay = true
     }
 

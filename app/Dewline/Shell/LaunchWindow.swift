@@ -439,7 +439,7 @@ private final class LaunchAction: NSControl {
         self.action = action
         let icon = NSImageView(image: NSImage(systemSymbolName: symbol, accessibilityDescription: nil)!)
         icon.symbolConfiguration = .init(pointSize: 14, weight: .regular)
-        icon.contentTintColor = .controlAccentColor
+        icon.contentTintColor = ThemeStore.shared.color(.ink2)
         let label = NSTextField(labelWithString: title)
         label.font = .systemFont(ofSize: 13, weight: .medium)
         let key = NSTextField(labelWithString: shortcut)
@@ -601,7 +601,7 @@ private final class FileCell: NSTableCellView {
     func show(_ url: URL, isFolder: Bool, preview text: String?, date: Date?) {
         let gone = text?.isEmpty == true
         imageView?.image = NSImage(systemSymbolName: isFolder ? "folder.fill" : "doc.text", accessibilityDescription: nil)
-        imageView?.contentTintColor = gone ? .tertiaryLabelColor : isFolder ? .controlAccentColor : .secondaryLabelColor
+        imageView?.contentTintColor = gone ? .tertiaryLabelColor : isFolder ? ThemeStore.shared.color(.ink2) : .secondaryLabelColor
         textField?.stringValue = url.lastPathComponent
         textField?.textColor = gone ? .secondaryLabelColor : .labelColor
         preview.stringValue = gone ? "Moved or deleted" : text ?? " "

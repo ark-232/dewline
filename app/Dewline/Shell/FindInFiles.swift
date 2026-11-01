@@ -142,7 +142,8 @@ final class FindInFilesController: NSViewController, NSSearchFieldDelegate, NSOu
         outlineView.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
         outlineView.autoresizesOutlineColumn = false
         outlineView.headerView = nil
-        outlineView.style = .sourceList
+        outlineView.style = .plain
+        outlineView.intercellSpacing = NSSize(width: 0, height: 0)
         outlineView.floatsGroupRows = false
         outlineView.backgroundColor = .clear
         outlineView.allowsTypeSelect = false
@@ -323,6 +324,10 @@ final class FindInFilesController: NSViewController, NSSearchFieldDelegate, NSOu
         item is ResultFile ? 26 : 22
     }
 
+    func outlineView(_ outlineView: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? {
+        StationRowView()
+    }
+
     func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
         if let file = item as? ResultFile {
             let cell = outlineView.makeView(withIdentifier: FileResultCell.identifier, owner: nil) as? FileResultCell ?? FileResultCell()
@@ -488,13 +493,17 @@ private final class LineResultCell: NSTableCellView {
         let text = NSMutableAttributedString(string: match.preview, attributes: [
             .font: NSFont.systemFont(ofSize: 12), .foregroundColor: ink, .paragraphStyle: style,
         ])
-        text.addAttribute(.backgroundColor, value: selected ? ink.withAlphaComponent(0.25) : Self.findMatch, range: match.previewRange)
+        text.addAttributes([
+            .backgroundColor: selected ? ink.withAlphaComponent(0.25) : Self.findMatch,
+            .underlineStyle: NSUnderlineStyle.single.rawValue,
+            .underlineColor: ThemeStore.shared.color(.signal),
+        ], range: match.previewRange)
         line.attributedStringValue = text
     }
 
-    /// The theme's accent at 25%, or 35% in dark (synthesis 2.1).
+    /// Signal at 12%, the most a signal fill takes; the match's underline carries it.
     private static var findMatch: NSColor {
-        let accent = ThemeStore.shared.color(.accent)
-        return NSColor(name: nil) { accent.withAlphaComponent($0.isDark ? 0.35 : 0.25) }
+        let signal = ThemeStore.shared.color(.signal)
+        return NSColor(name: nil) { signal.resolved(for: $0).withAlphaComponent(0.12) }
     }
 }
