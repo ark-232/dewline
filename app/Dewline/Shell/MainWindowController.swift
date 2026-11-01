@@ -1,8 +1,9 @@
 import AppKit
 import MdCore
 
-/// One tab: the sidebar beside the open file, or beside an empty page in a folder window until a file opens.
-final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NSMenuItemValidation {
+/// One tab: the sidebar beside the open file, or beside an empty page in a folder window until a file opens. The
+/// window is Station's: no toolbar, a title band on the theme's frame, and the sidebar and the editor as two islands.
+final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuItemValidation {
     /// Every tab, kept here because a folder window has no document to own its controller.
     private static var all: Set<MainWindowController> = []
 
@@ -10,7 +11,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     /// The folder's Markdown files for Quick Open, shared with the folder's other tabs.
     let index: FolderIndex?
     private let sidebar: SidebarViewController
-    private let page = BackdropView()
+    private let split = StationSplitController()
+    private let band: TitleBand
+    /// The editor island: the horizon along its top, the page, and the Keep/Revert bar along its bottom.
+    private let editor = IslandView(.islandEditor)
+    private let horizon = HorizonView()
+    private let keepBar = KeepBar()
+    private let page = NSView()
+    private var pageContent: NSView?
     /// "Claude finished · 3 places in 2 files · Review", under the tab bar.
     let finished = FinishedLine()
     private(set) var textView: EditorTextView?
@@ -19,66 +27,71 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     private var history = History() {
         didSet { updateNavigation() }
     }
-    private weak var navigation: NSToolbarItemGroup?
-    private let crumbs = NSPathControl()
     /// The breadcrumbs' folders and file, one per path item.
     private var crumbURLs: [URL] = []
     private var countUpdate: Task<Void, Never>?
+    private var edited = false
 
     init(folder: Folder?) {
         self.folder = folder
         index = folder.map(FolderIndex.of)
         sidebar = SidebarViewController(folder: folder)
-        let split = NSSplitViewController()
-        let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebar)
+        band = TitleBand(sidebarToggle: split)
+        // A plain item, so no system sidebar glass draws under the island; it keeps its width as the window resizes.
+        let sidebarItem = NSSplitViewItem(viewController: sidebar)
+        sidebarItem.canCollapse = true
         sidebarItem.minimumThickness = 200
         sidebarItem.maximumThickness = 360
+        sidebarItem.holdingPriority = NSLayoutConstraint.Priority(260)
         let pageController = NSViewController()
-        pageController.view = page
+        pageController.view = editor
         let pageItem = NSSplitViewItem(viewController: pageController)
-        pageItem.automaticallyAdjustsSafeAreaInsets = true
         split.splitViewItems = [sidebarItem, pageItem]
+        let root = NSViewController()
+        root.view = FrameView(frame: NSRect(x: 0, y: 0, width: 1000, height: 700))
+        root.addChild(split)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
-        window.contentViewController = split
+        window.contentViewController = root
         window.setContentSize(NSSize(width: 1000, height: 700))
+        window.contentMinSize = NSSize(width: 560, height: 360)
         window.tabbingMode = .preferred
         window.tabbingIdentifier = folder.map { "folder " + $0.url.path } ?? "files"
         // Resume reopens every window at launch, so AppKit restores none.
         window.isRestorable = false
         window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.backgroundColor = Chrome.color(.frame)
         window.identifier = NSUserInterfaceItemIdentifier("Document")
+        MainWindowController.lay(band: band, split: split.view, editor: editor, in: root.view, window: window)
+        MainWindowController.lay(horizon: horizon, page: page, bar: keepBar, in: editor)
+        sidebar.view.setFrameSize(NSSize(width: 248, height: sidebar.view.frame.height))
         if let front = NSApp.orderedWindows.first(where: { $0.windowController is MainWindowController }) {
             window.cascadeTopLeft(from: front.cascadeTopLeft(from: .zero))
         } else {
             window.center()
         }
         super.init(window: window)
-        let toolbar = NSToolbar(identifier: "Main")
-        toolbar.delegate = self
-        toolbar.displayMode = .iconOnly
-        window.toolbar = toolbar
-        window.toolbarStyle = .unified
         window.delegate = self
         sidebar.open = { [weak self] url, newTab in self?.open(url, newTab: newTab) }
         sidebar.jump = { [weak self] heading in self?.jump(to: heading) }
-        crumbs.pathStyle = .standard
-        crumbs.focusRingType = .none
-        crumbs.target = self
-        crumbs.action = #selector(crumbClicked(_:))
-        crumbs.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        crumbs.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        band.crumbClicked = { [weak self] index, view in self?.crumbClicked(index, under: view) }
+        keepBar.beadX = { [weak horizon] id in horizon?.beadX[id] }
+        horizon.beadsMoved = { [weak keepBar] in keepBar?.placeSegment() }
+        NotificationCenter.default.addObserver(self, selector: #selector(updatePresence), name: Collaboration.changed, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(updatePresence), name: LiveFile.changesDidChange, object: nil)
         sidebar.reveal = { [weak self] url, match, newTab in self?.reveal(match, in: url, newTab: newTab) }
         Self.all.insert(self)
         if let folder {
             window.title = FileManager.default.displayName(atPath: folder.url.path)
             window.representedURL = folder.url
             let hint = NSTextField(labelWithString: "Choose a Markdown file in the sidebar.")
-            hint.textColor = .tertiaryLabelColor
+            hint.font = Chrome.label
+            hint.textColor = Chrome.color(.ink3)
             hint.translatesAutoresizingMaskIntoConstraints = false
             let empty = PaperView()
             empty.addSubview(hint)
@@ -89,10 +102,94 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
             setPage(empty)
         }
         updateBreadcrumbs()
+        updateNavigation()
     }
 
     required init?(coder: NSCoder) {
         fatalError("MainWindowController is built in code")
+    }
+
+    /// The band across the top of the frame; under it the islands, 6 pt from the window's sides and bottom, and below
+    /// the system's tab bar when the window shows one.
+    private static func lay(band: TitleBand, split: NSView, editor: NSView, in frame: NSView, window: NSWindow) {
+        for view in [band, split] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            frame.addSubview(view)
+        }
+        let below = split.topAnchor.constraint(equalTo: frame.topAnchor, constant: TitleBand.height)
+        below.priority = .defaultLow
+        var constraints = [
+            band.topAnchor.constraint(equalTo: frame.topAnchor),
+            band.leadingAnchor.constraint(equalTo: frame.leadingAnchor),
+            band.trailingAnchor.constraint(equalTo: frame.trailingAnchor),
+            split.leadingAnchor.constraint(equalTo: frame.leadingAnchor, constant: 6),
+            split.trailingAnchor.constraint(equalTo: frame.trailingAnchor, constant: -6),
+            split.bottomAnchor.constraint(equalTo: frame.bottomAnchor, constant: -6),
+            split.topAnchor.constraint(greaterThanOrEqualTo: band.bottomAnchor),
+            below,
+        ]
+        if let content = window.contentLayoutGuide as? NSLayoutGuide {
+            constraints.append(split.topAnchor.constraint(greaterThanOrEqualTo: content.topAnchor, constant: 4))
+        }
+        NSLayoutConstraint.activate(constraints)
+        band.align(with: editor)
+    }
+
+    private static func lay(horizon: HorizonView, page: NSView, bar: KeepBar, in island: NSView) {
+        for view in [horizon, page, bar] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            island.addSubview(view)
+        }
+        NSLayoutConstraint.activate([
+            horizon.topAnchor.constraint(equalTo: island.topAnchor),
+            horizon.leadingAnchor.constraint(equalTo: island.leadingAnchor),
+            horizon.trailingAnchor.constraint(equalTo: island.trailingAnchor),
+            horizon.heightAnchor.constraint(equalToConstant: HorizonView.height),
+            page.topAnchor.constraint(equalTo: horizon.bottomAnchor),
+            page.leadingAnchor.constraint(equalTo: island.leadingAnchor),
+            page.trailingAnchor.constraint(equalTo: island.trailingAnchor),
+            page.bottomAnchor.constraint(equalTo: bar.topAnchor),
+            bar.leadingAnchor.constraint(equalTo: island.leadingAnchor),
+            bar.trailingAnchor.constraint(equalTo: island.trailingAnchor),
+            bar.bottomAnchor.constraint(equalTo: island.bottomAnchor),
+        ])
+    }
+
+    override func setDocumentEdited(_ dirtyFlag: Bool) {
+        super.setDocumentEdited(dirtyFlag)
+        guard dirtyFlag != edited else { return }
+        edited = dirtyFlag
+        updateBreadcrumbs()
+    }
+
+    func windowWillEnterFullScreen(_ notification: Notification) {
+        band.fullScreen(true)
+    }
+
+    func windowDidExitFullScreen(_ notification: Notification) {
+        band.fullScreen(false)
+    }
+
+    /// Who is in this file: the agents with changes waiting in it, then the people sharing it.
+    @objc private func updatePresence() {
+        var people: [(initials: String, writer: Writer)] = []
+        if let live = (document as? MarkdownDocument)?.live {
+            var writers: [Writer] = []
+            for change in live.changes.values.sorted(by: { $0.range.location < $1.range.location }) where change.marked {
+                let writer = MarkWriter(change.origin).writer
+                if writer != .collaborator, writer != .you, !writers.contains(writer) { writers.append(writer) }
+            }
+            people += writers.map { writer in
+                (writer == .codex ? "X" : String(writer.name.prefix(1)).uppercased(), writer)
+            }
+        }
+        if let document = document as? NSDocument, let share = Collaboration.of(document)?.share {
+            people += share.peers.map { peer in
+                let words = peer.name.split(separator: " ").prefix(2)
+                return (words.map { String($0.prefix(1)).uppercased() }.joined(), Writer.collaborator)
+            }
+        }
+        band.show(people: people)
     }
 
     override func showWindow(_ sender: Any?) {
@@ -140,6 +237,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         NotificationCenter.default.addObserver(self, selector: #selector(updateOutline), name: BlockMap.didParse, object: textView.styler.map)
         NotificationCenter.default.addObserver(self, selector: #selector(scrolled), name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
         self.textView = textView
+        horizon.attach(textView, live: document.live)
+        keepBar.attach(textView, live: document.live)
+        updatePresence()
         if let url = document.fileURL { ReviewInbox.noteOpened(url) }
         sidebar.show(document.fileURL, headings: outline(of: textView.textStorage!.mutableString, in: textView.styler.map))
         markBrokenLinks()
@@ -153,21 +253,26 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     }
 
     private func setPage(_ content: NSView) {
-        page.contentView = content
+        pageContent?.removeFromSuperview()
+        pageContent = content
+        page.addSubview(content)
         content.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            content.leadingAnchor.constraint(equalTo: page.safeAreaLayoutGuide.leadingAnchor),
+            content.leadingAnchor.constraint(equalTo: page.leadingAnchor),
             content.trailingAnchor.constraint(equalTo: page.trailingAnchor),
-            content.topAnchor.constraint(equalTo: page.safeAreaLayoutGuide.topAnchor),
+            content.topAnchor.constraint(equalTo: page.topAnchor),
             content.bottomAnchor.constraint(equalTo: page.bottomAnchor),
         ])
-        // Over the page's top inset, so the text never moves for it.
+        // A file's page attaches them again once its text is in.
+        horizon.attach(nil, live: nil)
+        keepBar.attach(nil, live: nil)
+        // Over the page's top, so the text never moves for it.
         finished.removeFromSuperview()
         finished.translatesAutoresizingMaskIntoConstraints = false
         page.addSubview(finished)
         NSLayoutConstraint.activate([
-            finished.topAnchor.constraint(equalTo: page.safeAreaLayoutGuide.topAnchor),
-            finished.leadingAnchor.constraint(equalTo: page.safeAreaLayoutGuide.leadingAnchor),
+            finished.topAnchor.constraint(equalTo: page.topAnchor),
+            finished.leadingAnchor.constraint(equalTo: page.leadingAnchor),
             finished.trailingAnchor.constraint(equalTo: page.trailingAnchor),
             finished.heightAnchor.constraint(equalToConstant: FinishedLine.height),
         ])
@@ -291,13 +396,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         if let place = entry.place { tab.restore(place) }
     }
 
-    @objc private func navigate(_ sender: NSToolbarItemGroup) {
-        sender.selectedIndex == 0 ? goBack(sender) : goForward(sender)
-    }
-
     private func updateNavigation() {
-        navigation?.subitems.first?.isEnabled = history.canGoBack
-        navigation?.subitems.last?.isEnabled = history.canGoForward
+        band.back.isEnabled = history.canGoBack
+        band.forward.isEnabled = history.canGoForward
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
@@ -314,31 +415,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     private func updateBreadcrumbs() {
         let file = (document as? NSDocument)?.fileURL
         crumbURLs = breadcrumbs(of: file, in: folder?.url)
-        func item(_ title: String, image: NSImage?, current: Bool) -> NSPathControlItem {
-            let item = NSPathControlItem()
-            item.attributedTitle = NSAttributedString(string: title, attributes: [
-                .font: NSFont.systemFont(ofSize: 13),
-                .foregroundColor: current ? NSColor.labelColor : NSColor.secondaryLabelColor,
-            ])
-            image?.size = NSSize(width: 16, height: 16)
-            item.image = image
-            return item
+        var names = crumbURLs.map { FileManager.default.displayName(atPath: $0.path) }
+        if names.isEmpty, let name = (document as? NSDocument)?.displayName {
+            names = [name]
         }
-        var items = crumbURLs.enumerated().map { index, url in
-            item(FileManager.default.displayName(atPath: url.path), image: NSWorkspace.shared.icon(forFile: url.path), current: index == crumbURLs.count - 1)
-        }
-        if items.isEmpty, let name = (document as? NSDocument)?.displayName {
-            items = [item(name, image: nil, current: true)]
-        }
-        crumbs.pathItems = items
+        band.show(path: names, edited: edited)
     }
 
-    /// Lists the Markdown files of the clicked folder, or of the file's folder, under the click.
-    @objc private func crumbClicked(_ sender: NSPathControl) {
-        guard let clicked = sender.clickedPathItem,
-            let index = sender.pathItems.firstIndex(where: { $0 === clicked }) ?? sender.pathItems.firstIndex(where: { $0.title == clicked.title }),
-            crumbURLs.indices.contains(index)
-        else { return }
+    /// Lists the Markdown files of the clicked folder, or of the file's folder, under the crumb.
+    private func crumbClicked(_ index: Int, under crumb: NSView) {
+        guard crumbURLs.indices.contains(index) else { return }
         let file = (document as? NSDocument)?.fileURL?.standardizedFileURL
         let url = crumbURLs[index]
         let directory = url == file ? url.deletingLastPathComponent() : url
@@ -348,15 +434,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
             let item = menu.addItem(withTitle: entry.url.lastPathComponent, action: #selector(openCrumb(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = entry.url
-            item.image = NSWorkspace.shared.icon(forFile: entry.url.path)
-            item.image?.size = NSSize(width: 16, height: 16)
             item.state = entry.url == file ? .on : .off
         }
         if menu.items.isEmpty {
             menu.addItem(withTitle: "No Markdown Files", action: nil, keyEquivalent: "")
         }
-        let x = sender.convert(NSApp.currentEvent?.locationInWindow ?? .zero, from: nil).x
-        menu.popUp(positioning: nil, at: NSPoint(x: x, y: sender.isFlipped ? sender.bounds.maxY + 4 : -4), in: sender)
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: crumb.isFlipped ? crumb.bounds.maxY + 6 : -6), in: crumb)
     }
 
     @objc private func openCrumb(_ sender: NSMenuItem) {
@@ -526,64 +609,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
             alert.beginSheetModal(for: window!)
         }
     }
-
-    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.toggleSidebar, .sidebarTrackingSeparator, .navigation, .breadcrumbs, .flexibleSpace, .share]
-    }
-
-    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        toolbarDefaultItemIdentifiers(toolbar)
-    }
-
-    // AppKit makes the standard items itself.
-    func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
-        switch itemIdentifier {
-        case .navigation:
-            let group = NSToolbarItemGroup(
-                itemIdentifier: itemIdentifier,
-                images: ["chevron.left", "chevron.right"].map { NSImage(systemSymbolName: $0, accessibilityDescription: nil)! },
-                selectionMode: .momentary,
-                labels: ["Back", "Forward"],
-                target: self,
-                action: #selector(navigate(_:))
-            )
-            group.label = "Back/Forward"
-            group.autovalidates = false
-            for item in group.subitems { item.autovalidates = false }
-            group.subitems.first?.toolTip = "Back"
-            group.subitems.last?.toolTip = "Forward"
-            navigation = group
-            updateNavigation()
-            return group
-        case .breadcrumbs:
-            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
-            item.label = "Path"
-            item.view = crumbs
-            item.isBordered = false
-            item.visibilityPriority = .high
-            NSLayoutConstraint.activate([
-                crumbs.widthAnchor.constraint(greaterThanOrEqualToConstant: 160),
-                crumbs.widthAnchor.constraint(lessThanOrEqualToConstant: 560),
-            ])
-            return item
-        case .share:
-            let item = NSToolbarItem(itemIdentifier: .share)
-            item.label = "Share"
-            item.toolTip = "Edit this file live with someone"
-            item.image = NSImage(systemSymbolName: "person.2", accessibilityDescription: "Share")
-            item.target = self
-            item.action = #selector(shareDocument(_:))
-            return item
-        default:
-            return nil
-        }
-    }
-}
-
-extension NSToolbarItem.Identifier {
-    static let navigation = Self("Navigation")
-    static let breadcrumbs = Self("Breadcrumbs")
-    static let share = Self("Share")
 }
 
 /// A view filled with the theme's paper, following the theme and the appearance.

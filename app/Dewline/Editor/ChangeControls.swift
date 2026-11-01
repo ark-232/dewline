@@ -28,28 +28,56 @@ private func paint(_ layer: CALayer?, in view: NSView, radius: CGFloat) {
 @MainActor
 private func label(_ text: String, size: CGFloat, weight: NSFont.Weight = .regular, color: Token) -> NSTextField {
     let label = NSTextField(labelWithString: text)
-    label.font = .systemFont(ofSize: size, weight: weight)
+    label.font = Chrome.brand(size, weight: weight == .semibold ? 600 : 450)
     label.textColor = ThemeStore.shared.color(color)
     return label
 }
 
-/// A push button that calls `action` when clicked.
+/// A button that calls `action` when clicked, drawn as Station's chrome: the prominent one filled with ink and set in
+/// the island's color, the others bare text in `ink2`. Signal never fills it.
 @MainActor
 private final class ActionButton: NSButton {
     private var handler: () -> Void = {}
+    private var prominent = false
 
     convenience init(_ title: String, prominent: Bool = false, shortcut: String? = nil, label: String, _ action: @escaping () -> Void) {
         self.init(frame: .zero)
         self.title = title
+        self.prominent = prominent
         handler = action
         target = self
         self.action = #selector(clicked)
-        bezelStyle = .push
-        controlSize = .small
-        font = .systemFont(ofSize: NSFont.smallSystemFontSize, weight: prominent ? .semibold : .regular)
-        if prominent { bezelColor = ThemeStore.shared.color(.accent) }
+        isBordered = false
+        wantsLayer = true
         toolTip = shortcut.map { "\(title) (\($0))" }
         setAccessibilityLabel(label)
+        paint()
+        NotificationCenter.default.addObserver(self, selector: #selector(paint), name: ThemeStore.didChange, object: nil)
+    }
+
+    override var intrinsicContentSize: NSSize {
+        let size = super.intrinsicContentSize
+        return NSSize(width: size.width + (prominent ? 24 : 8), height: 24)
+    }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        layer?.cornerRadius = 6
+        layer?.backgroundColor = prominent ? ThemeStore.shared.color(.ink).resolved(for: effectiveAppearance).cgColor : nil
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        paint()
+    }
+
+    @objc private func paint() {
+        attributedTitle = NSAttributedString(string: title, attributes: [
+            .font: prominent ? Chrome.labelActive : Chrome.label,
+            .foregroundColor: ThemeStore.shared.color(prominent ? .islandEditor : .ink2),
+        ])
+        needsDisplay = true
     }
 
     @objc private func clicked() {

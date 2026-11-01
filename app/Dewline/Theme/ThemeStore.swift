@@ -157,7 +157,7 @@ final class ThemeStore {
         func nearest(_ colors: (light: OKLCH, dark: OKLCH)) -> (theme: Theme, token: Token, dark: Bool, deltaE: Double)? {
             var best: (theme: Theme, token: Token, dark: Bool, deltaE: Double)?
             for (theme, dark, color) in [(lightTheme, false, colors.light), (darkTheme, true, colors.dark)] {
-                for (token, value) in dark ? theme.dark : theme.light where value.c >= 0.03 || color.c >= 0.03 {
+                for (token, value) in dark ? theme.dark : theme.light where !Token.station.contains(token) && (value.c >= 0.03 || color.c >= 0.03) {
                     let deltaE = value.deltaE(color)
                     if deltaE < best?.deltaE ?? .infinity { best = (theme, token, dark, deltaE) }
                 }
