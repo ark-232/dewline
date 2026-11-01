@@ -33,8 +33,9 @@ final class SidebarNode {
     }
 }
 
-/// Pinned, Recents, a folder's Agent Files, and the folder tree with the open file's outline under its row; a window
-/// with no folder shows the outline as its own section. A folder's window can show Find in Files in place of them.
+/// Pinned, a folder's Agent files, Review, the folder tree with the open file's outline under its row, then Recents; a
+/// window with no folder shows the outline as its own section. What loads here sits docked at the island's bottom. A
+/// folder's window can show Find in Files in place of them.
 final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NSOutlineViewDelegate, NSMenuDelegate {
     var open: (URL, _ newTab: Bool) -> Void = { _, _ in }
     var jump: (Heading) -> Void = { _ in }
@@ -44,6 +45,10 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     private let folder: Folder?
     private let find: FindInFilesController?
     private let outlineView = SidebarOutlineView()
+    /// What loads here, under the list, sized to its rows.
+    private let loadsView = SidebarOutlineView()
+    private var loadsHeight: NSLayoutConstraint?
+    private var loadsGap: NSLayoutConstraint?
     private let pinned = SidebarNode(.section("Pinned"))
     private let recents = SidebarNode(.section("Recents"))
     private let outlineSection = SidebarNode(.section("Outline"), children: [])
@@ -74,7 +79,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             let listing = folder.children(of: folder.url, showingIgnored: showsIgnored)
             let rows = listing.entries.map { SidebarNode(.entry($0)) }
             return SidebarNode(
-                .section(FileManager.default.displayName(atPath: folder.url.path), branch: gitBranch(at: folder.url)),
+                .section("Folder", branch: gitBranch(at: folder.url)),
                 children: rows + (listing.ignored.isEmpty ? [] : [SidebarNode(.ignored(listing.ignored))])
             )
         }
@@ -104,26 +109,35 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     }
 
     override func loadView() {
-        let column = NSTableColumn(identifier: .init("name"))
-        column.resizingMask = .autoresizingMask
-        outlineView.addTableColumn(column)
-        outlineView.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
-        outlineView.autoresizesOutlineColumn = false
-        outlineView.outlineTableColumn = column
-        outlineView.headerView = nil
-        outlineView.style = .plain
-        outlineView.floatsGroupRows = false
-        outlineView.backgroundColor = .clear
-        outlineView.intercellSpacing = NSSize(width: 0, height: 0)
-        outlineView.indentationPerLevel = 12
-        outlineView.focusRingType = .none
-        outlineView.dataSource = self
-        outlineView.delegate = self
+        for view in [outlineView, loadsView] {
+            let column = NSTableColumn(identifier: .init("name"))
+            column.resizingMask = .autoresizingMask
+            view.addTableColumn(column)
+            view.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
+            view.autoresizesOutlineColumn = false
+            view.outlineTableColumn = column
+            view.headerView = nil
+            view.style = .plain
+            view.floatsGroupRows = false
+            view.backgroundColor = .clear
+            view.intercellSpacing = NSSize(width: 0, height: 0)
+            view.indentationPerLevel = 12
+            view.focusRingType = .none
+            view.dataSource = self
+            view.delegate = self
+        }
         outlineView.target = self
         outlineView.action = #selector(clicked(_:))
         outlineView.doubleAction = #selector(doubleClicked(_:))
         outlineView.menu = NSMenu()
         outlineView.menu?.delegate = self
+        loadsView.clickedWithoutSelecting = { [weak self] node in
+            guard case .agent(let row) = node.kind else { return true }
+            if let url = row.url {
+                self?.open(url, NSApp.currentEvent?.modifierFlags.contains(.command) == true)
+            }
+            return true
+        }
         outlineView.clickedWithoutSelecting = { [weak self] node in
             switch node.kind {
             case .heading(let heading):
@@ -151,17 +165,38 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         scrollView.automaticallyAdjustsContentInsets = false
         scrollView.contentInsets = NSEdgeInsets(top: 8, left: 0, bottom: 8, right: 0)
         let root = SidebarGround(frame: NSRect(x: 0, y: 0, width: 248, height: 600))
+        let dock = NSScrollView()
+        dock.documentView = loadsView
+        dock.drawsBackground = false
+        dock.hasVerticalScroller = false
+        dock.automaticallyAdjustsContentInsets = false
+        dock.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(dock)
+        let loadsHeight = dock.heightAnchor.constraint(equalToConstant: 0)
+        self.loadsHeight = loadsHeight
+        NSLayoutConstraint.activate([
+            loadsHeight,
+            dock.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            dock.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            dock.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -8),
+            dock.heightAnchor.constraint(lessThanOrEqualTo: root.heightAnchor, multiplier: 0.4),
+        ])
+        loadsHeight.priority = .defaultHigh
         if let find { addChild(find) }
         for content in [scrollView] + (find.map { [$0.view] } ?? []) {
             content.translatesAutoresizingMaskIntoConstraints = false
             root.addSubview(content)
             NSLayoutConstraint.activate([
                 content.topAnchor.constraint(equalTo: root.topAnchor),
-                content.bottomAnchor.constraint(equalTo: root.bottomAnchor),
                 content.leadingAnchor.constraint(equalTo: root.leadingAnchor),
                 content.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             ])
         }
+        // At least 16 pt between the list and the docked section; Find in Files covers both.
+        let gap = scrollView.bottomAnchor.constraint(equalTo: dock.topAnchor)
+        gap.isActive = true
+        loadsGap = gap
+        find.map { $0.view.bottomAnchor.constraint(equalTo: root.bottomAnchor).isActive = true }
         find?.view.isHidden = true
         view = root
         NotificationCenter.default.addObserver(self, selector: #selector(libraryChanged), name: Library.changed, object: nil)
@@ -182,6 +217,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     override func viewDidLayout() {
         super.viewDidLayout()
         outlineView.sizeLastColumnToFit()
+        loadsView.sizeLastColumnToFit()
     }
 
     @objc private func fillUnderReducedTransparency() {
@@ -193,6 +229,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         guard let find else { return }
         (parent as? NSSplitViewController)?.splitViewItem(for: self)?.isCollapsed = false
         outlineView.enclosingScrollView?.isHidden = true
+        loadsView.enclosingScrollView?.isHidden = true
         find.view.isHidden = false
         find.begin(query)
     }
@@ -200,6 +237,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     private func showFiles() {
         find?.view.isHidden = true
         outlineView.enclosingScrollView?.isHidden = false
+        loadsView.enclosingScrollView?.isHidden = false
         view.window?.makeFirstResponder(outlineView)
     }
 
@@ -213,9 +251,16 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         updateOutline(headings)
         if let fileNode {
             outlineView.expandItem(fileNode)
-            let row = outlineView.row(forItem: fileNode)
-            outlineView.selectRowIndexes([row], byExtendingSelection: false)
-            outlineView.scrollRowToVisible(row)
+            outlineView.scrollRowToVisible(outlineView.row(forItem: fileNode))
+        }
+        selectOpenFile()
+    }
+
+    /// The open file's row is the selected one, through reloads and relisting.
+    private func selectOpenFile() {
+        let row = fileNode.map { outlineView.row(forItem: $0) } ?? -1
+        if row >= 0 {
+            if outlineView.selectedRow != row { outlineView.selectRowIndexes([row], byExtendingSelection: false) }
         } else {
             outlineView.deselectAll(nil)
         }
@@ -255,6 +300,11 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     /// What Loads Here for `directory`.
     private func listLoads(in directory: URL?) {
         loads.children = directory.map { whatLoadsRows(in: $0, root: folder?.url).map { SidebarNode(.agent($0)) } } ?? []
+        loadsView.reloadData()
+        loadsView.expandItem(loads)
+        let rows = loads.children!.isEmpty ? 0 : 30 + 26 * CGFloat(loads.children!.count)
+        loadsHeight?.constant = rows
+        loadsGap?.constant = rows == 0 ? 0 : -16
     }
 
     private func listReview() {
@@ -263,20 +313,17 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     }
 
     private var sections: [SidebarNode] {
-        let shortcuts = [pinned, recents, agentSection, review, loads].filter { !($0.children ?? []).isEmpty }
-        if let tree { return shortcuts + [tree] }
-        return shortcuts + (outlineSection.children!.isEmpty ? [] : [outlineSection])
+        let main = tree ?? (outlineSection.children!.isEmpty ? nil : outlineSection)
+        return [pinned, agentSection, review].filter { !($0.children ?? []).isEmpty } + (main.map { [$0] } ?? [])
+            + (recents.children!.isEmpty ? [] : [recents])
     }
 
     private func reload() {
-        let selected = outlineView.item(atRow: outlineView.selectedRow) as AnyObject?
         outlineView.reloadData()
         for section in sections where expandedOnce.insert(ObjectIdentifier(section)).inserted {
             outlineView.expandItem(section)
         }
-        if let selected, outlineView.row(forItem: selected) >= 0 {
-            outlineView.selectRowIndexes([outlineView.row(forItem: selected)], byExtendingSelection: false)
-        }
+        selectOpenFile()
     }
 
     /// The tree row for `url`, expanding the folders above it.
@@ -317,6 +364,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             }
         }
         visit(tree, folder.url)
+        selectOpenFile()
     }
 
     private func children(of node: SidebarNode) -> [SidebarNode] {
@@ -483,11 +531,15 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     }
 
     func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
-        (item as? SidebarNode).map { children(of: $0).count } ?? sections.count
+        (item as? SidebarNode).map { children(of: $0).count } ?? roots(of: outlineView).count
     }
 
     func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
-        (item as? SidebarNode).map { children(of: $0)[index] } ?? sections[index]
+        (item as? SidebarNode).map { children(of: $0)[index] } ?? roots(of: outlineView)[index]
+    }
+
+    private func roots(of view: NSOutlineView) -> [SidebarNode] {
+        view === loadsView ? (loads.children!.isEmpty ? [] : [loads]) : sections
     }
 
     func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
@@ -526,7 +578,9 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         case .section(let title, let branch):
             let cell = cell(SidebarCell.header)
             let counted = node === agentSection || node === review
-            cell.show(title, detail: branch ?? (counted ? node.children.map { String($0.count) } : nil))
+            let path = node === tree ? folder.map { ($0.url.path as NSString).abbreviatingWithTildeInPath } : nil
+            cell.show(title, detail: path.map { path in branch.map { path + " · " + $0 } ?? path }
+                ?? (counted ? node.children.map { String($0.count) } : nil))
             return cell
         case .entry(let entry):
             let cell = cell(SidebarCell.file)
@@ -534,7 +588,11 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             return cell
         case .agent(let row):
             let cell = cell(SidebarCell.file)
-            cell.show(row)
+            if outlineView.parent(forItem: node) as? SidebarNode === review {
+                cell.show(review: row)
+            } else {
+                cell.show(row)
+            }
             return cell
         case .shortcut(let entry, let date):
             let cell = cell(SidebarCell.file)
@@ -689,6 +747,7 @@ private final class SidebarCell: NSTableCellView, ChromeSelectable {
         let label = NSTextField(labelWithString: "")
         label.font = Chrome.label
         label.lineBreakMode = .byTruncatingTail
+        label.maximumNumberOfLines = 1
         label.translatesAutoresizingMaskIntoConstraints = false
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         textField = label
@@ -722,9 +781,13 @@ private final class SidebarCell: NSTableCellView, ChromeSelectable {
         ]
         switch identifier {
         case Self.header:
+            // A folder's path gives way before its label, losing its start first.
+            detail.lineBreakMode = .byTruncatingHead
+            detail.setContentCompressionResistancePriority(.defaultLow - 1, for: .horizontal)
+            label.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
             constraints += [
                 label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
-                label.trailingAnchor.constraint(lessThanOrEqualTo: detail.leadingAnchor, constant: -8),
+                detail.leadingAnchor.constraint(greaterThanOrEqualTo: label.trailingAnchor, constant: 8),
             ]
         case Self.file:
             constraints += [
@@ -870,7 +933,29 @@ private final class SidebarCell: NSTableCellView, ChromeSelectable {
         if let flag = row.flag, let title = textField?.attributedStringValue { textField?.attributedStringValue = title.withFlagColored(flag) }
     }
 
-    /// A section's label, sentence case, with its count or branch in mono at the right edge.
+    /// A Review row on one line: the file's name, its middle given up first, then its folder in mono `ink3`.
+    func show(review row: AgentRow) {
+        fill(slot: (nil, nil, row.url.map { ThemeStore.shared.writerColor(agentWriter(of: $0)) }))
+        subhead = false
+        tone = .ink2
+        paint()
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingMiddle
+        let name = row.url?.lastPathComponent ?? row.title
+        let title = NSMutableAttributedString(string: name, attributes: [
+            .font: textField?.font ?? Chrome.label, .foregroundColor: Chrome.color(.ink2), .paragraphStyle: paragraph,
+        ])
+        if let folder = row.url?.deletingLastPathComponent().lastPathComponent {
+            title.append(NSAttributedString(string: "  " + folder, attributes: [
+                .font: Chrome.mono(10.5), .foregroundColor: Chrome.color(.ink3), .paragraphStyle: paragraph,
+            ]))
+        }
+        textField?.attributedStringValue = title
+        toolTip = row.tip
+        detail.stringValue = row.detail
+    }
+
+    /// A section's label, sentence case, with its count, or its folder's path and branch, in mono at the right edge.
     func show(_ title: String, detail text: String?) {
         textField?.attributedStringValue = Chrome.sectionTitle(title, color: Chrome.color(.ink3))
         detail.stringValue = text ?? ""
