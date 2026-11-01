@@ -95,8 +95,8 @@ final class ControlSocket: @unchecked Sendable {
 
     /// Where the command looks.
     static var standardPath: String {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appending(path: "dev.arkwerx.dewline/run/control.sock").path
+        URL.applicationSupportDirectory.appending(path: Bundle.main.bundleIdentifier ?? "dev.arkwerx.dewline")
+            .appending(path: "run/control.sock").path
     }
 
     let path: String
@@ -246,14 +246,16 @@ final class ControlSocket: @unchecked Sendable {
                 continue
             }
             var on: Int32 = 1
-            guard connections.count < Self.maxConnections,
-                setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size)) == 0,
+            // `dewline notify` writes its line and exits, often before this accept, and macOS then refuses socket
+            // options with EINVAL. The line is still there to read; a reply could only raise SIGPIPE, so none is sent.
+            let writable = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size)) == 0
+            guard connections.count < Self.maxConnections, writable || errno == EINVAL,
                 fcntl(fd, F_SETFL, O_NONBLOCK) == 0, fcntl(fd, F_SETFD, FD_CLOEXEC) == 0
             else {
                 close(fd)
                 continue
             }
-            let connection = Connection(fd: fd, socket: self)
+            let connection = Connection(fd: fd, socket: self, writable: writable)
             let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
             source.setEventHandler { [weak self, weak connection] in
                 if let self, let connection { self.read(connection) }
@@ -310,6 +312,7 @@ final class ControlSocket: @unchecked Sendable {
     /// Writes `reply`, then closes the connection unless it is `opened` for a request that waits.
     private func send(_ reply: Reply, to connection: Connection) {
         guard connection.isOpen else { return }
+        guard connection.writable else { return drop(connection) }
         let line = reply.line
         let written = line.withUnsafeBytes { write(connection.fd, $0.baseAddress, $0.count) }
         if written != line.count || reply != .opened || connection.request?.wait != true {
@@ -329,6 +332,8 @@ final class ControlSocket: @unchecked Sendable {
     /// One client. `reply` may be called from any thread.
     final class Connection: @unchecked Sendable {
         fileprivate let fd: Int32
+        /// False for a client that closed before it was accepted.
+        fileprivate let writable: Bool
         fileprivate weak var socket: ControlSocket?
         fileprivate let openFlag = Atomic(true)
         // Touched only on the socket's queue.
@@ -336,8 +341,9 @@ final class ControlSocket: @unchecked Sendable {
         fileprivate var buffer: [UInt8] = []
         fileprivate var request: Open?
 
-        fileprivate init(fd: Int32, socket: ControlSocket) {
+        fileprivate init(fd: Int32, socket: ControlSocket, writable: Bool) {
             self.fd = fd
+            self.writable = writable
             self.socket = socket
         }
 
