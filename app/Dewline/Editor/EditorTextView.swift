@@ -3,6 +3,10 @@ import AppKit
 /// The markdown editor: hides syntax through `MarkdownStyler` and defers styling while an input method composes.
 final class EditorTextView: CaretTextView {
     let styler = MarkdownStyler()
+    /// The change engine's marks, painted under the text.
+    let marks = ChangeMarks()
+    /// Your edits' undo history, which landings move instead of clearing.
+    lazy var history = UndoHistory(undoManager: styler.undoManager)
     private let blockFragments = BlockFragments()
     private var composing = false
     private var toggleWaits = false
@@ -10,7 +14,7 @@ final class EditorTextView: CaretTextView {
     private weak var snapshot: NSView?
     /// When the last toggle committed its first frame and started the fade.
     private(set) var fadeStarted: ContinuousClock.Instant?
-    /// Where images in the document resolve from.
+    /// Where images in the document resolve from, and where pasted images go; nil until the document is saved.
     var documentFolder: URL?
     /// Vim's keys, while Vim mode is on.
     var vim: VimEngine? {
@@ -20,6 +24,34 @@ final class EditorTextView: CaretTextView {
         }
     }
     private var vimStatus: NSTextField?
+    /// The foldable block under the pointer, by its location.
+    private(set) var hoveredFold: Int?
+    private var centering = false
+    private var dimmed = false
+    /// Focus dims every block but the caret's.
+    var focusMode = false {
+        didSet { updateFocus() }
+    }
+    /// Typewriter keeps the caret's line in the middle of the view.
+    var typewriterMode = false {
+        didSet {
+            fitColumn(to: frame.width)
+            centerCaretSoon()
+        }
+    }
+    /// Where wikilinks resolve: the window's folder, else the document's.
+    var noteFolder: URL?
+    /// Opens a note a link points to, at a heading.
+    var openNote: ((URL, String?) -> Void)?
+    /// Runs Find in Files for a tag; a window without a folder has none, and Cmd-clicking a tag beeps.
+    var findInFiles: ((String) -> Void)?
+    var footnotePopover: NSPopover?
+    /// Counts the storage's character edits; the change engine stamps landings and saves with it.
+    private(set) var version: UInt64 = 0
+    /// Called after each character edit with its range and change in length.
+    var edited: ((NSRange, Int) -> Void)?
+    /// Called when a composition or a Writing Tools session ends.
+    var inputEnded: (() -> Void)?
 
     var defersStyling: Bool {
         composing || hasMarkedText()
@@ -39,15 +71,23 @@ final class EditorTextView: CaretTextView {
         textLayoutManager?.delegate = blockFragments
         styler.textView = self
         styler.blocks.textView = self
+        styler.highlights.textView = self
+        textLayoutManager?.renderingAttributesValidator = { [weak self] layout, fragment in
+            MainActor.assumeIsolated { self?.styler.highlights.validate(layout, fragment) }
+        }
+        history.textView = self
         delegate = styler
         textStorage?.delegate = styler
         isRichText = false
-        allowsUndo = true
-        isAutomaticQuoteSubstitutionEnabled = false
-        isAutomaticDashSubstitutionEnabled = false
+        // The history records edits itself, so a landing can move them.
+        allowsUndo = false
         isAutomaticTextReplacementEnabled = false
         isContinuousSpellCheckingEnabled = true
         usesFindBar = true
+        marks.textView = self
+        marks.autoresizingMask = [.width, .height]
+        marks.wantsLayer = true
+        addSubview(marks, positioned: .below, relativeTo: nil)
         applyTheme()
         NotificationCenter.default.addObserver(self, selector: #selector(themeDidChange(_:)), name: ThemeStore.didChange, object: nil)
     }
@@ -90,13 +130,17 @@ final class EditorTextView: CaretTextView {
         selectedTextAttributes = [.backgroundColor: store.color(.selection)]
         typingAttributes = styler.baseAttributes
         vimStatus?.textColor = store.color(.ink2)
+        isAutomaticQuoteSubstitutionEnabled = store.smartPunctuation
+        isAutomaticDashSubstitutionEnabled = store.smartPunctuation
         fitColumn(to: frame.width)
         if store.vimMode != (vim != nil) { vim = store.vimMode ? VimEngine() : nil }
+        updateFocus()
     }
 
     @objc private func themeDidChange(_ notification: Notification) {
         applyTheme()
         styler.restyleDocument()
+        styler.highlights.recolor()
     }
 
     /// Rendered diagrams and math take the colors of the appearance they were drawn in.
@@ -110,18 +154,21 @@ final class EditorTextView: CaretTextView {
         super.setFrameSize(newSize)
     }
 
-    /// Centers the column at the measure, with margins of at least 32 pt; a narrower view fills.
+    /// Centers the column at the measure, with margins of at least 32 pt; a narrower view fills. Typewriter lets the
+    /// first and last lines scroll to the middle.
     private func fitColumn(to width: CGFloat) {
         let padding = textContainer?.lineFragmentPadding ?? 0
         let margin = max(32, ((width - ThemeStore.shared.measure) / 2 - padding).rounded(.down))
-        if textContainerInset.width != margin {
-            textContainerInset = NSSize(width: margin, height: 24)
+        let height = typewriterMode ? max(24, ((enclosingScrollView?.contentView.bounds.height ?? 0) / 2).rounded()) : 24
+        if textContainerInset != NSSize(width: margin, height: height) {
+            textContainerInset = NSSize(width: margin, height: height)
         }
     }
 
-    /// Draws each quote's rule at the column's left edge.
+    /// Draws the fold disclosures and each quote's rule at the column's left edge.
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
+        drawDisclosures(in: rect)
         let storage = textStorage!
         guard !styler.showsSource, storage.length > 0, let window else { return }
         let first = characterIndexForInsertion(at: NSPoint(x: rect.minX, y: max(rect.minY, textContainerOrigin.y)))
@@ -130,6 +177,7 @@ final class EditorTextView: CaretTextView {
         func line(at index: Int) -> NSRect {
             convert(window.convertFromScreen(firstRect(forCharacterRange: NSRange(location: index, length: 0), actualRange: nil)), from: nil)
         }
+        drawCallouts(in: visible, line: line(at:))
         ThemeStore.shared.color(.quoteRule).setFill()
         storage.enumerateAttribute(.dewlineQuote, in: visible) { value, range, _ in
             guard value != nil else { return }
@@ -160,12 +208,6 @@ final class EditorTextView: CaretTextView {
             }
         }
         return children
-    }
-
-    /// A click on a task box toggles it and leaves the caret where it was.
-    override func mouseDown(with event: NSEvent) {
-        guard let box = taskBox(at: convert(event.locationInWindow, from: nil)) else { return super.mouseDown(with: event) }
-        toggleTask(at: box)
     }
 
     /// With Vim on, keys outside insert mode go to Vim and never to the input method; marked text keeps its keys.
@@ -207,7 +249,10 @@ final class EditorTextView: CaretTextView {
     }
 
     override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        // A composition is one undo entry, from its first marked text to its commit.
+        if !hasMarkedText() { history.breakCoalescing() }
         composing = true
+        history.composing = true
         super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
         composing = false
         if !hasMarkedText() { compositionEnded() }
@@ -216,7 +261,9 @@ final class EditorTextView: CaretTextView {
     override func insertText(_ string: Any, replacementRange: NSRange) {
         let commits = hasMarkedText()
         composing = commits
+        history.typing = true
         super.insertText(string, replacementRange: replacementRange)
+        history.typing = false
         composing = false
         if commits { compositionEnded() }
     }
@@ -228,8 +275,59 @@ final class EditorTextView: CaretTextView {
         compositionEnded()
     }
 
+    /// Keys that edit, such as Delete, coalesce with typing.
+    override func doCommand(by selector: Selector) {
+        let before = version
+        history.typing = true
+        super.doCommand(by: selector)
+        history.typing = false
+        // A key that moves the caret ends the typing.
+        if version == before { history.breakCoalescing() }
+    }
+
+    override func breakUndoCoalescing() {
+        super.breakUndoCoalescing()
+        history.breakCoalescing()
+    }
+
+    override func cut(_ sender: Any?) {
+        history.perform("Cut") { super.cut(sender) }
+    }
+
+    override func paste(_ sender: Any?) {
+        history.perform("Paste") { super.paste(sender) }
+    }
+
+    override func pasteAsPlainText(_ sender: Any?) {
+        history.perform("Paste") { super.pasteAsPlainText(sender) }
+    }
+
+    override func layout() {
+        super.layout()
+        marks.layoutIfDirty()
+    }
+
+    /// Cmd-Return.
+    @objc func keepChange(_ sender: Any?) {
+        marks.keepAtCaret()
+    }
+
+    /// Option-Cmd-Delete.
+    @objc func revertChange(_ sender: Any?) {
+        marks.revertAtCaret()
+    }
+
+    func storageDidEdit(_ range: NSRange, delta: Int) {
+        version += 1
+        history.didEdit(range, delta: delta)
+        edited?(range, delta)
+    }
+
     private func compositionEnded() {
+        history.composing = false
+        history.breakCoalescing()
         styler.flush()
+        inputEnded?()
         if toggleWaits {
             toggleWaits = false
             toggleSource(nil)
@@ -327,6 +425,9 @@ final class EditorTextView: CaretTextView {
     /// The one-range form calls this one, and Find's replace calls only this one.
     override func shouldChangeText(inRanges affectedRanges: [NSValue], replacementStrings: [String]?) -> Bool {
         let changes = super.shouldChangeText(inRanges: affectedRanges, replacementStrings: replacementStrings)
+        if changes, let replacementStrings {
+            history.willEdit(affectedRanges.map(\.rangeValue), with: replacementStrings)
+        }
         if changes, affectedRanges.count == 1, let string = replacementStrings?.first {
             styler.landing = affectedRanges[0].rangeValue.location + string.utf16.count
         } else {
@@ -336,8 +437,138 @@ final class EditorTextView: CaretTextView {
     }
 
     override func didChangeText() {
+        history.didChangeText()
         snapshot?.removeFromSuperview()
         super.didChangeText()
+        updateFocus()
+    }
+
+    override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
+        super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
+        marks.caretMoved()
+        guard !stillSelecting else { return }
+        updateFocus()
+        centerCaretSoon()
+    }
+
+    override func insertNewline(_ sender: Any?) {
+        guard hasMarkedText() || !continueList() else { return }
+        super.insertNewline(sender)
+    }
+
+    override func insertTab(_ sender: Any?) {
+        guard hasMarkedText() || !indentItems(outdent: false) else { return }
+        super.insertTab(sender)
+    }
+
+    override func insertBacktab(_ sender: Any?) {
+        guard hasMarkedText() || !indentItems(outdent: true) else { return }
+        super.insertBacktab(sender)
+    }
+
+    /// Dims, by color alone, the text outside the caret's block, without touching the storage.
+    private func updateFocus() {
+        guard focusMode || dimmed, let layout = textLayoutManager, let content = layout.textContentManager else { return }
+        layout.removeRenderingAttribute(.foregroundColor, for: content.documentRange)
+        dimmed = false
+        let length = textStorage?.length ?? 0
+        guard focusMode, length > 0 else { return }
+        dimmed = true
+        let caret = selectedRange().location
+        let focus = styler.map.blocks(in: NSRange(location: caret, length: 0)).first?.range
+            ?? textStorage!.mutableString.paragraphRange(for: NSRange(location: min(caret, length), length: 0))
+        let dim = ThemeStore.shared.color(.syntax)
+        for part in [NSRange(location: 0, length: focus.location), NSRange(location: NSMaxRange(focus), length: length - NSMaxRange(focus))] where part.length > 0 {
+            guard let start = content.location(content.documentRange.location, offsetBy: part.location),
+                let end = content.location(start, offsetBy: part.length), let range = NSTextRange(location: start, end: end)
+            else { continue }
+            layout.addRenderingAttribute(.foregroundColor, value: dim, for: range)
+        }
+    }
+
+    /// Centers the caret's line after the event in hand has laid the text out. The view snaps there: edits and caret
+    /// moves never animate, so Reduce Motion needs no other path.
+    private func centerCaretSoon() {
+        guard typewriterMode, !centering else { return }
+        centering = true
+        RunLoop.main.perform(inModes: [.common]) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.centering = false
+                let length = self.textStorage!.length
+                guard self.typewriterMode, length > 0 else { return }
+                self.hold(min(self.selectedRange().location, length - 1), at: self.visibleRect.height / 2 + MarkdownStyler.bodyFont.capHeight / 2)
+            }
+        }
+    }
+
+    @objc func toggleFocusMode(_ sender: Any?) {
+        focusMode.toggle()
+    }
+
+    @objc func toggleTypewriterMode(_ sender: Any?) {
+        typewriterMode.toggle()
+    }
+
+    @objc func toggleSmartPunctuation(_ sender: Any?) {
+        ThemeStore.shared.smartPunctuation.toggle()
+    }
+
+    /// Cmd-click follows a link, wikilink, embed, footnote or tag. A click in the margin beside a foldable block folds or
+    /// unfolds it; a click on a task box toggles it and leaves the caret where it was.
+    override func mouseDown(with event: NSEvent) {
+        history.breakCoalescing()
+        let point = convert(event.locationInWindow, from: nil)
+        if event.modifierFlags.contains(.command), follow(at: point) { return }
+        if let box = taskBox(at: point) { return toggleTask(at: box) }
+        guard point.x < textContainerOrigin.x, let (block, _) = foldable(at: point) else { return super.mouseDown(with: event) }
+        let anchor = NSMaxRange(textStorage!.mutableString.lineRange(for: NSRange(location: block.range.location, length: 0)))
+        if styler.folds.contains(where: { $0.location == anchor }) {
+            styler.setFolds(styler.folds.filter { $0.location != anchor })
+        } else {
+            fold(block)
+        }
+        needsDisplay = true
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas where area.owner === self && area.userInfo?["fold"] != nil { removeTrackingArea(area) }
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self, userInfo: ["fold": true]))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        let point = convert(event.locationInWindow, from: nil)
+        hoverFootnote(at: point)
+        let hovered = point.x < textContainerOrigin.x + (textContainer?.size.width ?? 0) ? foldable(at: point)?.block.range.location : nil
+        guard hovered != hoveredFold else { return }
+        hoveredFold = hovered
+        setNeedsDisplay(NSRect(x: 0, y: visibleRect.minY, width: textContainerOrigin.x, height: visibleRect.height))
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        guard hoveredFold != nil else { return }
+        hoveredFold = nil
+        setNeedsDisplay(NSRect(x: 0, y: visibleRect.minY, width: textContainerOrigin.x, height: visibleRect.height))
+    }
+
+    override var readablePasteboardTypes: [NSPasteboard.PasteboardType] {
+        super.readablePasteboardTypes + [.png, .tiff, .fileURL].filter { !super.readablePasteboardTypes.contains($0) }
+    }
+
+    override func readSelection(from pboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
+        insertImages(from: pboard) || super.readSelection(from: pboard, type: type)
+    }
+
+    /// Replaces `range` with `text` as one undoable edit of its own, named `name` in the Edit menu.
+    func replaceAsOneEdit(_ range: NSRange, with text: String, named name: String = "") {
+        history.perform(name) {
+            guard shouldChangeText(in: range, replacementString: text) else { return }
+            textStorage!.replaceCharacters(in: range, with: text)
+            didChangeText()
+        }
     }
 
     /// The baseline of the line holding the character at `index`, in this view's coordinates.
@@ -352,9 +583,32 @@ final class EditorTextView: CaretTextView {
         return textContainerOrigin.y + fragment.layoutFragmentFrame.minY + line.typographicBounds.minY + line.glyphOrigin.y
     }
 
+    /// Runs the `MarkdownFormat` command in the sender's tag as one undoable edit named for it.
+    @objc func format(_ sender: Any?) {
+        guard !hasMarkedText(), let command = (sender as? NSMenuItem).flatMap({ MarkdownFormat(rawValue: $0.tag) }),
+            let edit = command.edit(in: textStorage!.mutableString, selection: selectedRange())
+        else { return }
+        history.perform(command.name) {
+            guard shouldChangeText(in: edit.range, replacementString: edit.replacement) else { return }
+            textStorage!.replaceCharacters(in: edit.range, with: edit.replacement)
+            setSelectedRange(edit.selection)
+            didChangeText()
+        }
+    }
+
     override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        guard menuItem.action == #selector(toggleSource(_:)) else { return super.validateMenuItem(menuItem) }
-        menuItem.state = styler.showsSource ? .on : .off
+        if menuItem.action == #selector(format(_:)) { return isEditable }
+        if menuItem.action == #selector(keepChange(_:)) || menuItem.action == #selector(revertChange(_:)) {
+            return marks.changeAtCaret != nil
+        }
+        switch menuItem.action {
+        case #selector(toggleSource(_:)): menuItem.state = styler.showsSource ? .on : .off
+        case #selector(toggleFocusMode(_:)): menuItem.state = focusMode ? .on : .off
+        case #selector(toggleTypewriterMode(_:)): menuItem.state = typewriterMode ? .on : .off
+        case #selector(toggleSmartPunctuation(_:)): menuItem.state = ThemeStore.shared.smartPunctuation ? .on : .off
+        case #selector(unfoldBlock(_:)), #selector(unfoldAll(_:)): return !styler.folds.isEmpty
+        default: return super.validateMenuItem(menuItem)
+        }
         return true
     }
 }
@@ -387,11 +641,11 @@ extension EditorTextView: VimHost {
     }
 
     func vimUndo() {
-        undoManager?.undo()
+        history.undoManager.undo()
     }
 
     func vimRedo() {
-        undoManager?.redo()
+        history.undoManager.redo()
     }
 
     func vimSave() {

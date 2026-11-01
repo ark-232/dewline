@@ -1,0 +1,7 @@
+{
+  "name": "dewline-site",
+  "private": true,
+  "scripts": {
+    "preview": "WRANGLER_SEND_METRICS=false DO_NOT_TRACK=1 npx --yes wrangler@4.149.0 dev --ip 127.0.0.1 --port 8789"
+  }
+}

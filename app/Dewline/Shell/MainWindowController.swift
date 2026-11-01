@@ -11,6 +11,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     let index: FolderIndex?
     private let sidebar: SidebarViewController
     private let page = BackdropView()
+    /// "Claude finished · 3 places in 2 files · Review", under the tab bar.
+    let finished = FinishedLine()
     private(set) var textView: EditorTextView?
     private var outlineUpdate: Task<Void, Never>?
     private var sectionUpdate: Task<Void, Never>?
@@ -21,6 +23,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     private let crumbs = NSPathControl()
     /// The breadcrumbs' folders and file, one per path item.
     private var crumbURLs: [URL] = []
+    private var countUpdate: Task<Void, Never>?
 
     init(folder: Folder?) {
         self.folder = folder
@@ -115,24 +118,37 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         window?.layoutIfNeeded()
         let textView = scrollView.documentView as! EditorTextView
         textView.documentFolder = document.fileURL?.deletingLastPathComponent()
+        textView.noteFolder = folder?.url ?? textView.documentFolder
+        textView.openNote = { [weak self] url, heading in self?.follow(url, heading: heading) }
+        textView.findInFiles = folder == nil ? nil : { [weak self] tag in self?.sidebar.showSearch(tag) }
         textView.string = document.text
+        // Front matter stays folded until the caret goes into it.
+        if let first = textView.styler.map.blocks(in: NSRange(location: 0, length: 0)).first, first.kind == .frontMatter {
+            textView.setSelectedRange(NSRange(location: min(NSMaxRange(first.range), (textView.string as NSString).length), length: 0))
+        }
+        document.live?.attach(textView)
         // The editor's undo history is the document's, which counts its unsaved edits.
         document.undoManager = textView.styler.undoManager
         if let old = self.textView {
             NotificationCenter.default.removeObserver(self, name: NSText.didChangeNotification, object: old)
             NotificationCenter.default.removeObserver(self, name: BlockMap.didParse, object: old.styler.map)
             NotificationCenter.default.removeObserver(self, name: NSView.boundsDidChangeNotification, object: old.enclosingScrollView?.contentView)
+            NotificationCenter.default.removeObserver(self, name: NSTextView.didChangeSelectionNotification, object: old)
         }
         NotificationCenter.default.addObserver(self, selector: #selector(textChanged), name: NSText.didChangeNotification, object: textView)
+        NotificationCenter.default.addObserver(self, selector: #selector(countWords), name: NSTextView.didChangeSelectionNotification, object: textView)
         NotificationCenter.default.addObserver(self, selector: #selector(updateOutline), name: BlockMap.didParse, object: textView.styler.map)
         NotificationCenter.default.addObserver(self, selector: #selector(scrolled), name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
         self.textView = textView
+        if let url = document.fileURL { ReviewInbox.noteOpened(url) }
         sidebar.show(document.fileURL, headings: outline(of: textView.textStorage!.mutableString, in: textView.styler.map))
+        markBrokenLinks()
         if let url = document.fileURL {
             Library.noteOpened(url)
             if pushing { history.visit(url, leaving: leaving) }
         }
         updateBreadcrumbs()
+        countWords()
         window?.makeFirstResponder(textView)
     }
 
@@ -144,6 +160,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
             content.trailingAnchor.constraint(equalTo: page.trailingAnchor),
             content.topAnchor.constraint(equalTo: page.safeAreaLayoutGuide.topAnchor),
             content.bottomAnchor.constraint(equalTo: page.bottomAnchor),
+        ])
+        // Over the page's top inset, so the text never moves for it.
+        finished.removeFromSuperview()
+        finished.translatesAutoresizingMaskIntoConstraints = false
+        page.addSubview(finished)
+        NSLayoutConstraint.activate([
+            finished.topAnchor.constraint(equalTo: page.safeAreaLayoutGuide.topAnchor),
+            finished.leadingAnchor.constraint(equalTo: page.safeAreaLayoutGuide.leadingAnchor),
+            finished.trailingAnchor.constraint(equalTo: page.trailingAnchor),
+            finished.heightAnchor.constraint(equalToConstant: FinishedLine.height),
         ])
     }
 
@@ -177,6 +203,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
 
     private var hasEdits: Bool {
         textView.map { $0.string != (document as? MarkdownDocument)?.text } ?? false
+    }
+
+    /// Opens a note a link points to and puts the caret on its heading.
+    private func follow(_ url: URL, heading: String?) {
+        open(url, newTab: false)
+        guard let heading, let controller = NSDocumentController.shared.document(for: url)?.windowControllers.first as? MainWindowController else { return }
+        controller.textView?.jump(toHeading: heading)
     }
 
     override func newWindowForTab(_ sender: Any?) {
@@ -403,13 +436,52 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         sidebar.showSearch()
     }
 
+    /// Shows the document's word count in the subtitle, and the selection's beside it, 250 ms after the text or the
+    /// selection last changed, counted off the main thread once the map has the whole text.
+    @objc private func countWords() {
+        countUpdate?.cancel()
+        countUpdate = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            while let map = self?.textView?.styler.map, map.parsed < (self?.textView?.textStorage?.length ?? 0), !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            guard !Task.isCancelled, let self, let textView = self.textView else { return }
+            let text = textView.string
+            let blocks = textView.styler.map.blocks(in: NSRange(location: 0, length: (text as NSString).length))
+            let selection = textView.selectedRange()
+            let count = await Task.detached(priority: .utility) { WordCount.count(text, blocks: blocks, selection: selection) }.value
+            guard !Task.isCancelled else { return }
+            let words = WordCount.label(total: count.total, selected: selection.length > 0 ? count.selected : nil)
+            self.window?.subtitle = words
+        }
+    }
+
     /// Lists the headings 300 ms after typing stops, or once a whole parse lands.
     @objc private func textChanged() {
+        countWords()
         outlineUpdate?.cancel()
         outlineUpdate = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
             self?.updateOutline()
+            self?.markBrokenLinks()
+        }
+    }
+
+    /// A dotted underline under each relative link and CLAUDE.md `@import` whose file is missing, or whose import
+    /// cycles or runs more than 5 deep. Drawn as rendering attributes, so the text's own attributes stay as they are.
+    private func markBrokenLinks() {
+        guard let textView, let layout = textView.textLayoutManager, let content = layout.textContentManager else { return }
+        layout.removeRenderingAttribute(.underlineStyle, for: content.documentRange)
+        layout.removeRenderingAttribute(.underlineColor, for: content.documentRange)
+        guard let url = (document as? MarkdownDocument)?.fileURL else { return }
+        for link in brokenTargets(in: textView.string, path: url.path, home: agentHome) {
+            guard let start = content.location(content.documentRange.location, offsetBy: link.range.location),
+                let end = content.location(start, offsetBy: link.range.length),
+                let range = NSTextRange(location: start, end: end)
+            else { continue }
+            layout.addRenderingAttribute(.underlineStyle, value: NSUnderlineStyle([.single, .patternDot]).rawValue, for: range)
+            layout.addRenderingAttribute(.underlineColor, value: NSColor.systemRed.withAlphaComponent(0.7), for: range)
         }
     }
 
@@ -436,8 +508,27 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         }
     }
 
+    /// Shares the file live (D13): starts the share on first use, then shows the Share sheet.
+    @objc func shareDocument(_ sender: Any?) {
+        guard let document = document as? MarkdownDocument, let textView, document.fileURL != nil else {
+            let alert = NSAlert()
+            alert.messageText = "Save the file before sharing it."
+            alert.beginSheetModal(for: window!)
+            return
+        }
+        do {
+            let collaboration = try Collaboration.host(document, textView: textView)
+            window?.contentViewController?.presentAsSheet(ShareSheet(collaboration))
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Dewline couldn’t start sharing."
+            alert.informativeText = error.message
+            alert.beginSheetModal(for: window!)
+        }
+    }
+
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.toggleSidebar, .sidebarTrackingSeparator, .navigation, .breadcrumbs, .flexibleSpace]
+        [.toggleSidebar, .sidebarTrackingSeparator, .navigation, .breadcrumbs, .flexibleSpace, .share]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -475,6 +566,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
                 crumbs.widthAnchor.constraint(lessThanOrEqualToConstant: 560),
             ])
             return item
+        case .share:
+            let item = NSToolbarItem(itemIdentifier: .share)
+            item.label = "Share"
+            item.toolTip = "Edit this file live with someone"
+            item.image = NSImage(systemSymbolName: "person.2", accessibilityDescription: "Share")
+            item.target = self
+            item.action = #selector(shareDocument(_:))
+            return item
         default:
             return nil
         }
@@ -484,6 +583,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
 extension NSToolbarItem.Identifier {
     static let navigation = Self("Navigation")
     static let breadcrumbs = Self("Breadcrumbs")
+    static let share = Self("Share")
 }
 
 /// A view filled with the theme's paper, following the theme and the appearance.

@@ -14,12 +14,14 @@ pub struct AgentFiles {
 }
 
 /// What an agent's documentation says it loads of a file, as of the list's
-/// date: the first `lines` lines, or the first `bytes` bytes.
+/// date: the first `lines` lines, or the first `bytes` bytes, and a warning
+/// past `warn_chars` characters.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Limit {
     pub agent: String,
     pub lines: Option<u64>,
     pub bytes: Option<u64>,
+    pub warn_chars: Option<u64>,
 }
 
 impl AgentFiles {
@@ -54,8 +56,11 @@ impl AgentFiles {
                         agent: limit.get("agent")?.as_str()?.to_owned(),
                         lines: number("lines")?,
                         bytes: number("bytes")?,
+                        warn_chars: number("warn_chars")?,
                     };
-                    let counted = limit_for.lines.is_some() || limit_for.bytes.is_some();
+                    let counted = limit_for.lines.is_some()
+                        || limit_for.bytes.is_some()
+                        || limit_for.warn_chars.is_some();
                     counted.then_some((split(limit.get("pattern")?.as_str()?)?, limit_for))
                 })
                 .collect::<Option<_>>()?,
@@ -193,6 +198,12 @@ mod tests {
         assert_eq!(
             limit("/Users/someone/repo/claude.md"),
             Some(("Claude Code", Some(200), None))
+        );
+        assert_eq!(
+            files
+                .limit(Path::new("/Users/someone/repo/CLAUDE.md"))
+                .and_then(|limit| limit.warn_chars),
+            Some(40_000)
         );
         assert_eq!(
             limit("/Users/someone/repo/AGENTS.md"),

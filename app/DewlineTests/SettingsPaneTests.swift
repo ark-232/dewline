@@ -67,18 +67,23 @@ struct SettingsPaneTests {
     @Test func hookStatusReadsEachAgentsSettings() throws {
         let home = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: home) }
-        #expect(HookStatus.read(home: home) == HookStatus(claude: false, codex: false))
+        #expect(HookStatus.read(home: home).agents == [false, false])
 
         try FileManager.default.createDirectory(at: home.appending(path: ".claude"), withIntermediateDirectories: true)
-        try Data(#"{"hooks": {"PostToolUse": [{"hooks": [{"type": "command", "command": "dewline notify"}]}]}}"#.utf8)
+        // Every event `dewline doctor --install-hooks` writes, each calling `dewline notify --hook <agent>`.
+        func hooks(_ agent: String, _ events: [String]) throws -> Data {
+            let group = ["hooks": [["type": "command", "command": "dewline notify --hook \(agent)"]]]
+            return try JSONSerialization.data(withJSONObject: ["hooks": Dictionary(uniqueKeysWithValues: events.map { ($0, [group]) })])
+        }
+        try hooks("claude", ["PreToolUse", "PostToolUse", "Stop", "StopFailure", "UserPromptSubmit", "SessionEnd", "InstructionsLoaded"])
             .write(to: home.appending(path: ".claude/settings.json"))
-        #expect(HookStatus.read(home: home) == HookStatus(claude: true, codex: false))
+        #expect(HookStatus.read(home: home).agents == [true, false])
 
         try FileManager.default.createDirectory(at: home.appending(path: ".codex"), withIntermediateDirectories: true)
         try Data("model = \"gpt\"\n".utf8).write(to: home.appending(path: ".codex/config.toml"))
         #expect(HookStatus.read(home: home).codex == false)
-        try Data(#"{"hooks": {"PreToolUse": [{"command": "dewline notify --codex"}]}}"#.utf8).write(to: home.appending(path: ".codex/hooks.json"))
-        #expect(HookStatus.read(home: home) == HookStatus(claude: true, codex: true))
+        try hooks("codex", ["PreToolUse", "PostToolUse"]).write(to: home.appending(path: ".codex/hooks.json"))
+        #expect(HookStatus.read(home: home).agents == [true, true])
     }
 
     @Test func installCommandRunsTheBundledToolQuoted() {
@@ -87,4 +92,9 @@ struct SettingsPaneTests {
         #expect(HookStatus.installCommand(bundle: URL(filePath: "/Users/someone/Rick's Apps/Dewline.app"))
             == #"'/Users/someone/Rick'\''s Apps/Dewline.app/Contents/Helpers/dewline' doctor --install-hooks"#)
     }
+}
+
+private extension HookStatus {
+    /// Claude Code's and Codex's hooks, as the doctor reports them.
+    var agents: [Bool] { [claude, codex] }
 }

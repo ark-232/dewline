@@ -156,7 +156,7 @@ pub struct Window<'a> {
 }
 
 /// Tables, footnotes, task lists, strikethrough, math and wikilinks; front matter and the Obsidian syntax are ours.
-const OPTIONS: Options = Options::ENABLE_TABLES
+pub(crate) const OPTIONS: Options = Options::ENABLE_TABLES
     .union(Options::ENABLE_FOOTNOTES)
     .union(Options::ENABLE_STRIKETHROUGH)
     .union(Options::ENABLE_TASKLISTS)

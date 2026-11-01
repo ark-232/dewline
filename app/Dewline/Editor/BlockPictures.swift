@@ -26,6 +26,8 @@ struct PictureRequest: Hashable, Sendable {
                 image = try mermaidImage(source, colors: colors!, scale: scale, maxWidth: Int(width * scale))
             case .math:
                 image = try ratexImage(source, size: 20, scale: scale, color: colors!.ink)
+            case .frontMatter:
+                throw RenderFailure("front matter folds without a picture")
             case .image:
                 guard !source.isEmpty else { throw RenderFailure("the note is not saved in a folder yet") }
                 // Only a regular file: a pipe would hold the render queue forever.

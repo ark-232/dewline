@@ -37,6 +37,23 @@ Merge into `~/.codex/hooks.json`:
 
 Codex runs a new or changed hook only once you trust it: start Codex, open `/hooks`, select each Dewline hook and press `t`.
 
+## Cursor
+
+Merge into `~/.cursor/hooks.json`:
+
+```json
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [{"command": "/Applications/Dewline.app/Contents/Helpers/dewline notify --hook cursor"}],
+    "postToolUse": [{"command": "/Applications/Dewline.app/Contents/Helpers/dewline notify --hook cursor"}],
+    "stop": [{"command": "/Applications/Dewline.app/Contents/Helpers/dewline notify --hook cursor"}]
+  }
+}
+```
+
+Cursor's changes stay Unknown (record 0007). Its tool hooks carry `conversation_id` and `tool_use_id`, but as of 2026-10-30 Cursor documents no `tool_input` fields for its `Write` tool, the one its edits run as, so `dewline notify --hook cursor` can't declare what an edit wrote and names no file. It still reports the end of each turn.
+
 ## What stays Unknown
 
-Bash edits stay Unknown. A hook around a shell command can't say which bytes the command wrote, so a change made by Claude Code's Bash tool, Codex's shell, `codex exec`, or any edit that skips the hooks shows as "Unknown app". So does a tool call whose result `dewline notify` can't compute exactly, such as an Edit of a file with CRLF line endings.
+Bash edits stay Unknown. A hook around a shell command can't say which bytes the command wrote, so a change made by Claude Code's Bash tool, Codex's shell, Cursor's terminal, `codex exec`, or any edit that skips the hooks shows as "Unknown app". So does a tool call whose result `dewline notify` can't compute exactly, such as an Edit of a file with CRLF line endings.

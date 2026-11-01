@@ -86,7 +86,7 @@ struct SourceModeTests {
         }
         let undo = view.styler.undoManager
         #expect(undo.canUndo && !undo.canRedo)
-        editor.window.tryToPerform(Selector(("undo:")), with: nil)
+        view.history.undoManager.undo()
         #expect(view.string == Self.sample)
         #expect(!undo.canUndo)
         editor.expectTextKitUnchanged()
@@ -101,7 +101,7 @@ struct SourceModeTests {
         let font = view.textStorage!.attribute(.font, at: 17, effectiveRange: nil) as! NSFont
         #expect(font.isFixedPitch && font.fontDescriptor.symbolicTraits.contains(.bold))
         view.styler.undoManager.endUndoGrouping()
-        editor.window.tryToPerform(Selector(("undo:")), with: nil)
+        view.history.undoManager.undo()
         #expect(view.string == Self.sample)
         #expect(editor.rect(13, 2).width > 2)
         editor.expectTextKitUnchanged()

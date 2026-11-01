@@ -168,7 +168,6 @@ struct ControlSocketTests {
         let refused = [
             #""event":"Stop","session":"s1""#,
             #""event":"Stop","vendor":"Claude","session":"s1""#,
-            #""event":"Stop","vendor":"cursor","session":"s1""#,
             #""event":"Stop","vendor":"claude","session":"""#,
             #""event":"Stop","vendor":"claude","session":"\#(String(repeating: "s", count: 129))""#,
             #""event":"Stop","vendor":"claude","session":"new\nline""#,

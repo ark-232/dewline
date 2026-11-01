@@ -1,0 +1,9 @@
+body.og { width: 1200px; height: 630px; overflow: hidden; display: grid; grid-template-columns: 520px 1fr; gap: 48px; align-items: center; padding: 0 0 0 72px; background: linear-gradient(90deg, var(--paper) 62%, var(--tint) 62%); }
+.og-text { display: grid; gap: 28px; }
+.og .wordmark { font-size: 40px; }
+.og-h { font: 500 58px/1.04 var(--serif-head); color: var(--heading); letter-spacing: -0.02em; }
+.og-meta { font-size: 20px; color: var(--ink2); }
+.og .landing { margin-right: -40px; }
+.og .doc { font-size: 22px; padding: 40px 48px 48px 56px; }
+.og .doc > * + * { margin-top: 24px; }
+.og .tick { left: -24px; }

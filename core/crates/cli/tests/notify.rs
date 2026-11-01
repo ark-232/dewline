@@ -778,11 +778,7 @@ fn malformed_or_oversized_input_names_nothing() {
 #[test]
 fn a_bad_command_line_still_exits_0() {
     let fixture = Fixture::new();
-    for args in [
-        &["notify"][..],
-        &["notify", "--hook", "cursor"],
-        &["notify", "--hook", "claude", "--wait"],
-    ] {
+    for args in [&["notify"][..], &["notify", "--hook", "claude", "--wait"]] {
         let output = Command::new(DEWLINE)
             .args(args)
             .env_clear()

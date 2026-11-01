@@ -1,8 +1,8 @@
 #!/bin/bash
 # Writes THIRD_PARTY_NOTICES.md from what ships in Dewline.app: the Rust crates the app and the CLI link (normal
 # dependencies in core/Cargo.lock, without build scripts' or proc macros' own trees), the Swift packages pinned in
-# Package.resolved, the bundled fonts, and code ported from other projects. Run it after any dependency change;
-# release builds bundle its output.
+# Package.resolved, the bundled fonts, the code syntaxes, and code ported from other projects. Run it after any
+# dependency change; release builds bundle its output.
 # Usage: scripts/notices.sh [Swift package checkouts, default: the release build's DerivedData]
 set -euo pipefail
 
@@ -51,6 +51,8 @@ for p in crates:
     files = license_files(folder) or [f for f in [upstream.get(source)] if f]
     if p["name"] == "ratex-katex-fonts":
         files.append(folder / "fonts/OFL.txt")
+    if p["name"] == "onig_sys":
+        files.append(folder / "oniguruma/COPYING")
     add(p["name"], p["version"], license, source, files)
 
 resolved = json.load(open(root / "app/Dewline.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"))
@@ -60,13 +62,19 @@ for pin in resolved["pins"]:
     if not folder.is_dir():
         sys.exit(f"notices.sh: no checkout at {folder}; run scripts/build-release.sh first")
     add(folder.name, version, "MIT and the notices in its LICENSE", pin["location"], license_files(folder))
+syntaxes = root / "scripts/syntaxes/sources"
+add("Sublime Text syntaxes (C, C++, CSS, Go, HTML, Java, JavaScript, JSON, Python, Rust, Shell, SQL, YAML)", "fa6b8629c950",
+    "see the license text", "https://github.com/sublimehq/Packages", [syntaxes / "Packages-LICENSE"])
+add("TOML syntax", "bat 0.26.1", "MIT", "https://github.com/jasonwilliams/sublime_toml_highlighting", [syntaxes / "bat/TOML-LICENSE"])
+add("TypeScript syntax", "bat 0.26.1", "Apache-2.0", "https://github.com/microsoft/TypeScript-Sublime-Plugin", [syntaxes / "bat/TypeScript-LICENSE"])
+add("Swift syntax", "bat 0.26.1", "MIT", "https://github.com/quiqueg/Swift-Sublime-Package", [syntaxes / "bat/Swift-LICENSE"])
 add("JetBrains Mono", "2.304", "OFL-1.1", "https://github.com/JetBrains/JetBrainsMono", [root / "app/Dewline/Fonts/JetBrainsMono-OFL.txt"])
 add("OpenAI Codex apply-patch (ported)", "970111f6", "Apache-2.0", "https://github.com/openai/codex", [root / "docs/licenses/Codex-LICENSE"])
 
 uniffi = sorted({f"{p['name']} {p['version']}" for p in crates if p["name"].startswith("uniffi")})
 print("# Third-party notices\n")
 print("Dewline.app contains the software below. `scripts/notices.sh` writes this file from `core/Cargo.lock`,")
-print("`Package.resolved` and the bundled fonts; edit the script, not this file.\n")
+print("`Package.resolved`, the bundled fonts and the code syntaxes; edit the script, not this file.\n")
 print("## MPL-2.0: UniFFI\n")
 print(f"The UniFFI runtime ({', '.join(uniffi)}) is under the Mozilla Public License 2.0 and ships in the app")
 print("unmodified. Its source is at https://github.com/mozilla/uniffi-rs and on crates.io under the versions named here.\n")

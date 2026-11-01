@@ -108,13 +108,12 @@ extension EditorTextView {
         let storage = textStorage!
         let range = NSRange(location: index, length: 1)
         let mark = storage.mutableString.substring(with: range) == " " ? "x" : " "
-        breakUndoCoalescing()
-        guard shouldChangeText(in: range, replacementString: mark) else { return }
-        // The caret stays where it is.
-        styler.landing = nil
-        storage.replaceCharacters(in: range, with: mark)
-        didChangeText()
-        undoManager?.setActionName(mark == "x" ? "Check Task" : "Uncheck Task")
-        breakUndoCoalescing()
+        history.perform(mark == "x" ? "Check Task" : "Uncheck Task") {
+            guard shouldChangeText(in: range, replacementString: mark) else { return }
+            // The caret stays where it is.
+            styler.landing = nil
+            storage.replaceCharacters(in: range, with: mark)
+            didChangeText()
+        }
     }
 }

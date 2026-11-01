@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dewline: a native Mac editor that shows what agents changed</title>
+<meta name="description" content="Dewline is a native Markdown editor for macOS 26. When Claude Code, Codex, git or a sync app changes your open file, the change lands live, named, with a snapshot first.">
+<link rel="canonical" href="https://dewline.arkwerx.com/">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#fbfcfe" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b1220" media="(prefers-color-scheme: dark)">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://dewline.arkwerx.com/">
+<meta property="og:title" content="Dewline: a native Mac editor that shows what agents changed">
+<meta property="og:description" content="Nothing changes behind your back. Free, source-available, macOS 26.">
+<meta property="og:image" content="https://dewline.arkwerx.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The Dewline wordmark beside an illustration of a Claude edit landing in a Markdown paragraph.">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="/fonts/newsreader-medium.v1.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/styles.css">
+<script src="/site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="top">
+  <div class="top-in wrap">
+    <a class="wordmark" href="/" aria-label="Dewline home">dew<span>line</span></a>
+    <nav aria-label="Site">
+      <a href="https://github.com/ark-232/dewline">Source</a>
+      <a class="btn btn-small" href="https://github.com/ark-232/dewline/releases/latest">Download</a>
+    </nav>
+  </div>
+  <div class="pageline wrap" aria-hidden="true"><span></span></div>
+</header>
+
+<main id="main">
+  <section class="hero wrap">
+    <h1>A native Mac editor that shows what agents changed.</h1>
+    <div class="hero-act">
+      <p class="tagline">Nothing changes behind your back.</p>
+      <a class="btn" href="https://github.com/ark-232/dewline/releases/latest">Download for macOS 26</a>
+      <div class="brew">
+        <code id="brew">brew install --cask ark-232/tap/dewline</code>
+        <button type="button" class="copy" data-copy="brew" aria-label="Copy the Homebrew command">Copy</button>
+        <span class="vh" aria-live="polite" data-copied></span>
+      </div>
+      <p class="meta">macOS 26 or later · Free · Source-available</p>
+    </div>
+  </section>
+
+  <section class="stage" aria-label="A change landing">
+    <figure class="wrap landing">
+      <div class="win" role="img" aria-label="A Dewline window. Claude rewrote the end of a paragraph: the old words are struck through and dimmed, the new words are washed in Claude's color and underlined, a tick marks the line, and a bar under it offers Keep and Revert. The cursor is still where the writer left it.">
+        <div class="win-bar">
+          <span class="lights"><i></i><i></i><i></i></span>
+          <span class="crumbs">notes<svg viewBox="0 0 6 10" aria-hidden="true"><path d="M1 1l4 4-4 4"/></svg><b>launch-plan.md</b></span>
+          <span class="pill a-fade"><i class="dot"></i>CLAUDE<span class="num">2</span></span>
+        </div>
+        <div class="dew">
+          <span class="dew-view"></span>
+          <span class="bead bead-1 a-drop"></span>
+          <span class="bead bead-2 a-drop"></span>
+        </div>
+        <div class="doc">
+          <p class="doc-h">Launch plan</p>
+          <p>The beta goes to twenty testers on Monday<span class="caret"></span>. Each one gets the build and a one-page note on what to try.</p>
+          <p class="changed"><span class="tick a-fade"></span><span class="who a-fade"><i class="dot"></i>Claude 09:41</span>Testers send reports through the form <del class="ghost a-strike">by the end of the week</del> <ins class="ins a-fade">within two days of each build, so fixes ship the same week.</ins></p>
+          <div class="cbar a-rise">
+            <span class="cbar-who"><i class="dot"></i><b>Claude</b> changed 2 places</span>
+            <span class="step"><svg viewBox="0 0 6 10" aria-hidden="true"><path d="M5 1L1 5l4 4"/></svg>1 of 2<svg viewBox="0 0 6 10" aria-hidden="true"><path d="M1 1l4 4-4 4"/></svg></span>
+            <span class="k keep">Keep</span>
+            <span class="k orig">Original</span>
+            <span class="k">Revert</span>
+          </div>
+          <p class="fade">Open questions go in the tracker, not in this file.</p>
+        </div>
+      </div>
+      <figcaption>Illustration drawn in HTML, not a screen capture.</figcaption>
+    </figure>
+
+    <ul class="proof wrap">
+      <li><b>Live.</b> An outside write lands in the open file while you watch.</li>
+      <li><b>Named.</b> Each change carries its writer's color and name.</li>
+      <li><b>Still.</b> Your cursor, selection and scroll stay where they were.</li>
+      <li><b>Snapshot first.</b> Dewline keeps the old text before a change lands.</li>
+      <li><b>Exact saves.</b> Bytes you did not edit never change.</li>
+    </ul>
+  </section>
+
+  <section class="sec wrap" id="writers">
+    <h2>Named writers</h2>
+    <div class="sec-body">
+      <p>Each writer has a color, a name and an underline. When Dewline cannot prove who changed the file, it says Unknown app. New text is washed and underlined; removed text is struck and dimmed, so the difference never rests on red and green.</p>
+      <div class="writers" role="list">
+        <div role="listitem" class="w w-claude"><span class="w-name"><i class="dot"></i>Claude</span><span><ins class="ins">new text</ins> <del class="ghost">old text</del></span></div>
+        <div role="listitem" class="w w-codex"><span class="w-name"><i class="dot"></i>Codex</span><span><ins class="ins">new text</ins> <del class="ghost">old text</del></span></div>
+        <div role="listitem" class="w w-git"><span class="w-name"><i class="dot"></i>git</span><span><ins class="ins">new text</ins> <del class="ghost">old text</del></span></div>
+        <div role="listitem" class="w w-mac"><span class="w-name"><i class="dot"></i>Your other Mac</span><span><ins class="ins">new text</ins> <del class="ghost">old text</del></span></div>
+        <div role="listitem" class="w w-unknown"><span class="w-name"><i class="dot"></i>Unknown app</span><span><ins class="ins">new text</ins> <del class="ghost">old text</del></span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec wrap" id="revert">
+    <h2>Revert theirs, keep yours</h2>
+    <div class="sec-body">
+      <p>Revert puts back what the agent replaced and keeps what you typed since. Every change has its own Keep and Revert, and Revert can be undone.</p>
+      <div class="pair">
+        <div class="pane w-claude">
+          <p class="pane-label">Before Revert</p>
+          <p class="pane-text">The beta ships Monday <span class="yours">to twenty testers</span>. <ins class="ins">Then post the changelog and close the milestone.</ins></p>
+        </div>
+        <div class="pane">
+          <p class="pane-label">After Revert</p>
+          <p class="pane-text">The beta ships Monday <span class="yours">to twenty testers</span>.</p>
+        </div>
+      </div>
+      <p class="note"><span class="yours">Underlined dots</span> mark what you typed after Claude's edit landed.</p>
+    </div>
+  </section>
+
+  <section class="sec wrap" id="files">
+    <h2>Plain files</h2>
+    <div class="sec-body">
+      <p>Dewline opens any <code>.md</code> file where it lives, from Finder or the terminal. No library, no import step, no account. Obsidian vaults open as folders: wikilinks, embeds, callouts and front matter render in place, and Dewline's marks never enter the file.</p>
+    </div>
+  </section>
+
+  <section class="sec wrap" id="agents">
+    <h2>The agent reads your decisions</h2>
+    <div class="sec-body">
+      <p>Every Keep and Revert is recorded per session. Before its next edit, the agent can read what you kept and what you sent back.</p>
+      <pre class="term"><code><span class="p">$</span> dewline changes --json   <span class="c"># kept and reverted changes, per session</span>
+<span class="p">$</span> dewline mcp              <span class="c"># the same list, as an MCP server</span>
+<span class="p">$</span> dewline doctor --install-hooks   <span class="c"># names Claude Code's edits</span></code></pre>
+    </div>
+  </section>
+
+  <section class="sec wrap" id="numbers">
+    <h2>Budgets enforced in CI</h2>
+    <div class="sec-body">
+      <p>A release tag that misses any of these does not ship. Measured results are published with each release.</p>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th scope="col">Metric</th><th scope="col">Budget</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Keystroke to commit, 1 MB file</th><td>p50 ≤ 8 ms, p99 ≤ 16 ms</td></tr>
+            <tr><th scope="row">Keystroke to commit, 10 MB file</th><td>p95 ≤ 16 ms</td></tr>
+            <tr><th scope="row">Launch to editable, cold / warm</th><td>≤ 300 / ≤ 150 ms</td></tr>
+            <tr><th scope="row">Open a 1 MB / 10 MB file</th><td>≤ 50 / ≤ 250 ms</td></tr>
+            <tr><th scope="row">Idle memory, 1 MB / 10 MB file</th><td>≤ 80 / ≤ 150 MB</td></tr>
+            <tr><th scope="row">Idle CPU</th><td>0%</td></tr>
+            <tr><th scope="row">Idle wakeups in 60 s</th><td>0</td></tr>
+            <tr><th scope="row">Download size</th><td>≤ 20 MB</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="close wrap">
+    <p class="close-line">Nothing changes behind your back.</p>
+    <a class="btn" href="https://github.com/ark-232/dewline/releases/latest">Download for macOS 26</a>
+    <div class="brew">
+      <code id="brew2">brew install --cask ark-232/tap/dewline</code>
+      <button type="button" class="copy" data-copy="brew2" aria-label="Copy the Homebrew command">Copy</button>
+      <span class="vh" aria-live="polite" data-copied></span>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="foot-in wrap">
+    <a class="wordmark wordmark-small" href="/" aria-label="Dewline home">dew<span>line</span></a>
+    <p>Free, source-available (<a href="https://github.com/ark-232/dewline/blob/main/LICENSE.md">FSL</a>). Licensed by ArkWerx LLC.</p>
+    <p class="foot-links">
+      <a href="https://github.com/ark-232/dewline">Source</a>
+      <a href="https://github.com/ark-232/dewline/issues">Issues</a>
+      <a href="https://github.com/ark-232/dewline/blob/main/SECURITY.md">Security</a>
+      <a class="sponsor" href="https://github.com/sponsors/ark-232" hidden>Sponsor</a>
+    </p>
+    <p class="fine">Not affiliated with Anthropic or OpenAI. Headings set in Newsreader (<a href="/fonts/OFL.txt">OFL</a>).</p>
+  </div>
+</footer>
+</body>
+</html>

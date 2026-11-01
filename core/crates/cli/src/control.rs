@@ -158,7 +158,7 @@ fn launch() -> Result<(), String> {
 }
 
 /// `Dewline.app` for `Dewline.app/Contents/Helpers/dewline`.
-fn enclosing_app(exe: &Path) -> Option<&Path> {
+pub fn enclosing_app(exe: &Path) -> Option<&Path> {
     let helpers = exe.parent()?;
     let contents = helpers.parent()?;
     let app = contents.parent()?;

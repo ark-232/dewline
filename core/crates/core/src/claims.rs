@@ -40,6 +40,7 @@ impl Id {
 pub enum Vendor {
     Claude,
     Codex,
+    Cursor,
 }
 
 /// A vendor's session.
@@ -70,6 +71,9 @@ impl Tool {
             (Vendor::Claude, "MultiEdit") => Some(Tool::MultiEdit),
             (Vendor::Claude, "Write") => Some(Tool::Write),
             (Vendor::Codex, "apply_patch") => Some(Tool::ApplyPatch),
+            (Vendor::Cursor, "Read") => Some(Tool::Read),
+            (Vendor::Cursor, "Edit") => Some(Tool::Edit),
+            (Vendor::Cursor, "Write") => Some(Tool::Write),
             _ => None,
         }
     }
@@ -151,6 +155,7 @@ impl Claim {
         let vendor = match fields.vendor {
             "claude" => Vendor::Claude,
             "codex" => Vendor::Codex,
+            "cursor" => Vendor::Cursor,
             _ => return Err(Refused::Invalid("vendor")),
         };
         let session = Id::new(fields.session).ok_or(Refused::Invalid("session id"))?;
@@ -654,7 +659,6 @@ mod tests {
         let table: Vec<(Fields, Refused)> = vec![
             (Fields { event: "Notification", ..edit }, invalid("event")),
             (Fields { event: "pretooluse", ..edit }, invalid("event")),
-            (Fields { vendor: "cursor", ..edit }, invalid("vendor")),
             (Fields { vendor: "Claude", ..edit }, invalid("vendor")),
             (Fields { vendor: "", ..edit }, invalid("vendor")),
             (Fields { tool: Some("Bash"), ..edit }, invalid("tool")),
