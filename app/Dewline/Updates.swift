@@ -13,7 +13,7 @@ import Sparkle
 @Observable
 final class Updates: NSObject, NSMenuItemValidation, SPUUpdaterDelegate, SPUStandardUserDriverDelegate {
     static let shared = Updates(defaults: .standard)
-    static let lineText = "Dewline checks GitHub for updates once a day and downloads them from there."
+    static let lineText = "Dewline checks dewline.arkwerx.com for updates once a day and downloads them from GitHub."
     static let lineShownKey = "DewlineUpdateLineShown"
     static let betaKey = "DewlineBetaUpdates"
     static let stagedVersionKey = "DewlineUpdateStagedVersion"
@@ -47,6 +47,8 @@ final class Updates: NSObject, NSMenuItemValidation, SPUUpdaterDelegate, SPUStan
         case password(String)
         /// A restart that waits until the files a tool waits on (`dewline open --wait`) close.
         case waiting(String, files: [String])
+        /// "Dewline was updated to 1.4.1. Restart", when something such as Homebrew replaced the bundle on disk.
+        case replaced(String)
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -80,6 +82,10 @@ final class Updates: NSObject, NSMenuItemValidation, SPUUpdaterDelegate, SPUStan
     /// A restart waiting for tools, with the version it restarts into.
     @ObservationIgnored private var afterTools: (version: String, work: () -> Void)?
     @ObservationIgnored private var toolObservers: [any NSObjectProtocol] = []
+    /// Set while a quit is meant to open the bundle on disk once this process has gone.
+    @ObservationIgnored private var relaunchesOnQuit = false
+    /// Where the running app's bundle lives; a test points it at a copy.
+    @ObservationIgnored var bundleURL = Bundle.main.bundleURL
 
     init(defaults: UserDefaults) {
         self.defaults = defaults
@@ -101,6 +107,10 @@ final class Updates: NSObject, NSMenuItemValidation, SPUUpdaterDelegate, SPUStan
     /// Starts Sparkle in a Developer ID build, notes the build for What's New, then puts the lines that are due on a
     /// window already showing.
     func start() {
+        // A bundle replaced on disk needs a restart whether or not this build runs the updater.
+        NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.checkBundleOnDisk() }
+        }
         guard Self.isDeveloperIDSigned else { return }
         let updater = SPUUpdater(
             hostBundle: .main, applicationBundle: .main,
@@ -165,8 +175,11 @@ final class Updates: NSObject, NSMenuItemValidation, SPUUpdaterDelegate, SPUStan
     }
 
     func setBeta(_ on: Bool) {
+        guard on != beta else { return }
         beta = on
         defaults.set(on, forKey: Self.betaKey)
+        // The allowed channels changed, so Sparkle reschedules and may check again soon, as its header asks.
+        updater?.resetUpdateCycleAfterShortDelay()
     }
 
     /// Settings > General > Check Now. The user asked, so Sparkle's window may open.
@@ -209,6 +222,7 @@ final class Updates: NSObject, NSMenuItemValidation, SPUUpdaterDelegate, SPUStan
     /// Shows the ready line on every window once the staged update has waited 7 days for a quit, or at once when it
     /// is critical, unless a restart already waits for tools. It runs on each activation and never on a timer.
     func refresh() {
+        if case .replaced = attention { return }
         guard let staged, afterTools == nil, staged.critical || now().timeIntervalSince(staged.date) >= Self.patience else { return }
         show(.ready(staged.version))
     }
@@ -274,6 +288,52 @@ final class Updates: NSObject, NSMenuItemValidation, SPUUpdaterDelegate, SPUStan
         work()
     }
 
+    // MARK: A bundle replaced on disk
+
+    /// The version and build of the app at `bundleURL` as its Info.plist on disk has them now, not as this process
+    /// loaded them.
+    static func versionOnDisk(at bundle: URL) -> (version: String, build: String)? {
+        guard let info = NSDictionary(contentsOf: bundle.appending(path: "Contents/Info.plist")),
+            let build = info["CFBundleVersion"] as? String
+        else { return nil }
+        return (info["CFBundleShortVersionString"] as? String ?? build, build)
+    }
+
+    /// When the bundle on disk carries another build than the one running, as after `brew upgrade`, every window says
+    /// so and offers a restart into it. The running app keeps the code it loaded. Runs on each activation and each
+    /// `dewline` connection, never on a timer.
+    func checkBundleOnDisk() {
+        let running = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+        guard let disk = Self.versionOnDisk(at: bundleURL), let running, disk.build != running else { return }
+        if attention == .replaced(disk.version) { return }
+        show(.replaced(disk.version))
+    }
+
+    /// Waits as an update restart waits, for tools and an open IME composition, then quits through the usual review
+    /// of unsaved documents and opens the app on disk once this process has exited. A canceled quit keeps the app.
+    private func restartIntoBundleOnDisk(_ version: String) {
+        restart(into: version) { [weak self] in
+            guard let self else { return }
+            relaunchesOnQuit = true
+            NotificationCenter.default.addObserver(self, selector: #selector(relaunchAfterExit(_:)), name: NSApplication.willTerminateNotification, object: nil)
+            NSApp.terminate(nil)
+            // Back here only when the quit was canceled.
+            relaunchesOnQuit = false
+            NotificationCenter.default.removeObserver(self, name: NSApplication.willTerminateNotification, object: nil)
+        }
+    }
+
+    @objc private func relaunchAfterExit(_ notification: Notification) {
+        guard relaunchesOnQuit else { return }
+        let process = Process()
+        process.executableURL = URL(filePath: "/bin/sh")
+        process.arguments = [
+            "-c", "while /bin/kill -0 \"$1\" 2>/dev/null; do /bin/sleep 0.2; done; /usr/bin/open \"$2\"",
+            "relaunch", "\(ProcessInfo.processInfo.processIdentifier)", bundleURL.path,
+        ]
+        try? process.run()
+    }
+
     // MARK: Lines on every window
 
     private func show(_ attention: Attention) {
@@ -297,6 +357,8 @@ final class Updates: NSObject, NSMenuItemValidation, SPUUpdaterDelegate, SPUStan
         case .waiting(let version, let files):
             let waiting = files.count == 1 ? "a tool is" : "tools are"
             line = UpdateLine("Dewline restarts into \(version) when you close \(ListFormatter.localizedString(byJoining: files)), which \(waiting) waiting on.", buttons: [])
+        case .replaced(let version):
+            line = UpdateLine("Dewline was updated to \(version).", buttons: [("Restart", { [weak self] in self?.restartIntoBundleOnDisk(version) })])
         }
         window.addTitlebarAccessoryViewController(line)
         attentionLines.append(line)
@@ -448,35 +510,33 @@ final class Updates: NSObject, NSMenuItemValidation, SPUUpdaterDelegate, SPUStan
     }
 }
 
-/// A static line under the title bar: one sentence and the buttons that act on it. Nothing in it moves.
+/// A static line under the title bar, on the window's frame: one sentence in Bricolage `ink2` and the buttons that act
+/// on it as bare `ink` words. Nothing in it moves.
 final class UpdateLine: NSTitlebarAccessoryViewController {
     let buttons: [NSButton]
     private let actions: [() -> Void]
+    private let label: NSTextField
 
     init(_ text: String, buttons: [(String, () -> Void)]) {
         self.buttons = buttons.map { NSButton(title: $0.0, target: nil, action: nil) }
         actions = buttons.map(\.1)
+        label = NSTextField(labelWithString: text)
         super.init(nibName: nil, bundle: nil)
         layoutAttribute = .bottom
-        let label = NSTextField(labelWithString: text)
-        label.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-        label.textColor = .secondaryLabelColor
+        label.font = Chrome.small
         label.lineBreakMode = .byTruncatingTail
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         for (index, button) in self.buttons.enumerated() {
             button.tag = index
             button.target = self
             button.action = #selector(clicked(_:))
-            button.controlSize = .small
-            button.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+            button.isBordered = false
             button.refusesFirstResponder = true
         }
         let row = NSStackView(views: [label] + self.buttons)
-        row.spacing = 8
-        row.edgeInsets = NSEdgeInsets(top: 5, left: 14, bottom: 5, right: 14)
-        let background = NSVisualEffectView()
-        background.material = .headerView
-        background.blendingMode = .withinWindow
+        row.spacing = 12
+        row.edgeInsets = NSEdgeInsets(top: 5, left: 16, bottom: 5, right: 16)
+        let background = LineBackground()
         row.translatesAutoresizingMaskIntoConstraints = false
         background.addSubview(row)
         NSLayoutConstraint.activate([
@@ -486,13 +546,43 @@ final class UpdateLine: NSTitlebarAccessoryViewController {
             row.bottomAnchor.constraint(equalTo: background.bottomAnchor),
         ])
         view = background
+        paint()
+        NotificationCenter.default.addObserver(self, selector: #selector(paint), name: ThemeStore.didChange, object: nil)
     }
 
     required init?(coder: NSCoder) {
         fatalError("UpdateLine is built in code")
     }
 
+    @objc private func paint() {
+        label.textColor = Chrome.color(.ink2)
+        for button in buttons {
+            button.attributedTitle = NSAttributedString(string: button.title, attributes: [
+                .font: Chrome.brand(12, weight: 600, opticalSize: 12), .foregroundColor: Chrome.color(.ink),
+            ])
+        }
+        view.needsDisplay = true
+    }
+
     @objc private func clicked(_ sender: NSButton) {
         actions[sender.tag]()
+    }
+}
+
+/// The frame's color behind an update line.
+private final class LineBackground: NSView {
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("LineBackground is built in code")
+    }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        layer?.backgroundColor = Chrome.color(.frame).resolved(for: effectiveAppearance).cgColor
     }
 }
