@@ -46,14 +46,10 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
             return true
         }
 
-        /// Headers 30 pt; files and a folder's headings two lines at 46; the rest one line at 40.
+        /// Headers 30 pt; every result one line at 40.
         var height: CGFloat {
-            switch self {
-            case .header: 30
-            case .file: 46
-            case .heading(let heading, _): heading.file.isEmpty ? 40 : 46
-            default: 40
-            }
+            if case .header = self { return 30 }
+            return 40
         }
     }
 
@@ -440,7 +436,10 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
             if text.allSatisfy(\.isWhitespace) {
                 show(restingFileRows())
             } else {
-                run { panel in await Self.ranked(text, in: panel.files)?.map { .file($0, line: nil) } }
+                run { panel in
+                    guard let found = await Self.ranked(text, in: panel.files) else { return nil }
+                    return panel.mixedRows(found, commands: PaletteRank.rank(text, in: panel.commands, frecency: panel.frecency))
+                }
             }
         case .fileLine(let text, let line):
             chrome("Go to Line in File", placeholder: "Open a file, or type > for commands")
@@ -490,6 +489,21 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
         if !recent.isEmpty { rows += [.header("Recent")] + recent.map { .file($0, line: nil) } }
         if !pinned.isEmpty { rows += [.header("Pinned")] + pinned.map { .file($0, line: nil) } }
         return rows
+    }
+
+    /// An unprefixed search's groups: files with an agent's changes, the other files, then the three best commands
+    /// whose titles hold the letters. A lone group shows without its header.
+    private func mixedRows(_ found: [QuickOpenResult], commands hits: [PaletteHit]) -> [Row] {
+        let agent = found.filter { touched[$0.file.url.path] != nil }
+        let other = found.filter { touched[$0.file.url.path] == nil }
+        let commands = hits.filter { !$0.positions.isEmpty }.prefix(3)
+        let groups: [(String, [Row])] = [
+            ("Agent files", agent.map { .file($0, line: nil) }),
+            ("Files", other.map { .file($0, line: nil) }),
+            ("Commands", commands.map(Row.command)),
+        ].filter { !$0.1.isEmpty }
+        guard groups.count > 1 else { return groups.first?.1 ?? [] }
+        return groups.flatMap { [Row.header($0.0)] + $0.1 }
     }
 
     /// Runs `work` after the files merge, off the keystroke, and shows its rows unless a later key cancelled it.
@@ -896,7 +910,8 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
             let positions = result.positions.compactMap { $0 >= text.nameStart ? $0 - text.nameStart : nil }
             content.lead = writer.map { .dot($0.color) } ?? .none
             content.title = [.init(name, positions: positions, dimUnmatched: !positions.isEmpty)]
-            content.subtitle = [folderPath, writer?.name ?? "", detail].filter { !$0.isEmpty }.joined(separator: " · ")
+            content.subtitle = [folderPath.isEmpty ? "" : folderPath + "/", writer?.name ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
+            content.trailing = .text(detail)
             content.hints = [("↩", "open"), ("⌘↩", "new tab")]
             content.spoken = spoken([name, folderPath, writer.map { "changed by \($0.name)" }, detail])
         case .command(let hit):
@@ -989,9 +1004,9 @@ private final class QuickOpenTable: NSTableView {
     }
 }
 
-/// A result row, drawn: a 16 pt leading slot (a writer's dot, a mono tag or the current value's bead), the title in
-/// Bricolage with its matched letters underlined in signal, an optional mono second line, and at the right a value or
-/// keycaps. The selected row adds its keyboard hints in mono.
+/// A result row on one line, drawn: a 16 pt leading slot (a writer's dot, a mono tag or the current value's bead), the
+/// title in Bricolage with its matched letters underlined in signal, an optional mono subtitle after it, and at the
+/// right a value or keycaps. On the selected row the keyboard hints in mono take the value's place.
 private final class PaletteCell: NSView, ChromeSelectable {
     static let identifier = NSUserInterfaceItemIdentifier("palette")
 
@@ -1064,13 +1079,13 @@ private final class PaletteCell: NSView, ChromeSelectable {
     override var isFlipped: Bool { true }
 
     override func draw(_ dirtyRect: NSRect) {
-        let twoLines = !content.subtitle.isEmpty
-        let titleY = twoLines ? bounds.midY - 8 : bounds.midY
+        let titleY = bounds.midY
         var right = bounds.maxX - 12
+        let hinting = selected && !content.hints.isEmpty
         switch content.trailing {
         case .empty:
             break
-        case .text(let text) where !text.isEmpty:
+        case .text(let text) where !text.isEmpty && !hinting:
             let string = NSAttributedString(string: text, attributes: [.font: Chrome.mono(11), .foregroundColor: Chrome.color(.ink3)])
             let size = string.size()
             string.draw(at: NSPoint(x: right - size.width, y: titleY - size.height / 2))
@@ -1082,7 +1097,7 @@ private final class PaletteCell: NSView, ChromeSelectable {
         default:
             break
         }
-        if selected, !content.hints.isEmpty {
+        if hinting {
             let hints = Self.hints(content.hints)
             let size = hints.size()
             hints.draw(at: NSPoint(x: right - size.width, y: titleY - size.height / 2))
@@ -1090,16 +1105,23 @@ private final class PaletteCell: NSView, ChromeSelectable {
         }
         drawLead(midY: titleY)
         let left: CGFloat = 44
-        drawTitle(x: left, width: max(right - left, 0), midY: titleY)
-        guard twoLines else { return }
+        let width = max(right - left, 0)
+        guard !content.subtitle.isEmpty else {
+            drawTitle(x: left, width: width, midY: titleY)
+            return
+        }
         let line = NSMutableParagraphStyle()
         line.lineBreakMode = .byTruncatingMiddle
         let subtitle = NSAttributedString(string: content.subtitle, attributes: [
             .font: Chrome.mono(11.5), .foregroundColor: Chrome.color(.ink3), .paragraphStyle: line,
         ])
+        // The title keeps at least 60% of the room; the subtitle takes what is left and gives up its middle first.
+        let wanted = ceil(subtitle.size().width)
+        let title = drawTitle(x: left, width: max(width * 0.6, width - wanted - 12), midY: titleY)
+        let x = left + title + 12
         let height = ceil(subtitle.size().height)
-        let box = NSRect(x: left, y: bounds.midY + 9 - height / 2, width: max(bounds.maxX - 12 - left, 0), height: height)
-        subtitle.draw(with: box, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+        subtitle.draw(with: NSRect(x: x, y: titleY - height / 2 + 1, width: max(left + width - x, 0), height: height),
+                      options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
     }
 
     private func drawLead(midY: CGFloat) {
@@ -1128,13 +1150,15 @@ private final class PaletteCell: NSView, ChromeSelectable {
     }
 
     /// The title line, truncated at the tail, with a 1.5 pt signal underline 2 pt under the baseline of each run of
-    /// matched letters that is not cut off.
-    private func drawTitle(x: CGFloat, width: CGFloat, midY: CGFloat) {
+    /// matched letters that is not cut off. Returns the width it took.
+    @discardableResult
+    private func drawTitle(x: CGFloat, width: CGFloat, midY: CGFloat) -> CGFloat {
         let (string, matched) = Self.title(content.title)
         let size = string.size()
         let box = NSRect(x: x, y: midY - ceil(size.height) / 2, width: width, height: ceil(size.height))
         string.draw(with: box, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
-        guard !matched.isEmpty else { return }
+        let taken = min(ceil(size.width), width)
+        guard !matched.isEmpty else { return taken }
         // Past this x the tail is cut off and an ellipsis drawn.
         let limit = size.width <= width ? box.maxX : box.maxX - 14
         let y = box.minY + Self.baseline + 2
@@ -1153,6 +1177,7 @@ private final class PaletteCell: NSView, ChromeSelectable {
             guard x1 <= limit else { break }
             NSRect(x: x0, y: y, width: x1 - x0, height: 1.5).fill()
         }
+        return taken
     }
 
     /// The segments as one line two spaces apart, and the offsets of their matched letters in it.
