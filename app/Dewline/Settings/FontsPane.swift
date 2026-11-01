@@ -21,44 +21,47 @@ struct FontSlots: View {
             ("System", Faces.system), ("Bundled", Faces.bundled), ("Catalog", library.installed.sorted()),
             ("Added", library.addedFamilies), ("This Mac", mac.all.filter { !ours.contains($0) }),
         ]
-        Section {
-            FacePicker(title: "Body", selection: $store.bodyFace, sections: text)
-            FacePicker(title: "Headings", selection: $store.headingFace, sections: text)
-            FacePicker(title: "Code", selection: $store.codeFace, sections: [
-                ("System", ["SF Mono"]), ("Bundled", Faces.bundled), ("Catalog", catalogMono.sorted()),
-                ("Added", addedMono.sorted()), ("This Mac", mac.monospaced.filter { !ours.contains($0) }),
-            ])
-            LabeledContent("More fonts") {
-                Button("Install Fonts…") { installing = true }
-            }
-        } header: {
-            Text("Fonts")
-        } footer: {
-            Text("Code is sized to the body font's x-height. Source mode (⌥⌘U) sets the whole page in the code font.")
-                .frame(maxWidth: .infinity, alignment: .leading)
+        let faces = { (sections: [(String, [String])]) -> [(String?, [(String, String)])] in
+            sections.filter { !$0.1.isEmpty }.map { ($0.0, $0.1.map { ($0, $0) }) }
         }
-        Section {
-            HStack(alignment: .top, spacing: 14) {
-                ForEach(Pairing.all) { pairing in
-                    PairingButton(pairing: pairing, store: store, colors: colors, busy: applying == pairing.name) {
-                        apply(pairing)
+        let code = [
+            ("System", ["SF Mono"]), ("Bundled", Faces.bundled), ("Catalog", catalogMono.sorted()),
+            ("Added", addedMono.sorted()), ("This Mac", mac.monospaced.filter { !ours.contains($0) }),
+        ]
+        SettingsSection(title: "Faces", note: "A pairing sets the body, heading and code fonts at once, downloading any it needs from the catalog.") {
+            SettingsRow(label: "Typeface pairing") {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(Pairing.all) { pairing in
+                        PairingRow(pairing: pairing, store: store, busy: applying == pairing.name) {
+                            apply(pairing)
+                        }
+                        .disabled(applying != nil)
                     }
-                    .disabled(applying != nil)
+                    if let pairingFailure {
+                        Text(pairingFailure)
+                            .font(Station.small)
+                            .foregroundStyle(Station.color(.ink))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
-            .padding(.vertical, 6)
-        } header: {
-            Text("Pairings")
-        } footer: {
-            Group {
-                if let pairingFailure {
-                    Label(pairingFailure, systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.red)
-                } else {
-                    Text("A pairing sets the body, heading and code fonts at once, downloading any it needs from the catalog.")
-                }
+            SettingsRow(label: "Body") {
+                MenuField("Body font", selection: $store.bodyFace, sections: faces(text))
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            SettingsRow(label: "Headings") {
+                MenuField("Heading font", selection: $store.headingFace, sections: faces(text))
+            }
+            SettingsRow(label: "Code") {
+                MenuField("Code font", selection: $store.codeFace, sections: faces(code))
+            }
+            SettingsRow(label: "More fonts") {
+                Button("Install Fonts\u{2026}") { installing = true }
+                    .buttonStyle(.station)
+                    .fixedSize()
+            }
+        }
+        SettingsSection(title: "Preview", note: "Code is sized to the body font's x-height. Source mode (⌥⌘U) sets the whole page in the code font.") {
+            FontPreview(store: store, colors: colors)
         }
     }
 
@@ -105,11 +108,7 @@ struct FontLibrarySheet: View {
         VStack(spacing: 0) {
             Form {
                 Section {
-                    Picker("Show", selection: $filter) {
-                        ForEach(CatalogFilter.allCases) { Text($0.rawValue).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
+                    TextChoice(label: "Show", selection: $filter, options: CatalogFilter.allCases.map { ($0.rawValue, $0) })
                     let families = FontCatalog.families.filter { filter.includes($0, installed: library.installed.contains($0.name)) }
                     ForEach(families) { family in
                         CatalogRow(family: family, library: library, store: store) { remove(family.name) }
@@ -150,6 +149,7 @@ struct FontLibrarySheet: View {
                 }
                 Spacer()
                 Button("Done") { dismiss() }
+                    .buttonStyle(.station(.filled))
                     .keyboardShortcut(.defaultAction)
             }
             .padding(16)
@@ -192,22 +192,6 @@ private enum CatalogFilter: String, CaseIterable, Identifiable {
     }
 }
 
-private struct FacePicker: View {
-    let title: String
-    @Binding var selection: String
-    let sections: [(String, [String])]
-
-    var body: some View {
-        Picker(title, selection: $selection) {
-            ForEach(sections.filter { !$0.1.isEmpty }, id: \.0) { section in
-                Section(section.0) {
-                    ForEach(section.1, id: \.self) { Text($0).tag($0) }
-                }
-            }
-        }
-    }
-}
-
 private func megabytes(_ bytes: Int) -> String {
     (Double(bytes) / 1_000_000).formatted(.number.precision(.fractionLength(2)))
 }
@@ -218,11 +202,11 @@ private func face(_ family: String, _ size: CGFloat, weight: NSFont.Weight = .re
     Faces.exists(family) ? Font(Faces.font(family, size: size, weight: weight)) : .system(size: size, weight: weight == .medium ? .medium : .regular)
 }
 
-/// A ring marks the pairing the three slots hold.
-private struct PairingButton: View {
+/// A pairing as a row set in its own heading face, with its faces in `ink3` after it. A bead on a hairline marks the
+/// pairing the three slots hold.
+private struct PairingRow: View {
     let pairing: Pairing
     let store: ThemeStore
-    let colors: [Token: NSColor]
     let busy: Bool
     let action: () -> Void
 
@@ -230,37 +214,57 @@ private struct PairingButton: View {
         let selected = store.bodyFace == pairing.body && store.headingFace == pairing.heading && store.codeFace == pairing.code
         let download = pairing.missing.reduce(0) { $0 + $1.size }
         Button(action: action) {
-            VStack(spacing: 6) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text("Aa").font(face(pairing.heading, 30, weight: .medium)).foregroundStyle(Color(nsColor: colors[.heading]!))
-                    Text("Aa").font(face(pairing.body, 19)).foregroundStyle(Color(nsColor: colors[.ink]!))
-                }
-                .frame(maxWidth: .infinity, minHeight: 64)
-                .background(Color(nsColor: colors[.paper]!), in: .rect(cornerRadius: 6))
-                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.separator, lineWidth: 0.5))
-                .overlay(alignment: .topTrailing) {
-                    if busy {
-                        ProgressView().controlSize(.small).padding(6)
-                    }
-                }
-                .padding(3)
-                .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(selected ? Color.accentColor : .clear, lineWidth: 2))
+            HStack(alignment: .center, spacing: 12) {
+                PairingBead(lit: selected)
                 Text(pairing.name)
-                    .font(.callout)
-                    .foregroundStyle(selected ? .primary : .secondary)
-                Text(download > 0 ? "Downloads \(megabytes(download)) MB" : pairing.faces.joined(separator: ", "))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.center)
+                    .font(face(pairing.heading, 16, weight: selected ? .medium : .regular))
+                    .foregroundStyle(Station.color(selected ? .ink : .ink2))
+                Text(pairing.faces.joined(separator: " \u{00B7} "))
+                    .font(Station.label)
+                    .foregroundStyle(Station.color(.ink3))
+                    .lineLimit(1)
+                if busy {
+                    Text("downloading")
+                        .font(Station.mono(11))
+                        .foregroundStyle(Station.color(.ink3))
+                } else if download > 0 {
+                    Text("\(megabytes(download)) MB")
+                        .font(Station.mono(11))
+                        .foregroundStyle(Station.color(.ink3))
+                }
             }
-            .contentShape(.rect)
+            .padding(.vertical, 3)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(BareButtonStyle(radius: 4))
         .help("Body: \(pairing.body). Headings: \(pairing.heading). Code: \(pairing.code).")
         .accessibilityLabel("\(pairing.name) pairing")
-        .accessibilityHint("Body \(pairing.body), headings \(pairing.heading), code \(pairing.code)")
+        .accessibilityHint(download > 0
+            ? "Body \(pairing.body), headings \(pairing.heading), code \(pairing.code). Downloads \(megabytes(download)) megabytes"
+            : "Body \(pairing.body), headings \(pairing.heading), code \(pairing.code)")
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// The mark as a radio: a 14 pt hairline, and when lit, signal with a 6 pt bead and its glow.
+private struct PairingBead: View {
+    let lit: Bool
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        ZStack(alignment: .leading) {
+            Rectangle()
+                .fill(Station.color(lit ? .signal : .ink3))
+                .frame(width: 14, height: 1)
+            if lit {
+                Circle()
+                    .fill(Station.color(.signal))
+                    .frame(width: 6, height: 6)
+                    .shadow(color: Station.color(.glow).opacity(Double(Chrome.glowOpacity(dark: scheme == .dark))), radius: 3)
+                    .offset(x: 7)
+            }
+        }
+        .frame(width: 16, height: 8, alignment: .leading)
+        .accessibilityHidden(true)
     }
 }
 
@@ -476,8 +480,7 @@ private struct OutcomeRow: View {
     }
 }
 
-/// A heading, a paragraph and a code line set as the editor sets them, on the current theme's paper. It heads
-/// Appearance's first section rather than sitting in a section of its own, so it is one card, not a card in a card.
+/// A heading, a paragraph and a code line set as the editor sets them, on the current theme's paper.
 struct FontPreview: View {
     let store: ThemeStore
     let colors: [Token: NSColor]
@@ -519,9 +522,7 @@ struct FontPreview: View {
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(color(.paper), in: .rect(cornerRadius: 10))
-        // The header insets its content to the rows' text; the card keeps to the section's edges.
-        .padding(.horizontal, -10)
-        .padding(.bottom, 8)
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Station.color(.hairline), lineWidth: 1))
         .accessibilityElement(children: .combine)
     }
 }

@@ -5,47 +5,32 @@ struct EditorPane: View {
     @AppStorage("DewlineMotion") private var motion = Motion.calm
 
     var body: some View {
-        Form {
-            Section {
-                Toggle("Vim mode", isOn: $store.vimMode)
-            } footer: {
-                Text("Normal, insert and visual modes, with the mode at the window's lower right. :w saves and :q closes. Source mode is View > Show Source (⌥⌘U); General sets which mode windows open in.")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            Section {
-                Picker("Heading style", selection: $store.headingStyle) {
-                    Text("Standard").tag(ThemeStore.HeadingStyle.standard)
-                    Text("Editorial").tag(ThemeStore.HeadingStyle.editorial)
+        SettingsPage {
+            SettingsSection(note: "Normal, insert and visual modes, with the mode at the window's lower right. :w saves and :q closes. Source mode is View > Show Source (⌥⌘U); General sets which mode windows open in.") {
+                SettingsRow(label: "Vim mode") {
+                    OnOff(label: "Vim mode", isOn: $store.vimMode)
                 }
-                Picker("Motion", selection: $motion) {
-                    Text("Off").tag(Motion.off)
-                    Text("Calm").tag(Motion.calm)
-                    Text("Lively").tag(Motion.lively)
-                }
-            } header: {
-                Text("Live rendering")
-            } footer: {
-                Text("Editorial sets the first heading as a display title and section heads in small caps; the file stays plain Markdown. Calm streaks the caret to where a jump such as Find Next lands; Lively does it for clicks and long moves too. With Reduce Motion on, Dewline uses Off.")
-                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Section {
-                Picker("Tab key inserts", selection: $store.tabWidth) {
-                    Text("A tab").tag(0)
-                    Text("2 spaces").tag(2)
-                    Text("4 spaces").tag(4)
+            SettingsSection(title: "Live rendering", note: "Editorial sets the first heading as a display title and section heads in small caps; the file stays plain Markdown. Calm streaks the caret to where a jump such as Find Next lands; Lively does it for clicks and long moves too. With Reduce Motion on, Dewline uses Off.") {
+                SettingsRow(label: "Heading style") {
+                    TextChoice(label: "Heading style", selection: $store.headingStyle, options: [("Standard", .standard), ("Editorial", .editorial)])
                 }
-            } header: {
-                Text("Indentation")
-            } footer: {
-                Text("In a list, Tab and Shift-Tab indent and outdent the item either way.")
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                SettingsRow(label: "Motion") {
+                    TextChoice(label: "Motion", selection: $motion, options: [("Off", .off), ("Calm", .calm), ("Lively", .lively)])
+                }
             }
-            Section {
-                Toggle("Check spelling as you type", isOn: $store.spellCheck)
-                Toggle("Smart Punctuation", isOn: $store.smartPunctuation)
-            } footer: {
-                Text("Smart Punctuation turns straight quotes into curly ones and double hyphens into dashes as you type. Code is left alone.")
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            SettingsSection(title: "Indentation", note: "In a list, Tab and Shift-Tab indent and outdent the item either way.") {
+                SettingsRow(label: "Tab key inserts") {
+                    TextChoice(label: "Tab key inserts", selection: $store.tabWidth, options: [("A tab", 0), ("2 spaces", 2), ("4 spaces", 4)])
+                }
+            }
+            SettingsSection(title: "Typing", note: "Smart Punctuation turns straight quotes into curly ones and double hyphens into dashes as you type. Code is left alone.") {
+                SettingsRow(label: "Check spelling as you type") {
+                    OnOff(label: "Check spelling as you type", isOn: $store.spellCheck)
+                }
+                SettingsRow(label: "Smart Punctuation") {
+                    OnOff(label: "Smart Punctuation", isOn: $store.smartPunctuation)
+                }
             }
             RestoreDefaults {
                 let factory = ThemeStore.factory
