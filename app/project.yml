@@ -13,7 +13,7 @@ settings:
     # Swift 6 inserts there crashes in swift_task_isMainExecutorImpl on macOS 27.2. Isolation stays checked at compile time.
     OTHER_SWIFT_FLAGS: "$(inherited) -Xfrontend -disable-dynamic-actor-isolation"
     SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
-    MARKETING_VERSION: "0.0.1"
+    MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
     DEVELOPMENT_TEAM: "7W6LLR2DK7"
     # The app writes its export stylesheet here for the Quick Look preview, whose sandbox can't read the app's defaults.
