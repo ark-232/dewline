@@ -61,7 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !UserDefaults.standard.bool(forKey: Welcome.shownKey) {
             UserDefaults.standard.set(true, forKey: Welcome.shownKey)
             // Opened before AppKit asks for an untitled file, so the guide shows in place of the launch window.
-            showWelcomeGuide(nil)
+            replayDemo(nil)
         }
         let engine = MarkdownDocument.sharedEngine
         let control = ControlSocket(path: ControlSocket.standardPath, notify: { claim in
@@ -149,33 +149,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return document
     }
 
-    /// Help > Welcome to Dewline: the reader's copy of the guide.
-    @objc func showWelcomeGuide(_ sender: Any?) {
+    /// Help > Replay the Demo, and the first launch: a fresh Welcome.md, then Demo's edit to it.
+    @objc func replayDemo(_ sender: Any?) {
+        let url = Welcome.url
+        NSDocumentController.shared.document(for: url)?.close()
         do {
-            try openMarkdown(at: Welcome.copy())
+            try Welcome.copy(to: url, fresh: true)
+            WelcomeDemo.play(try openMarkdown(at: url), at: url)
         } catch {
             NSApp.presentError(error)
-        }
-    }
-
-    /// Help > Watch a Change Land: opens the guide, then writes a Demo note into it from outside, as an agent would.
-    @objc func runWelcomeDemo(_ sender: Any?) {
-        let url: URL
-        do {
-            url = try Welcome.copy()
-            try openMarkdown(at: url)
-        } catch {
-            NSApp.presentError(error)
-            return
-        }
-        // Long enough to see the page before the note arrives.
-        Task {
-            try? await Task.sleep(for: .milliseconds(600))
-            do {
-                try Welcome.writeDemo(to: url)
-            } catch {
-                NSApp.presentError(error)
-            }
         }
     }
 

@@ -74,7 +74,7 @@ final class Collaboration {
         if let open = of(document) { return open }
         let id = UUID()
         let share = try Share.host(
-            nodeKey: SyncKeychain.nodeKey(), name: NSFullUserName(), fileName: document.fileURL?.lastPathComponent ?? "Shared.md",
+            nodeKey: SyncKeychain.nodeKey(), name: Preferences.shared.collaborationName, fileName: document.fileURL?.lastPathComponent ?? "Shared.md",
             text: textView.string, changed: notifier(id))
         let collaboration = Collaboration(share: share, id: id)
         live[id] = collaboration
@@ -88,7 +88,7 @@ final class Collaboration {
         let alert = NSAlert()
         alert.messageText = "Join a shared document"
         alert.informativeText = "The person sharing it sees this name and lets you in."
-        let field = NSTextField(string: NSFullUserName())
+        let field = NSTextField(string: Preferences.shared.collaborationName)
         field.frame = NSRect(x: 0, y: 0, width: 260, height: 24)
         alert.accessoryView = field
         alert.addButton(withTitle: "Join")
@@ -149,12 +149,12 @@ final class Collaboration {
         storedKey = key
     }
 
-    /// A guest's copy of the shared file: in Documents/Dewline Shared under the host's file name, which the share
+    /// A guest's copy of the shared file: in the Collaboration settings' folder under the host's file name, which the share
     /// has already reduced to a bare name.
     private func openShared() {
         guard !opening else { return }
         opening = true
-        let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appending(path: "Dewline Shared")
+        let folder = Preferences.shared.sharedFolder
         let name = share.fileName as NSString
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

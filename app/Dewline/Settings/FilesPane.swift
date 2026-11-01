@@ -41,6 +41,12 @@ struct FilesPane: View {
                 Text("dewline capture adds each entry to the end of this file.")
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            RestoreDefaults {
+                let factory = Preferences.factory
+                preferences.showsIgnored = factory.showsIgnored
+                preferences.attachments = factory.attachments
+                preferences.inbox = factory.inbox
+            }
         }
     }
 }

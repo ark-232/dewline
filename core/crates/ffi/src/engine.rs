@@ -108,6 +108,7 @@ pub enum Vendor {
     Claude,
     Codex,
     Cursor,
+    Demo,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -137,6 +138,7 @@ impl From<core::Origin> for Origin {
                     claims::Vendor::Claude => Vendor::Claude,
                     claims::Vendor::Codex => Vendor::Codex,
                     claims::Vendor::Cursor => Vendor::Cursor,
+                    claims::Vendor::Demo => Vendor::Demo,
                 },
                 session,
             },

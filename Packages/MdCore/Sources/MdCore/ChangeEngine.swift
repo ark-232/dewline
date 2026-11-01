@@ -46,6 +46,8 @@ public final class ChangeEngine: Sendable {
 
     public enum Vendor: Sendable, Equatable {
         case claude, codex, cursor
+        /// The first-run demo in Welcome.md.
+        case demo
     }
 
     public enum Decision: Sendable {
@@ -325,6 +327,7 @@ extension ChangeEngine.Vendor {
         case .claude: .claude
         case .codex: .codex
         case .cursor: .cursor
+        case .demo: .demo
         }
     }
 
@@ -333,6 +336,7 @@ extension ChangeEngine.Vendor {
         case .claude: .claude
         case .codex: .codex
         case .cursor: .cursor
+        case .demo: .demo
         }
     }
 }

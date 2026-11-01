@@ -2,53 +2,14 @@ import SwiftUI
 
 struct EditorPane: View {
     @Bindable var store: ThemeStore
+    @AppStorage("DewlineMotion") private var motion = Motion.calm
 
     var body: some View {
         Form {
             Section {
-                LabeledContent("Text size") {
-                    Stepper(value: $store.bodySize, in: ThemeStore.bodySizes, step: 1) {
-                        Text("\(Int(store.bodySize)) pt").monospacedDigit()
-                    }
-                    .accessibilityLabel("Text size")
-                    .accessibilityValue("\(Int(store.bodySize)) points")
-                }
-                LabeledContent("Line height") {
-                    HStack(spacing: 10) {
-                        Slider(value: Binding { store.lineHeight } set: { store.lineHeight = ($0 * 100).rounded() / 100 }, in: ThemeStore.lineHeights) {
-                            EmptyView()
-                        } minimumValueLabel: {
-                            Text("Tight")
-                        } maximumValueLabel: {
-                            Text("Loose")
-                        }
-                        .accessibilityLabel("Line height")
-                        .accessibilityValue(store.lineHeight.formatted(.number.precision(.fractionLength(2))))
-                        Text(store.lineHeight, format: .number.precision(.fractionLength(2)))
-                            .monospacedDigit()
-                            .frame(width: 34, alignment: .trailing)
-                    }
-                    .frame(width: 300)
-                }
-                LabeledContent("Line width") {
-                    HStack(spacing: 10) {
-                        Slider(value: Binding { store.columnWidth } set: { store.columnWidth = $0.rounded() }, in: ThemeStore.columnWidths) {
-                            EmptyView()
-                        } minimumValueLabel: {
-                            Text("50")
-                        } maximumValueLabel: {
-                            Text("90")
-                        }
-                        .accessibilityLabel("Line width")
-                        .accessibilityValue("\(Int(store.columnWidth)) characters")
-                        Text("\(Int(store.columnWidth)) characters")
-                            .monospacedDigit()
-                            .frame(width: 92, alignment: .trailing)
-                    }
-                    .frame(width: 358)
-                }
+                Toggle("Vim mode", isOn: $store.vimMode)
             } footer: {
-                Text("Line width counts characters per line at this size; a narrower window fills its width.")
+                Text("Normal, insert and visual modes, with the mode at the window's lower right. :w saves and :q closes. Source mode is View > Show Source (⌥⌘U); General sets which mode windows open in.")
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             Section {
@@ -56,21 +17,44 @@ struct EditorPane: View {
                     Text("Standard").tag(ThemeStore.HeadingStyle.standard)
                     Text("Editorial").tag(ThemeStore.HeadingStyle.editorial)
                 }
+                Picker("Motion", selection: $motion) {
+                    Text("Off").tag(Motion.off)
+                    Text("Calm").tag(Motion.calm)
+                    Text("Lively").tag(Motion.lively)
+                }
+            } header: {
+                Text("Live rendering")
             } footer: {
-                Text("Editorial sets the first heading as a display title and section heads in small caps. The file stays plain Markdown.")
+                Text("Editorial sets the first heading as a display title and section heads in small caps; the file stays plain Markdown. Calm streaks the caret to where a jump such as Find Next lands; Lively does it for clicks and long moves too. With Reduce Motion on, Dewline uses Off.")
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             Section {
+                Picker("Tab key inserts", selection: $store.tabWidth) {
+                    Text("A tab").tag(0)
+                    Text("2 spaces").tag(2)
+                    Text("4 spaces").tag(4)
+                }
+            } header: {
+                Text("Indentation")
+            } footer: {
+                Text("In a list, Tab and Shift-Tab indent and outdent the item either way.")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Section {
+                Toggle("Check spelling as you type", isOn: $store.spellCheck)
                 Toggle("Smart Punctuation", isOn: $store.smartPunctuation)
             } footer: {
-                Text("Turns straight quotes into curly ones and double hyphens into dashes as you type. Code is left alone.")
+                Text("Smart Punctuation turns straight quotes into curly ones and double hyphens into dashes as you type. Code is left alone.")
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Section {
-                Toggle("Vim mode", isOn: $store.vimMode)
-            } footer: {
-                Text("Normal, insert and visual modes, with the mode at the window's lower right. :w saves and :q closes.")
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            RestoreDefaults {
+                let factory = ThemeStore.factory
+                store.vimMode = factory.vimMode
+                store.headingStyle = factory.headingStyle
+                store.tabWidth = factory.tabWidth
+                store.spellCheck = factory.spellCheck
+                store.smartPunctuation = factory.smartPunctuation
+                motion = .calm
             }
         }
     }

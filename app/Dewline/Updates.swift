@@ -66,7 +66,7 @@ final class Updates: NSObject, NSMenuItemValidation, SPUUpdaterDelegate, SPUStan
     private(set) var lastCheck: Date?
     private(set) var lastError: String?
     private(set) var staged: Staged?
-    /// Settings > Updates' line while an update is staged.
+    /// Settings > General's update line while an update is staged.
     var stagedText: String? { staged.map { "\($0.version) is ready and installs when you quit." } }
     @ObservationIgnored private(set) var line: UpdateLine?
     @ObservationIgnored private var attention: Attention?
@@ -169,7 +169,7 @@ final class Updates: NSObject, NSMenuItemValidation, SPUUpdaterDelegate, SPUStan
         defaults.set(on, forKey: Self.betaKey)
     }
 
-    /// Settings > Updates > Check Now. The user asked, so Sparkle's window may open.
+    /// Settings > General > Check Now. The user asked, so Sparkle's window may open.
     func checkNow() {
         updater?.checkForUpdates()
     }
@@ -411,7 +411,7 @@ final class Updates: NSObject, NSMenuItemValidation, SPUUpdaterDelegate, SPUStan
         return true
     }
 
-    /// Keeps the check's time and its error for Settings > Updates; a failed scheduled check shows nothing else. A
+    /// Keeps the check's time and its error for Settings > General; a failed scheduled check shows nothing else. A
     /// check Dewline refused made no request, so it changes neither.
     func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: (any Error)?) {
         guard (error as NSError?)?.domain != Self.refusalDomain else { return }

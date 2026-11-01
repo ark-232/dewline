@@ -82,7 +82,6 @@ final class EditorTextView: CaretTextView {
         // The history records edits itself, so a landing can move them.
         allowsUndo = false
         isAutomaticTextReplacementEnabled = false
-        isContinuousSpellCheckingEnabled = true
         usesFindBar = true
         marks.textView = self
         marks.autoresizingMask = [.width, .height]
@@ -98,6 +97,7 @@ final class EditorTextView: CaretTextView {
 
     static func scrollView() -> NSScrollView {
         let textView = EditorTextView()
+        if Preferences.shared.opensInSource { textView.styler.toggleSource(restyling: NSRange()) }
         let scrollView = NSScrollView()
         scrollView.hasVerticalScroller = true
         scrollView.backgroundColor = textView.backgroundColor
@@ -132,6 +132,7 @@ final class EditorTextView: CaretTextView {
         vimStatus?.textColor = store.color(.ink2)
         isAutomaticQuoteSubstitutionEnabled = store.smartPunctuation
         isAutomaticDashSubstitutionEnabled = store.smartPunctuation
+        if isContinuousSpellCheckingEnabled != store.spellCheck { isContinuousSpellCheckingEnabled = store.spellCheck }
         fitColumn(to: frame.width)
         if store.vimMode != (vim != nil) { vim = store.vimMode ? VimEngine() : nil }
         updateFocus()
@@ -458,7 +459,12 @@ final class EditorTextView: CaretTextView {
 
     override func insertTab(_ sender: Any?) {
         guard hasMarkedText() || !indentItems(outdent: false) else { return }
-        super.insertTab(sender)
+        let width = ThemeStore.shared.tabWidth
+        if width > 0, !hasMarkedText() {
+            insertText(String(repeating: " ", count: width), replacementRange: selectedRange())
+        } else {
+            super.insertTab(sender)
+        }
     }
 
     override func insertBacktab(_ sender: Any?) {
