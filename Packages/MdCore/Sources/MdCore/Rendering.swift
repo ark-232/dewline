@@ -66,7 +66,16 @@ public func exportWordDocument(_ text: String, folder: URL) throws(RenderFailure
 
 /// Display math typeset by RaTeX at `size` points and `scale` pixels per point, in `color` (0xRRGGBBAA).
 public func ratexImage(_ tex: String, size: Double, scale: Double, color: UInt32) throws(RenderFailure) -> CGImage {
-    let png = try engine { try renderMath(tex: tex, size: Float(size), scale: Float(scale), color: color) }
+    try decode(try engine { try renderMath(tex: tex, size: Float(size), scale: Float(scale), color: color) })
+}
+
+/// A formula drawn to sit on a line of text, and how far it reaches below the baseline in points.
+public func ratexInlineImage(_ tex: String, size: Double, scale: Double, color: UInt32) throws(RenderFailure) -> (image: CGImage, depth: Double) {
+    let math = try engine { try renderInlineMath(tex: tex, size: Float(size), scale: Float(scale), color: color) }
+    return (try decode(math.png), Double(math.depth))
+}
+
+private func decode(_ png: Data) throws(RenderFailure) -> CGImage {
     guard let source = CGImageSourceCreateWithData(png as CFData, nil),
         let image = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)
     else { throw RenderFailure("the picture could not be made") }

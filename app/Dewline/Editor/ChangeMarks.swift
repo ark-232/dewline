@@ -50,8 +50,8 @@ struct MarkWriter: Equatable {
 
 /// Paints marked changes over the text at render time, never as text edits: a wash in the writer's hue under
 /// inserted text with an underline in the writer's style, a 3 pt tick in the left gutter and the writer's name on
-/// hover. Removed text hangs under its line as a struck ghost and a conflict's other version as a card, each in space
-/// the styler reserves below the paragraph. The marks sit under the text; ghosts, cards and the bar sit over it.
+/// hover. Short removed text reads inline at its deletion point as a struck ghost, in a gap the styler opens; longer
+/// removed text and a conflict's other version hang under the paragraph, in space the styler reserves below it. The marks sit under the text; ghosts, cards and the bar sit over it.
 @MainActor
 final class ChangeMarks: NSView, NSViewToolTipOwner {
     weak var textView: EditorTextView?
@@ -99,22 +99,33 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
 
     // MARK: Hangers
 
+    /// Whether `view` is a ghost that reads inline.
+    private static func isInline(_ view: NSView) -> Bool {
+        (view as? Ghost)?.inlineWidth != nil
+    }
+
     private func updateHangers() {
         guard let textView else { return }
-        let length = textView.textStorage!.length
-        var wanted: [UInt64: Int] = [:]
+        let text = textView.textStorage!.mutableString
+        let length = text.length
+        // Each hanger's anchor under its paragraph, and for removed text the character before the deletion point when
+        // that is on the same line: an inline ghost's gap opens after it.
+        var wanted: [UInt64: (hang: Int, inline: Int?)] = [:]
         for (id, change) in changes where change.conflict || !change.removed.isEmpty {
             let end = change.range.length > 0 ? NSMaxRange(change.range) - 1 : change.range.location - 1
-            wanted[id] = min(max(end, 0), max(length - 1, 0))
+            let at = change.range.location
+            let inline = !change.conflict && at > 0 && at <= length && ![0x0A, 0x0D].contains(text.character(at: at - 1)) ? at - 1 : nil
+            wanted[id] = (min(max(end, 0), max(length - 1, 0)), inline)
         }
         var touched: [Int] = []
-        for (id, hanger) in hangers where wanted[id] == nil {
+        for (id, hanger) in hangers where wanted[id].map({ Self.isInline(hanger.view) && $0.inline == nil }) ?? true {
             hanger.view.removeFromSuperview()
             hangers[id] = nil
             touched.append(hanger.anchor)
         }
-        for (id, anchor) in wanted {
+        for (id, want) in wanted {
             if let hanger = hangers[id] {
+                let anchor = Self.isInline(hanger.view) ? want.inline ?? want.hang : want.hang
                 if hanger.anchor != anchor { hangers[id] = (anchor, hanger.view) }
                 continue
             }
@@ -123,7 +134,8 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
                 ? ConflictCard(MarkWriter(change.origin), theirs: change.theirs) { [weak self] decision in
                     self?.live?.decide(id, decision)
                 }
-                : Ghost(change.removed, writer: MarkWriter(change.origin))
+                : Ghost(change.removed, writer: MarkWriter(change.origin), inlineUpTo: want.inline == nil ? 0 : columnWidth * 0.6)
+            let anchor = Self.isInline(view) ? want.inline ?? want.hang : want.hang
             textView.addSubview(view)
             hangers[id] = (anchor, view)
             touched.append(anchor)
@@ -157,14 +169,21 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
 
     private func measureHangers() {
         let width = columnWidth
-        for hanger in hangers.values where hanger.view.frame.width != width {
+        for hanger in hangers.values where hanger.view.frame.width != width && !Self.isInline(hanger.view) {
             hanger.view.setFrameSize(NSSize(width: width, height: (hanger.view as? Hanging)?.height(for: width) ?? 0))
         }
     }
 
     /// Space to reserve under the paragraphs holding these offsets, for the styler.
     func space(in range: NSRange) -> [(anchor: Int, height: CGFloat)] {
-        hangers.values.filter { NSLocationInRange($0.anchor, range) }.map { ($0.anchor, $0.view.frame.height + 2 * Self.gap) }
+        hangers.values.filter { NSLocationInRange($0.anchor, range) && !Self.isInline($0.view) }.map { ($0.anchor, $0.view.frame.height + 2 * Self.gap) }
+    }
+
+    /// Gaps to open after these offsets for inline ghosts, for the styler.
+    func gaps(in range: NSRange) -> [(after: Int, width: CGFloat)] {
+        hangers.values.filter { NSLocationInRange($0.anchor, range) }.compactMap { hanger in
+            (hanger.view as? Ghost)?.inlineWidth.map { (hanger.anchor, $0) }
+        }
     }
 
     // MARK: Layout
@@ -204,8 +223,14 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
             storage.mutableString.paragraphRange(for: NSRange(location: min(anchor, storage.length), length: 0))
         }
         for (id, hanger) in hangers.sorted(by: { $0.key < $1.key }) {
+            if let ghost = hanger.view as? Ghost, let width = ghost.inlineWidth {
+                // The gap ends the anchor character's segment.
+                guard hanger.anchor < storage.length, let gap = segments(NSRange(location: hanger.anchor, length: 1)).last else { continue }
+                ghost.frame.origin = NSPoint(x: gap.frame.maxX - width, y: gap.frame.minY + gap.baseline - ghost.ascent)
+                continue
+            }
             guard let top = textBottom(at: hanger.anchor) else { continue }
-            let stacked = hangers.filter { $0.key < id && paragraph($0.value.anchor) == paragraph(hanger.anchor) }
+            let stacked = hangers.filter { $0.key < id && !Self.isInline($0.value.view) && paragraph($0.value.anchor) == paragraph(hanger.anchor) }
                 .map { $0.value.view.frame.height + Self.gap }
             let y = top + Self.gap + stacked.reduce(0, +)
             hanger.view.frame.origin = NSPoint(x: left, y: y)

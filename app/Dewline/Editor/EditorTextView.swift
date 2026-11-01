@@ -72,6 +72,7 @@ final class EditorTextView: CaretTextView {
         styler.textView = self
         styler.blocks.textView = self
         styler.highlights.textView = self
+        styler.math.textView = self
         textLayoutManager?.renderingAttributesValidator = { [weak self] layout, fragment in
             MainActor.assumeIsolated { self?.styler.highlights.validate(layout, fragment) }
         }
@@ -170,7 +171,7 @@ final class EditorTextView: CaretTextView {
         }
     }
 
-    /// Draws the fold disclosures and each quote's rule at the column's left edge.
+    /// Draws the fold disclosures, code wells, callouts, each quote's rule at the column's left edge, and inline math.
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
         drawDisclosures(in: rect)
@@ -182,6 +183,7 @@ final class EditorTextView: CaretTextView {
         func line(at index: Int) -> NSRect {
             convert(window.convertFromScreen(firstRect(forCharacterRange: NSRange(location: index, length: 0), actualRange: nil)), from: nil)
         }
+        drawCodeWells(in: visible, line: line(at:))
         drawCallouts(in: visible, line: line(at:))
         ThemeStore.shared.color(.quoteRule).setFill()
         storage.enumerateAttribute(.dewlineQuote, in: visible) { value, range, _ in
@@ -190,6 +192,7 @@ final class EditorTextView: CaretTextView {
             let bottom = line(at: max(NSMaxRange(range) - 1, range.location))
             NSRect(x: textContainerOrigin.x + (textContainer?.lineFragmentPadding ?? 0), y: top.minY, width: 2, height: bottom.maxY - top.minY).fill()
         }
+        drawInlineMath(in: visible, line: line(at:))
     }
 
     /// The text's children plus one image per rendered block, labeled with its source, and one checkbox per task box.

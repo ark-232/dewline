@@ -57,23 +57,44 @@ private final class ActionButton: NSButton {
     }
 }
 
-/// Removed text, struck, at ink 42% with the strike in the writer's color.
+/// Removed text, struck, at ink 42% with the strike in the writer's color. A short removal on one line reads inline
+/// at its deletion point, in a gap the styler opens there; a longer one hangs under its paragraph.
 @MainActor
 final class Ghost: NSView, Hanging {
-    private let text = NSTextField(wrappingLabelWithString: "")
+    private let string: NSAttributedString
+    private let text: NSTextField?
+    /// The gap an inline ghost takes in its line, its text and a space; nil for a ghost that hangs.
+    let inlineWidth: CGFloat?
+    /// From an inline ghost's top to its baseline.
+    let ascent: CGFloat
 
-    init(_ removed: String, writer: MarkWriter) {
-        super.init(frame: .zero)
+    /// A ghost no wider than `limit` reads inline.
+    init(_ removed: String, writer: MarkWriter, inlineUpTo limit: CGFloat) {
         let shown = removed.hasSuffix("\n") ? String(removed.dropLast()) : removed
-        text.attributedStringValue = NSAttributedString(string: shown, attributes: [
-            .font: ThemeStore.shared.bodyFont,
+        let font = ThemeStore.shared.bodyFont
+        string = NSAttributedString(string: shown, attributes: [
+            .font: font,
             .foregroundColor: ThemeStore.shared.color(.ink).withAlphaComponent(0.42),
             .strikethroughStyle: NSUnderlineStyle.single.rawValue,
             .strikethroughColor: writer.color,
         ])
-        text.isSelectable = false
-        text.setAccessibilityLabel("Removed by \(writer.name): \(shown)")
-        addSubview(text)
+        let width = ceil(string.size().width)
+        let inline = !shown.isEmpty && !shown.contains(where: \.isNewline) && width <= limit
+        inlineWidth = inline ? width + ceil(NSAttributedString(string: " ", attributes: [.font: font]).size().width) : nil
+        ascent = ceil(font.ascender)
+        text = inline ? nil : NSTextField(wrappingLabelWithString: "")
+        super.init(frame: NSRect(x: 0, y: 0, width: width, height: ceil(font.ascender - font.descender)))
+        let label = "Removed by \(writer.name): \(shown)"
+        if let text {
+            text.attributedStringValue = string
+            text.isSelectable = false
+            text.setAccessibilityLabel(label)
+            addSubview(text)
+        } else {
+            setAccessibilityElement(true)
+            setAccessibilityRole(.staticText)
+            setAccessibilityLabel(label)
+        }
     }
 
     required init?(coder: NSCoder) {
@@ -83,13 +104,18 @@ final class Ghost: NSView, Hanging {
     override var isFlipped: Bool { true }
 
     func height(for width: CGFloat) -> CGFloat {
+        guard let text else { return frame.height }
         text.preferredMaxLayoutWidth = width
         return ceil(text.fittingSize.height)
     }
 
     override func layout() {
         super.layout()
-        text.frame = bounds
+        text?.frame = bounds
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        if text == nil { string.draw(at: .zero) }
     }
 }
 

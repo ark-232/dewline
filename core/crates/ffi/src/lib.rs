@@ -259,6 +259,24 @@ pub fn rasterize_svg(svg: String, scale: f32, max_width: u32) -> Result<Raster, 
 /// `color` (0xRRGGBBAA).
 #[uniffi::export]
 pub fn render_math(tex: String, size: f32, scale: f32, color: u32) -> Result<Vec<u8>, RenderError> {
+    render_inline_math(tex, size, scale, color).map(|math| math.png)
+}
+
+/// A formula's PNG and how far it reaches below its baseline, in points.
+#[derive(uniffi::Record)]
+pub struct MathPicture {
+    pub png: Vec<u8>,
+    pub depth: f32,
+}
+
+/// `render_math` with the depth that sets a formula on a line of text.
+#[uniffi::export]
+pub fn render_inline_math(
+    tex: String,
+    size: f32,
+    scale: f32,
+    color: u32,
+) -> Result<MathPicture, RenderError> {
     if tex.len() > MAX_SOURCE {
         return Err(RenderError::TooLarge);
     }
@@ -284,7 +302,12 @@ pub fn render_math(tex: String, size: f32, scale: f32, color: u32) -> Result<Vec
             font_dir: String::new(),
             device_pixel_ratio: scale,
         };
-        ratex_render::render_to_png(&ratex_layout::to_display_list(&layout), &options)
+        let list = ratex_layout::to_display_list(&layout);
+        let png = ratex_render::render_to_png(&list, &options)?;
+        Ok(MathPicture {
+            png,
+            depth: list.depth as f32 * size,
+        })
     })
 }
 
