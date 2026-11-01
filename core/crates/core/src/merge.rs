@@ -400,7 +400,8 @@ fn lines(text: &str) -> Tokens<'_> {
 }
 
 /// Runs of letters and digits, runs of other blanks, line endings, and runs
-/// of everything else.
+/// of everything else, with each ASCII punctuation mark on its own so that
+/// `*` and `*,` share the `*`.
 fn words(text: &str) -> Tokens<'_> {
     let class = |c: char| (c.is_alphanumeric(), c.is_whitespace());
     let mut at = vec![0];
@@ -410,7 +411,10 @@ fn words(text: &str) -> Tokens<'_> {
             let split = match (last, c) {
                 ('\r', '\n') => false,
                 ('\r' | '\n', _) | (_, '\r' | '\n') => true,
-                _ => class(last) != class(c),
+                _ => {
+                    class(last) != class(c)
+                        || (last.is_ascii_punctuation() && c.is_ascii_punctuation())
+                }
             };
             if split {
                 at.push(i);
@@ -565,6 +569,15 @@ mod tests {
         assert_eq!(merge.edits, [edit(4, 9, "slow")]);
         assert_eq!(merge.conflicts, []);
         assert_eq!(apply(ours, &merge.edits), "The slow brown fox jumps\n");
+    }
+
+    #[test]
+    fn punctuation_added_after_a_marker_leaves_the_marker() {
+        let base = "land as *changes* you can keep.\n";
+        let theirs = "land as *changes*, marked, that you keep.\n";
+        let merge = merge3(base, base, theirs);
+        assert_eq!(merge.edits[0], edit(17, 17, ","));
+        assert_eq!(apply(base, &merge.edits), theirs);
     }
 
     #[test]

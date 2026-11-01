@@ -50,7 +50,7 @@ struct MarkWriter: Equatable {
 
 /// Paints marked changes over the text at render time, never as text edits: a wash in the writer's hue under
 /// inserted text with an underline in the writer's style, a 3 pt tick in the left gutter, the writer's dot, name and
-/// time right of the measure on the change's first line in windows 900 pt wide or more, and the name on hover. Short
+/// time right of the measure on the change's first line where the room there holds them, and the name on hover. Short
 /// removed text reads inline at its deletion point as a struck ghost, in a gap the styler opens just before the
 /// change; longer removed text and a conflict's other version hang under the paragraph, in space the styler reserves
 /// below it. The marks sit under the text; ghosts and cards sit over it.
@@ -74,8 +74,6 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
 
     static let fade: CFTimeInterval = 0.2
     private static let gap: CGFloat = 6
-    /// Below this window width the margin labels hide.
-    static let labelWidth: CGFloat = 900
 
     /// The time on a margin label, 09:41.
     private static let clock: DateFormatter = {
@@ -243,7 +241,6 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
         let storage = textView.textStorage!
         var hung: [UInt64: CGFloat] = [:]
         let right = left + columnWidth + 32
-        let labels = (window?.frame.width ?? 0) >= Self.labelWidth
         var labeled: Set<CGFloat> = []
         // Hangers under one paragraph stack in change order; each change in it anchors at its own offset.
         func paragraph(_ anchor: Int) -> NSRange {
@@ -251,13 +248,14 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
         }
         for (id, hanger) in hangers.sorted(by: { $0.key < $1.key }) {
             if let ghost = hanger.view as? Ghost, let width = ghost.inlineWidth {
-                // The gap opens after the anchor character and ends where the change's own text starts, so the ghost
-                // sits right before what replaced it.
-                guard hanger.anchor < storage.length, let gap = segments(NSRange(location: hanger.anchor, length: 1)).last else { continue }
-                let start = changes[id].map(\.range.location) ?? storage.length
-                let next = start < storage.length ? segments(NSRange(location: start, length: 1)).first : nil
-                let end = next.flatMap { abs($0.frame.minY - gap.frame.minY) < 1 ? $0.frame.minX : nil } ?? gap.frame.maxX + width
-                ghost.frame.origin = NSPoint(x: end - width, y: gap.frame.minY + gap.baseline - ghost.ascent)
+                // The gap is the end of the anchor character's kern, right before what replaced the removed text.
+                // TextKit 2 splits a kern between the segments on either side of it, so the gap is measured from
+                // the anchor's own glyph rather than from a segment edge.
+                guard hanger.anchor < storage.length, let gap = segments(NSRange(location: hanger.anchor, length: 1)).first else { continue }
+                let glyph = NSMutableAttributedString(attributedString: storage.attributedSubstring(from: NSRange(location: hanger.anchor, length: 1)))
+                let kern = glyph.attribute(.kern, at: 0, effectiveRange: nil) as? CGFloat ?? 0
+                glyph.removeAttribute(.kern, range: NSRange(location: 0, length: 1))
+                ghost.frame.origin = NSPoint(x: gap.frame.minX + glyph.size().width + kern - width, y: gap.frame.minY + gap.baseline - ghost.ascent)
                 continue
             }
             guard let top = textBottom(at: hanger.anchor) else { continue }
@@ -302,7 +300,7 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
             tick.backgroundColor = color.cgColor
             group.addSublayer(tick)
             tips.append((tick.frame.insetBy(dx: -6, dy: 0), id))
-            if labels, let first = lines.first.map({ ($0.frame.minY, $0.frame.minY + $0.baseline) })
+            if let first = lines.first.map({ ($0.frame.minY, $0.frame.minY + $0.baseline) })
                 ?? lineRect(at: change.range.location).map({ ($0.minY, $0.minY + ($0.height * 0.78).rounded()) }),
                 labeled.insert(first.0).inserted
             {
