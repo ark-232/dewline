@@ -39,6 +39,8 @@ final class ControlSocket: @unchecked Sendable {
     struct Claim: Sendable, Equatable {
         enum Vendor: String, Sendable {
             case claude, codex, cursor
+            /// The first-run demo in Welcome.md.
+            case demo
         }
 
         enum Tool: String, Sendable {

@@ -171,8 +171,7 @@ enum MainMenu {
 
     private static func helpMenu() -> NSMenu {
         let menu = NSMenu(title: "Help")
-        menu.addItem(withTitle: "Welcome to Dewline", action: #selector(AppDelegate.showWelcomeGuide(_:)), keyEquivalent: "")
-        menu.addItem(withTitle: "Watch a Change Land (Demo)", action: #selector(AppDelegate.runWelcomeDemo(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Replay the Demo", action: #selector(AppDelegate.replayDemo(_:)), keyEquivalent: "")
         return menu
     }
 }

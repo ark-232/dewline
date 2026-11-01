@@ -41,6 +41,9 @@ pub enum Vendor {
     Claude,
     Codex,
     Cursor,
+    /// The app's own first-run demo, which writes Welcome.md the way an
+    /// agent does.
+    Demo,
 }
 
 /// A vendor's session.
@@ -74,6 +77,7 @@ impl Tool {
             (Vendor::Cursor, "Read") => Some(Tool::Read),
             (Vendor::Cursor, "Edit") => Some(Tool::Edit),
             (Vendor::Cursor, "Write") => Some(Tool::Write),
+            (Vendor::Demo, "Write") => Some(Tool::Write),
             _ => None,
         }
     }
@@ -156,6 +160,7 @@ impl Claim {
             "claude" => Vendor::Claude,
             "codex" => Vendor::Codex,
             "cursor" => Vendor::Cursor,
+            "demo" => Vendor::Demo,
             _ => return Err(Refused::Invalid("vendor")),
         };
         let session = Id::new(fields.session).ok_or(Refused::Invalid("session id"))?;

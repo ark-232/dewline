@@ -1,67 +1,23 @@
 # Welcome to Dewline
 
-Dewline edits plain Markdown files. What you type is saved as text that any app can read. This file is your own copy, so change anything you like.
+When an agent edits a file you have open, you see the change here, with its name, and you decide: Keep or Revert.
 
-## Headings
+In a few seconds, a demo writer will edit the paragraph below.
 
-Start a line with `#` for a title, `##` for a section and `###` for a part of a section.
+This paragraph is plain text in a Markdown file on your Mac. Any app can read it, and any app can change it.
 
-## Emphasis
+## Try it with your agent
 
-Wrap words in single stars for *italics* and double stars for **bold**. Backticks make `code`, and two tildes ~~strike text out~~.
+Ask your agent to edit this file:
 
-## Lists
-
-- A dash starts a list.
-- Return continues it, and Tab indents.
-  - Like this.
-
-1. Numbers work too.
-2. Dewline keeps count.
-
-## Tasks
-
-- [x] Open Dewline
-- [ ] Write a note of your own
-- [ ] Watch a change land, at the end of this file
-
-## Tables
-
-| Keys | What they do |
-| --- | --- |
-| ⇧⌘O | Quick Open |
-| ⇧⌘P | Command Palette |
-| ⌥⌘U | Show the Markdown source |
-| ⌘L | Go to a line |
-
-## Callouts
-
-> [!tip]
-> A quote that starts with `[!tip]`, `[!note]` or `[!warning]` becomes a callout.
-
-## Wikilinks
-
-Put a note's name in double brackets to link to it, like [[Inbox]].
-
-## Math
-
-Math goes between dollar signs, like $e^{i\pi} + 1 = 0$. Two dollar signs set a formula on its own line:
-
-$$
-\int_0^1 x^2 \, dx = \frac{1}{3}
-$$
-
-## Diagrams
-
-A fenced block marked `mermaid` draws a diagram:
-
-```mermaid
-flowchart LR
-  You -->|type| File
-  Agent -->|edits| File
-  File --> Dewline
+```text
+Add one sentence to the second paragraph of "{path}".
 ```
 
-## Watch a change land
+Or open your own project: Open Folder… (⌥⌘O)
 
-Agents, git and sync apps write to the files you have open. Choose Help > Watch a Change Land (Demo). Dewline writes a short note into this file from outside the editor, the way an agent would, and you see it arrive below.
+## Writing here
+
+What you type is saved as plain Markdown. A `#` starts a heading, `**bold**` and `*italics*` style as you type, `- ` starts a list and `- [ ] ` a task. ⌥⌘U shows the source, and Help > Keyboard Shortcuts lists the rest.
+
+Dewline has no account and sends nothing anywhere. Your files stay where they are.

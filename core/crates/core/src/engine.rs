@@ -85,6 +85,7 @@ impl Origin {
                     Vendor::Claude => "claude",
                     Vendor::Codex => "codex",
                     Vendor::Cursor => "cursor",
+                    Vendor::Demo => "demo",
                 };
                 format!("{vendor}:{session}")
             }
@@ -112,6 +113,7 @@ impl Origin {
             Some(("claude", session)) => agent(Vendor::Claude, session),
             Some(("codex", session)) => agent(Vendor::Codex, session),
             Some(("cursor", session)) => agent(Vendor::Cursor, session),
+            Some(("demo", session)) => agent(Vendor::Demo, session),
             Some(("collab", rest)) => match rest.split_once(':') {
                 Some((peer, name)) => Origin::Collaborator {
                     peer: peer.into(),

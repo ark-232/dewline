@@ -5,6 +5,8 @@ import Foundation
 /// hue.
 enum Writer: String, CaseIterable, Identifiable, Sendable {
     case you, claude, codex, cursor, copilot, gemini, git, unknown, otherMac, collaborator
+    /// Welcome.md's first-run demo; it has no row in Settings.
+    case demo
 
     var id: Self { self }
 
@@ -20,6 +22,7 @@ enum Writer: String, CaseIterable, Identifiable, Sendable {
         case .unknown: "Unknown app"
         case .otherMac: "Your other Mac"
         case .collaborator: "Collaborator"
+        case .demo: "Demo"
         }
     }
 
@@ -36,6 +39,7 @@ enum Writer: String, CaseIterable, Identifiable, Sendable {
         case .unknown: (OKLCH(l: 0.55, c: 0, h: 0), OKLCH(l: 0.70, c: 0, h: 0))
         case .otherMac: (OKLCH(l: 0.58, c: 0.10, h: 195), OKLCH(l: 0.74, c: 0.10, h: 195))
         case .collaborator: (OKLCH(l: 0.56, c: 0.20, h: 350), OKLCH(l: 0.72, c: 0.17, h: 350))
+        case .demo: (OKLCH(l: 0.58, c: 0.12, h: 75), OKLCH(l: 0.76, c: 0.12, h: 75))
         }
     }
 

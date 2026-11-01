@@ -61,7 +61,7 @@ struct AppearancePane: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             Section {
-                ForEach(Writer.allCases) { writer in
+                ForEach(Writer.allCases.filter { $0 != .demo }) { writer in
                     WriterRow(writer: writer, store: store, dark: scheme == .dark)
                 }
             } header: {
