@@ -82,6 +82,8 @@ final class TabRow: NSView {
     }
 
     private let stack = NSStackView()
+    /// Each tab's dot as the row last showed it.
+    private var dots: [NSColor?] = []
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -99,9 +101,8 @@ final class TabRow: NSView {
         setAccessibilityElement(true)
         setAccessibilityRole(.tabGroup)
         setAccessibilityLabel("Tabs")
-        for name in [ThemeStore.didChange, LiveFile.changesDidChange] {
-            NotificationCenter.default.addObserver(self, selector: #selector(reload), name: name, object: nil)
-        }
+        NotificationCenter.default.addObserver(self, selector: #selector(reload), name: ThemeStore.didChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(changesChanged), name: LiveFile.changesDidChange, object: nil)
     }
 
     required init?(coder: NSCoder) {
@@ -112,10 +113,17 @@ final class TabRow: NSView {
 
     @objc func reload() {
         for view in stack.arrangedSubviews { view.removeFromSuperview() }
+        dots = tabs?.tabs.map(\.tabDot) ?? []
         guard let tabs else { return }
         for tab in tabs.tabs {
             stack.addArrangedSubview(TabButton(tab, selected: tab === tabs.selected))
         }
+    }
+
+    /// Each keystroke before a pending change moves it; the row rebuilds only when a tab's dot changes.
+    @objc private func changesChanged() {
+        guard tabs?.tabs.map(\.tabDot) ?? [] != dots else { return }
+        reload()
     }
 }
 
