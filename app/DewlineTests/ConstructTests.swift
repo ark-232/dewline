@@ -146,15 +146,15 @@ struct ConstructTests {
         editor.expectBytesKept()
     }
 
-    @Test func calloutTypesHaveIconsAndAliasesShareThem() {
-        for type in ["note", "tip", "warning", "danger", "info", "quote", "abstract", "todo", "success", "question", "failure", "bug", "example"] {
-            #expect(NSImage(systemSymbolName: Constructs.look(type).symbol, accessibilityDescription: nil) != nil, "\(type)")
+    @Test func calloutTypesHaveGlyphsAndAliasesShareThem() {
+        for glyph in CalloutGlyph.allCases {
+            #expect(!glyph.paths.stroke.isEmpty || !glyph.paths.fill.isEmpty, "\(glyph)")
         }
-        #expect(Constructs.look("caution").symbol == Constructs.look("warning").symbol)
-        #expect(Constructs.look("cite").symbol == Constructs.look("quote").symbol)
-        #expect(Constructs.look("error").symbol == Constructs.look("danger").symbol)
-        #expect(Constructs.look("hint").symbol == Constructs.look("tip").symbol)
-        #expect(Constructs.look("unknown").symbol == Constructs.look("note").symbol)
+        #expect(Constructs.look("caution").glyph == Constructs.look("warning").glyph)
+        #expect(Constructs.look("cite").glyph == Constructs.look("quote").glyph)
+        #expect(Constructs.look("error").glyph == Constructs.look("danger").glyph)
+        #expect(Constructs.look("hint").glyph == Constructs.look("tip").glyph)
+        #expect(Constructs.look("unknown").glyph == Constructs.look("note").glyph)
     }
 
     @Test func wikilinksShowTheAliasOrTheName() {

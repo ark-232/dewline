@@ -54,8 +54,9 @@ struct TaskMark: Equatable {
     let at: Int
     let checked: Bool
     let label: String
+    /// The open box's edge.
     let stroke: NSColor
-    let fill: NSColor
+    /// The done box's edge and its check, drawn and never filled.
     let check: NSColor
 }
 
@@ -155,13 +156,13 @@ final class BlockFragment: NSTextLayoutFragment {
             let outline = NSBezierPath(roundedRect: box.insetBy(dx: 0.75, dy: 0.75), xRadius: box.width * 0.22, yRadius: box.width * 0.22)
             outline.lineWidth = 1.5
             if task.checked {
-                task.fill.setFill()
-                outline.fill()
+                task.check.setStroke()
+                outline.stroke()
                 let mark = NSBezierPath()
                 mark.move(to: NSPoint(x: box.minX + box.width * 0.25, y: box.minY + box.height * 0.52))
                 mark.line(to: NSPoint(x: box.minX + box.width * 0.43, y: box.minY + box.height * 0.7))
                 mark.line(to: NSPoint(x: box.minX + box.width * 0.76, y: box.minY + box.height * 0.3))
-                mark.lineWidth = 1.75
+                mark.lineWidth = 1.5
                 mark.lineCapStyle = .round
                 mark.lineJoinStyle = .round
                 task.check.setStroke()

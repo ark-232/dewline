@@ -171,7 +171,8 @@ final class EditorTextView: CaretTextView {
         }
     }
 
-    /// Draws the fold disclosures, code wells, callouts, each quote's rule at the column's left edge, and inline math.
+    /// Draws the fold disclosures, code wells, callouts, each quote's rule at the column's left edge (a callout's well
+    /// stands alone), and inline math.
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
         drawDisclosures(in: rect)
@@ -187,7 +188,7 @@ final class EditorTextView: CaretTextView {
         drawCallouts(in: visible, line: line(at:))
         ThemeStore.shared.color(.quoteRule).setFill()
         storage.enumerateAttribute(.dewlineQuote, in: visible) { value, range, _ in
-            guard value != nil else { return }
+            guard value != nil, storage.attribute(.dewlineCallout, at: range.location, effectiveRange: nil) == nil else { return }
             let top = line(at: range.location)
             let bottom = line(at: max(NSMaxRange(range) - 1, range.location))
             NSRect(x: textContainerOrigin.x + (textContainer?.lineFragmentPadding ?? 0), y: top.minY, width: 2, height: bottom.maxY - top.minY).fill()

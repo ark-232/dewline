@@ -61,7 +61,7 @@ final class TaskBoxes {
                 let label = text.substring(with: NSRange(location: NSMaxRange(local.range), length: end - NSMaxRange(local.range)))
                 let mark = TaskMark(
                     at: local.range.location - paragraph.location, checked: checked, label: label.trimmingCharacters(in: .whitespaces),
-                    stroke: store.color(.ink2), fill: store.color(.accent), check: store.color(.paper)
+                    stroke: store.color(.ink3), check: store.color(.signal)
                 )
                 styled.addAttribute(.dewlineBlock, value: BlockLine(.task(mark)), range: paragraph)
             }
