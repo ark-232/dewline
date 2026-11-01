@@ -228,7 +228,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     }
 
     /// Scrolls the heading's line to the top of the page and puts the caret on it.
-    private func jump(to heading: Heading) {
+    func jump(to heading: Heading) {
         guard let textView, let scrollView = textView.enclosingScrollView,
             heading.location < (textView.string as NSString).length,
             let baseline = textView.baseline(at: heading.location)
