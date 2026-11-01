@@ -37,6 +37,9 @@ targets:
         excludes:
           - Fonts
           - Specimens
+          - Welcome.md
+      - path: Dewline/Welcome.md
+        buildPhase: resources
       - path: Dewline/Fonts
         type: folder
         buildPhase: resources

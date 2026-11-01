@@ -32,5 +32,14 @@
     ".specify/**/*.md",
     ".ruler/**/*.md",
     ".kiro/steering/**/*.md"
+  ],
+  "limits": [
+    {"pattern": ".claude/projects/*/memory/MEMORY.md", "agent": "Claude Code", "lines": 200, "bytes": 25000},
+    {"pattern": ".claude/agent-memory/*/MEMORY.md", "agent": "Claude Code", "lines": 200, "bytes": 25000},
+    {"pattern": "CLAUDE.md", "agent": "Claude Code", "lines": 200},
+    {"pattern": "CLAUDE.local.md", "agent": "Claude Code", "lines": 200},
+    {"pattern": "AGENTS.md", "agent": "Codex", "bytes": 32768},
+    {"pattern": "AGENTS.override.md", "agent": "Codex", "bytes": 32768},
+    {"pattern": ".cursor/rules/**/*.mdc", "agent": "Cursor", "lines": 500}
   ]
 }

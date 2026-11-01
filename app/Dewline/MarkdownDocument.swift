@@ -119,6 +119,12 @@ final class MarkdownDocument: NSDocument {
         return [device, inode]
     }
 
+    /// A new document's first save starts in Settings > General's folder.
+    override func prepareSavePanel(_ savePanel: NSSavePanel) -> Bool {
+        if fileURL == nil { savePanel.directoryURL = Preferences.shared.newFileFolder }
+        return super.prepareSavePanel(savePanel)
+    }
+
     override func willPresentError(_ error: any Error) -> any Error {
         // NSDocument presents a failed save as "could not be saved"; a conflict says what happened instead.
         (error as NSError).userInfo[NSUnderlyingErrorKey] as? SaveConflict ?? super.willPresentError(error)

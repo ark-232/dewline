@@ -10,6 +10,16 @@ pub struct AgentFiles {
     /// The day the list was last checked against the agents' documentation.
     pub date: String,
     patterns: Vec<Vec<String>>,
+    limits: Vec<(Vec<String>, Limit)>,
+}
+
+/// What an agent's documentation says it loads of a file, as of the list's
+/// date: the first `lines` lines, or the first `bytes` bytes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Limit {
+    pub agent: String,
+    pub lines: Option<u64>,
+    pub bytes: Option<u64>,
 }
 
 impl AgentFiles {
@@ -28,31 +38,72 @@ impl AgentFiles {
             .get("patterns")?
             .as_array()?
             .iter()
-            .map(|pattern| {
-                let parts: Vec<String> = pattern.as_str()?.split('/').map(str::to_owned).collect();
-                let valid = |part: &String| {
-                    part == "**" || (!part.is_empty() && part.matches('*').count() <= 1)
-                };
-                parts.iter().all(valid).then_some(parts)
-            })
+            .map(|pattern| split(pattern.as_str()?))
             .collect::<Option<_>>()?;
-        Some(AgentFiles { date, patterns })
+        let limits = match list.get("limits") {
+            None => Vec::new(),
+            Some(limits) => limits
+                .as_array()?
+                .iter()
+                .map(|limit| {
+                    let number = |key| match limit.get(key) {
+                        None => Some(None),
+                        Some(value) => value.as_u64().filter(|&n| n > 0).map(Some),
+                    };
+                    let limit_for = Limit {
+                        agent: limit.get("agent")?.as_str()?.to_owned(),
+                        lines: number("lines")?,
+                        bytes: number("bytes")?,
+                    };
+                    let counted = limit_for.lines.is_some() || limit_for.bytes.is_some();
+                    counted.then_some((split(limit.get("pattern")?.as_str()?)?, limit_for))
+                })
+                .collect::<Option<_>>()?,
+        };
+        Some(AgentFiles {
+            date,
+            patterns,
+            limits,
+        })
     }
 
     /// Whether an agent loads the file at `path`, judged by its name and the
     /// folders above it.
     pub fn matches(&self, path: &Path) -> bool {
-        let names: Vec<&[u8]> = path
-            .components()
-            .filter_map(|component| match component {
-                Component::Normal(name) => Some(name.as_bytes()),
-                _ => None,
-            })
-            .collect();
+        let names = names(path);
         self.patterns
             .iter()
-            .any(|pattern| (0..names.len()).any(|start| glob(pattern, &names[start..])))
+            .any(|pattern| ends_with(pattern, &names))
     }
+
+    /// The first limit in the list whose pattern matches `path`.
+    pub fn limit(&self, path: &Path) -> Option<&Limit> {
+        let names = names(path);
+        self.limits
+            .iter()
+            .find(|(pattern, _)| ends_with(pattern, &names))
+            .map(|(_, limit)| limit)
+    }
+}
+
+fn split(pattern: &str) -> Option<Vec<String>> {
+    let parts: Vec<String> = pattern.split('/').map(str::to_owned).collect();
+    let valid =
+        |part: &String| part == "**" || (!part.is_empty() && part.matches('*').count() <= 1);
+    parts.iter().all(valid).then_some(parts)
+}
+
+fn names(path: &Path) -> Vec<&[u8]> {
+    path.components()
+        .filter_map(|component| match component {
+            Component::Normal(name) => Some(name.as_bytes()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn ends_with(pattern: &[String], names: &[&[u8]]) -> bool {
+    (0..names.len()).any(|start| glob(pattern, &names[start..]))
 }
 
 fn glob(pattern: &[String], names: &[&[u8]]) -> bool {
@@ -109,6 +160,57 @@ mod tests {
         ));
         assert!(!parse(r#"{"date": "2026-10-26", "patterns": ["a//b.md"]}"#));
         assert!(!parse(r#"{"date": "2026-10-26", "patterns": [7]}"#));
+        assert!(parse(
+            r#"{"date": "2026-10-26", "patterns": [], "limits": [{"pattern": "A.md", "agent": "A", "lines": 9}]}"#
+        ));
+        assert!(!parse(
+            r#"{"date": "2026-10-26", "patterns": [], "limits": [{"pattern": "A.md", "agent": "A"}]}"#
+        ));
+        assert!(!parse(
+            r#"{"date": "2026-10-26", "patterns": [], "limits": [{"pattern": "A.md", "agent": "A", "bytes": 0}]}"#
+        ));
+        assert!(!parse(
+            r#"{"date": "2026-10-26", "patterns": [], "limits": [{"pattern": "A.md", "lines": 9}]}"#
+        ));
+    }
+
+    #[test]
+    fn limits_follow_the_vendor_that_loads_the_file() {
+        let files = AgentFiles::builtin();
+        let limit = |path: &str| {
+            files
+                .limit(Path::new(path))
+                .map(|limit| (limit.agent.as_str(), limit.lines, limit.bytes))
+        };
+        assert_eq!(
+            limit("/Users/someone/.claude/projects/-Users-someone-repo/memory/MEMORY.md"),
+            Some(("Claude Code", Some(200), Some(25000)))
+        );
+        assert_eq!(
+            limit("/Users/someone/repo/.claude/agent-memory/reviewer/MEMORY.md"),
+            Some(("Claude Code", Some(200), Some(25000)))
+        );
+        assert_eq!(
+            limit("/Users/someone/repo/claude.md"),
+            Some(("Claude Code", Some(200), None))
+        );
+        assert_eq!(
+            limit("/Users/someone/repo/AGENTS.md"),
+            Some(("Codex", None, Some(32768)))
+        );
+        assert_eq!(
+            limit("/Users/someone/repo/.cursor/rules/style.mdc"),
+            Some(("Cursor", Some(500), None))
+        );
+        assert_eq!(limit("/Users/someone/.claude/skills/pdf/SKILL.md"), None);
+        assert_eq!(limit("/Users/someone/repo/README.md"), None);
+        for (pattern, _) in &files.limits {
+            let path = pattern.join("/").replace("**/", "").replace('*', "x");
+            assert!(
+                files.matches(Path::new(&path)),
+                "{path} has a limit but is no agent file"
+            );
+        }
     }
 
     #[test]
