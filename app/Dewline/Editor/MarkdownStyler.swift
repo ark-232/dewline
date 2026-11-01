@@ -351,6 +351,11 @@ extension MarkdownStyler {
         styled.addAttributes(baseAttributes, range: whole)
         revealed = revealed.filter { !NSLocationInRange($0.range.location, paragraphs) }
         let selection = selection.map { NSRange(location: $0.location - paragraphs.location, length: $0.length) }
+        // A caret in an agent's marked change, where the Keep bar puts it, leaves the markers around it hidden.
+        let changed = textView?.marks.painted.values.map { NSRange(location: $0.location - paragraphs.location, length: $0.length) } ?? []
+        let revealing = selection.filter { caret in
+            caret.length > 0 || !changed.contains { $0.location <= caret.location && caret.location <= NSMaxRange($0) }
+        }
         for block in map.blocks(in: paragraphs) {
             let offset = block.range.location - paragraphs.location
             let lines = NSRange(location: offset, length: block.range.length)
@@ -401,7 +406,7 @@ extension MarkdownStyler {
                 for marker in span.markers {
                     styled.addAttribute(.dewlineMarkerFont, value: styled.attribute(.font, at: marker.location, effectiveRange: nil)!, range: marker)
                 }
-                let reveal = Self.touches(span, selection)
+                let reveal = Self.touches(span, revealing)
                 if reveal { revealed.insert(span.shifted(by: paragraphs.location)) }
                 mark(span, revealed: reveal || source, in: styled)
             }

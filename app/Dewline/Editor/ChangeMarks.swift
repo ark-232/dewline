@@ -49,9 +49,11 @@ struct MarkWriter: Equatable {
 }
 
 /// Paints marked changes over the text at render time, never as text edits: a wash in the writer's hue under
-/// inserted text with an underline in the writer's style, a 3 pt tick in the left gutter and the writer's name on
-/// hover. Short removed text reads inline at its deletion point as a struck ghost, in a gap the styler opens; longer
-/// removed text and a conflict's other version hang under the paragraph, in space the styler reserves below it. The marks sit under the text; ghosts and cards sit over it.
+/// inserted text with an underline in the writer's style, a 3 pt tick in the left gutter, the writer's dot, name and
+/// time right of the measure on the change's first line in windows 900 pt wide or more, and the name on hover. Short
+/// removed text reads inline at its deletion point as a struck ghost, in a gap the styler opens just before the
+/// change; longer removed text and a conflict's other version hang under the paragraph, in space the styler reserves
+/// below it. The marks sit under the text; ghosts and cards sit over it.
 @MainActor
 final class ChangeMarks: NSView, NSViewToolTipOwner {
     weak var textView: EditorTextView?
@@ -62,6 +64,8 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
     private(set) var painted: [UInt64: NSRange] = [:]
     /// When each marked change's fade began.
     private var shown: [UInt64: CFTimeInterval] = [:]
+    /// When each marked change landed here, for its margin label.
+    private var landed: [UInt64: Date] = [:]
     /// Ghosts and cards by change, with the offset of the character whose paragraph they hang under.
     private(set) var hangers: [UInt64: (anchor: Int, view: NSView)] = [:]
     private var tips: [(rect: NSRect, change: UInt64)] = []
@@ -70,8 +74,27 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
 
     static let fade: CFTimeInterval = 0.2
     private static let gap: CGFloat = 6
+    /// Below this window width the margin labels hide.
+    static let labelWidth: CGFloat = 900
+
+    /// The time on a margin label, 09:41.
+    private static let clock: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
 
     override var isFlipped: Bool { true }
+
+    /// The margin labels come and go with the width.
+    override func setFrameSize(_ newSize: NSSize) {
+        let widened = newSize.width != frame.width
+        super.setFrameSize(newSize)
+        if widened, !changes.isEmpty {
+            dirty = true
+            textView?.needsLayout = true
+        }
+    }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         nil
@@ -90,6 +113,8 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
         let now = CACurrentMediaTime()
         shown = shown.filter { marked[$0.key] != nil }
         for id in marked.keys where shown[id] == nil { shown[id] = now }
+        landed = landed.filter { marked[$0.key] != nil }
+        for id in marked.keys where landed[id] == nil { landed[id] = .now }
         self.changes = marked
         updateHangers()
         dirty = true
@@ -217,15 +242,22 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
         let motion = Motion.current != .off
         let storage = textView.textStorage!
         var hung: [UInt64: CGFloat] = [:]
+        let right = left + columnWidth + 32
+        let labels = (window?.frame.width ?? 0) >= Self.labelWidth
+        var labeled: Set<CGFloat> = []
         // Hangers under one paragraph stack in change order; each change in it anchors at its own offset.
         func paragraph(_ anchor: Int) -> NSRange {
             storage.mutableString.paragraphRange(for: NSRange(location: min(anchor, storage.length), length: 0))
         }
         for (id, hanger) in hangers.sorted(by: { $0.key < $1.key }) {
             if let ghost = hanger.view as? Ghost, let width = ghost.inlineWidth {
-                // The gap ends the anchor character's segment.
+                // The gap opens after the anchor character and ends where the change's own text starts, so the ghost
+                // sits right before what replaced it.
                 guard hanger.anchor < storage.length, let gap = segments(NSRange(location: hanger.anchor, length: 1)).last else { continue }
-                ghost.frame.origin = NSPoint(x: gap.frame.maxX - width, y: gap.frame.minY + gap.baseline - ghost.ascent)
+                let start = changes[id].map(\.range.location) ?? storage.length
+                let next = start < storage.length ? segments(NSRange(location: start, length: 1)).first : nil
+                let end = next.flatMap { abs($0.frame.minY - gap.frame.minY) < 1 ? $0.frame.minX : nil } ?? gap.frame.maxX + width
+                ghost.frame.origin = NSPoint(x: end - width, y: gap.frame.minY + gap.baseline - ghost.ascent)
                 continue
             }
             guard let top = textBottom(at: hanger.anchor) else { continue }
@@ -270,6 +302,23 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
             tick.backgroundColor = color.cgColor
             group.addSublayer(tick)
             tips.append((tick.frame.insetBy(dx: -6, dy: 0), id))
+            if labels, let first = lines.first.map({ ($0.frame.minY, $0.frame.minY + $0.baseline) })
+                ?? lineRect(at: change.range.location).map({ ($0.minY, $0.minY + ($0.height * 0.78).rounded()) }),
+                labeled.insert(first.0).inserted
+            {
+                let label = marginLabel(writer, color: color, at: landed[id] ?? .now)
+                let size = label.preferredFrameSize()
+                if right + 10 + size.width <= bounds.width - 8 {
+                    let font = Chrome.mono(11)
+                    label.frame = NSRect(x: right + 10, y: (first.1 - font.ascender).rounded(), width: ceil(size.width), height: ceil(size.height))
+                    let dot = CALayer()
+                    dot.frame = NSRect(x: right, y: (first.1 - font.xHeight / 2 - 3).rounded(), width: 6, height: 6)
+                    dot.cornerRadius = 3
+                    dot.backgroundColor = color.cgColor
+                    group.addSublayer(dot)
+                    group.addSublayer(label)
+                }
+            }
             if motion, let start = shown[id], now - start < Self.fade {
                 let fade = CABasicAnimation(keyPath: "opacity")
                 fade.fromValue = 0
@@ -284,6 +333,18 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
         }
         CATransaction.commit()
         for tip in tips { addToolTip(tip.rect, owner: self, userData: nil) }
+    }
+
+    /// "Claude 09:41" in mono 11: the name in the writer's color, the time in `ink3`.
+    private func marginLabel(_ writer: MarkWriter, color: NSColor, at date: Date) -> CATextLayer {
+        let ink3 = Chrome.color(.ink3).resolved(for: effectiveAppearance)
+        let foreground = NSAttributedString.Key(kCTForegroundColorAttributeName as String)
+        let text = NSMutableAttributedString(string: writer.name, attributes: [.font: Chrome.mono(11), foreground: color.cgColor])
+        text.append(NSAttributedString(string: " " + Self.clock.string(from: date), attributes: [.font: Chrome.mono(11), foreground: ink3.cgColor]))
+        let layer = CATextLayer()
+        layer.string = text
+        layer.contentsScale = window?.backingScaleFactor ?? 2
+        return layer
     }
 
     private struct Segment {
