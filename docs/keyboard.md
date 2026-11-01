@@ -62,3 +62,4 @@ The shortcuts `app/Dewline/MainMenu.swift` puts in the menu bar, written here by
 | Forward | Go | ⌘] |
 | Minimize | Window | ⌘M |
 | Launch Window | Window | ⇧⌘1 |
+| Dewline Help | Help | ⌘? |

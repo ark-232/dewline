@@ -3,6 +3,14 @@ import AppKit
 @MainActor
 enum MainMenu {
     static func build() -> NSMenu {
+        let (main, window, help) = bar()
+        NSApplication.shared.windowsMenu = window
+        NSApplication.shared.helpMenu = help
+        return main
+    }
+
+    /// The menu bar, without handing its Window and Help menus to the app, as Help > Keyboard Shortcuts reads it.
+    static func bar() -> (main: NSMenu, window: NSMenu, help: NSMenu) {
         let main = NSMenu()
         let window = windowMenu()
         let help = helpMenu()
@@ -11,14 +19,12 @@ enum MainMenu {
             item.submenu = menu
             main.addItem(item)
         }
-        NSApplication.shared.windowsMenu = window
-        NSApplication.shared.helpMenu = help
-        return main
+        return (main, window, help)
     }
 
     private static func appMenu() -> NSMenu {
         let menu = NSMenu(title: "Dewline")
-        menu.addItem(withTitle: "About Dewline", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "About Dewline", action: #selector(Help.showAbout(_:)), keyEquivalent: "").target = Help.self
         let updates = menu.addItem(withTitle: "Check for Updates…", action: #selector(Updates.checkForUpdates(_:)), keyEquivalent: "")
         updates.target = Updates.shared
         menu.addItem(.separator())
@@ -171,7 +177,14 @@ enum MainMenu {
 
     private static func helpMenu() -> NSMenu {
         let menu = NSMenu(title: "Help")
+        menu.addItem(withTitle: "Dewline Help", action: #selector(Help.openDocs(_:)), keyEquivalent: "?").target = Help.self
+        menu.addItem(withTitle: "Keyboard Shortcuts", action: #selector(Help.showKeyboardShortcuts(_:)), keyEquivalent: "").target = Help.self
         menu.addItem(withTitle: "Replay the Demo", action: #selector(AppDelegate.replayDemo(_:)), keyEquivalent: "")
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Release Notes", action: #selector(Help.openReleaseNotes(_:)), keyEquivalent: "").target = Help.self
+        menu.addItem(withTitle: "CLI and MCP Setup", action: #selector(Help.openCLISetup(_:)), keyEquivalent: "").target = Help.self
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Report an Issue…", action: #selector(Help.reportIssue(_:)), keyEquivalent: "").target = Help.self
         return menu
     }
 }
