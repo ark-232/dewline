@@ -289,8 +289,8 @@ struct Theme: Identifiable, Hashable, Sendable {
         sidebarTint     0.93  0.03  262   0.26  0.04  264
         codeBackground  0.965 0.01  255   0.24  0.02  262
         quoteRule       0.62  0.14  266   0.62  0.13  264
-        frame           0.918 0.016 248   -
-        islandSide      0.959 0.009 248   -
+        frame           0.918 0.016 248   0.257 0.033 234
+        islandSide      0.959 0.009 248   0.226 0.029 238
         raised          1.0   0     248   -
         sunken          0.943 0.012 248   -
         keycap          0.959 0.007 248   -
@@ -311,6 +311,8 @@ struct Theme: Identifiable, Hashable, Sendable {
         sidebarTint     0.93  0.035 155   0.25  0.035 230
         codeBackground  0.96  0.015 160   0.23  0.025 240
         quoteRule       0.66  0.12  152   0.66  0.13  155
+        frame           -                 0.247 0.028 176
+        islandSide      -                 0.216 0.022 175
         """)
 
     static let dawnline = Theme("Dawnline", "A blush of dawn in the paper, ultramarine ink and accents; warm ink on indigo at night.", """
@@ -325,6 +327,8 @@ struct Theme: Identifiable, Hashable, Sendable {
         sidebarTint     0.94  0.02  20    0.27  0.035 268
         codeBackground  0.965 0.008 255   0.25  0.022 268
         quoteRule       0.70  0.08  258   0.64  0.09  252
+        frame           -                 0.267 0.025 314
+        islandSide      -                 0.236 0.02  314
         """)
 
     static let dusk = Theme("Dusk", "Blue hour: indigo above a green afterglow, mint accents, periwinkle links.", """
@@ -341,6 +345,8 @@ struct Theme: Identifiable, Hashable, Sendable {
         quoteRule       0.66  0.11  160   0.66  0.11  160
         sky1            0.80  0.06  270   0.17  0.06  272
         sky2            0.93  0.04  160   0.34  0.06  165
+        frame           -                 0.267 0.051 289
+        islandSide      -                 0.236 0.043 288
         """)
 
     static let nightwatch = Theme("Nightwatch", "Dark-first, for the radar room: deep navy, sky-blue accents; overcast steel by day.", """
