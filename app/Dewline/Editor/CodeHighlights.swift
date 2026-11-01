@@ -138,6 +138,12 @@ final class CodeHighlights {
             let range = textRange(entries[index].range, in: content)
         else { return }
         layout.invalidateRenderingAttributes(for: range)
+        // Invalidating waits for each line's next draw, which lines already on screen may not get; color those now.
+        layout.enumerateTextLayoutFragments(from: range.location) { fragment in
+            guard fragment.rangeInElement.location.compare(range.endLocation) == .orderedAscending else { return false }
+            validate(layout, fragment)
+            return true
+        }
     }
 
     private func forget(_ entry: Entry) {

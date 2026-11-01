@@ -22,9 +22,9 @@ final class MarkdownDocument: NSDocument {
     /// The app's engine, its snapshots in Application Support. The test host has none; tests make their own.
     nonisolated static let sharedEngine: ChangeEngine? = {
         guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return nil }
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let support = URL.applicationSupportDirectory.appending(path: Bundle.main.bundleIdentifier ?? "dev.arkwerx.dewline")
         do {
-            return try ChangeEngine(store: support.appending(path: "dev.arkwerx.dewline/snapshots"))
+            return try ChangeEngine(store: support.appending(path: "snapshots"))
         } catch {
             Logger(subsystem: "dev.arkwerx.dewline", category: "engine")
                 .error("No change engine, so files save without it: \(String(describing: error), privacy: .public)")
@@ -40,10 +40,11 @@ final class MarkdownDocument: NSDocument {
         waiters.contains(where: \.isOpen)
     }
 
-    /// Save As moves where the editor saves pasted images.
+    /// Save As moves where the editor saves pasted images. A concurrent read and a move set the URL off the main thread.
     override var fileURL: URL? {
         didSet {
-            MainActor.assumeIsolated { (windowControllers.first as? MainWindowController)?.textView?.documentFolder = fileURL?.deletingLastPathComponent() }
+            let folder = fileURL?.deletingLastPathComponent()
+            Task { @MainActor in (windowControllers.first as? MainWindowController)?.textView?.documentFolder = folder }
         }
     }
 

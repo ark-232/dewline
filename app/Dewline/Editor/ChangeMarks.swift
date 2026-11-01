@@ -198,10 +198,14 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
         let motion = Motion.current != .off
         let storage = textView.textStorage!
         var hung: [UInt64: CGFloat] = [:]
-        // Hangers under one paragraph stack in change order.
+        // Hangers under one paragraph stack in change order; each change in it anchors at its own offset.
+        func paragraph(_ anchor: Int) -> NSRange {
+            storage.mutableString.paragraphRange(for: NSRange(location: min(anchor, storage.length), length: 0))
+        }
         for (id, hanger) in hangers.sorted(by: { $0.key < $1.key }) {
             guard let top = textBottom(at: hanger.anchor) else { continue }
-            let stacked = hangers.filter { $0.key < id && $0.value.anchor == hanger.anchor }.map { $0.value.view.frame.height + Self.gap }
+            let stacked = hangers.filter { $0.key < id && paragraph($0.value.anchor) == paragraph(hanger.anchor) }
+                .map { $0.value.view.frame.height + Self.gap }
             let y = top + Self.gap + stacked.reduce(0, +)
             hanger.view.frame.origin = NSPoint(x: left, y: y)
             hung[id] = y + hanger.view.frame.height

@@ -31,7 +31,8 @@ final class SettingsWindowController: NSWindowController {
     }
 
     private static func pane(_ title: String, _ symbol: String, _ form: some View) -> NSTabViewItem {
-        let controller = NSHostingController(rootView: form.formStyle(.grouped).frame(width: 640))
+        // A long pane scrolls in its form; at its full height Appearance ran past the bottom of the screen.
+        let controller = NSHostingController(rootView: form.formStyle(.grouped).frame(width: 640).frame(maxHeight: 720))
         controller.sizingOptions = .preferredContentSize
         controller.title = title
         let item = NSTabViewItem(viewController: controller)

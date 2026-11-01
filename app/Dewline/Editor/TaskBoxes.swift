@@ -48,6 +48,9 @@ final class TaskBoxes {
                     continue
                 }
                 styled.addAttribute(.foregroundColor, value: NSColor.clear, range: local.range)
+                // Fixed-width, so `[ ]` and `[x]` take the same room and the box and label line up across items.
+                let size = (styled.attribute(.font, at: local.range.location, effectiveRange: nil) as? NSFont)?.pointSize ?? CGFloat(store.bodySize)
+                styled.addAttribute(.font, value: store.codeFont(size: size), range: local.range)
                 let paragraph = text.paragraphRange(for: local.range)
                 var end = NSMaxRange(paragraph)
                 while end > NSMaxRange(local.range), [0x0A, 0x0D].contains(text.character(at: end - 1)) { end -= 1 }
