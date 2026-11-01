@@ -47,8 +47,10 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
         NSAttributedString.Key.font, .foregroundColor, .backgroundColor, .paragraphStyle, .underlineStyle, .strikethroughStyle, .kern,
         .dewlineMarkerFont, .dewlineBlock, .dewlineQuote, .baselineOffset, .dewlineCallout, .dewlineCode, .dewlineMath,
     ].map { $0.rawValue as NSString }
-    /// The most text one pass styles while more waits: several screens, a few milliseconds of work.
+    /// The text a long restyle styles at once, which covers the view: several screens.
     private static let chunk = BlockMap.screen
+    /// The most text one later pass styles while more waits, so a pass fits in a 120 Hz frame.
+    private static let pass = chunk / 2
     private static var base: [NSAttributedString.Key: Any] {
         [
             .font: bodyFont,
@@ -324,7 +326,7 @@ extension MarkdownStyler {
             let anchor = min(top <= caret && caret <= index(visible.maxX, visible.maxY) ? caret : top, storage.length - 1)
             held = textView.baseline(at: anchor).map { (anchor, $0 - visible.minY) }
         }
-        let length = past ? map.parsed - first : min(unstyled.rangeView.first!.count, Self.chunk, map.parsed - first)
+        let length = past ? map.parsed - first : min(unstyled.rangeView.first!.count, Self.pass, map.parsed - first)
         storage.beginEditing()
         restyle(NSRange(location: first, length: length), in: storage, selection: textView.selectedRanges.map(\.rangeValue))
         storage.endEditing()
