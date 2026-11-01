@@ -315,7 +315,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     private var sections: [SidebarNode] {
         let main = tree ?? (outlineSection.children!.isEmpty ? nil : outlineSection)
         return [pinned, agentSection, review].filter { !($0.children ?? []).isEmpty } + (main.map { [$0] } ?? [])
-            + (recents.children!.isEmpty ? [] : [recents])
+            + ((recents.children ?? []).isEmpty ? [] : [recents])
     }
 
     private func reload() {

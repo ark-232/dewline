@@ -53,6 +53,8 @@ The shortcuts `app/Dewline/MainMenu.swift` puts in the menu bar, written here by
 | Command Palette… | View | ⇧⌘P |
 | Review Changes | View | ⇧⌘R |
 | Show Sidebar | View | ⌃⌘S |
+| Show Previous Tab | View | ⌘{ |
+| Show Next Tab | View | ⌘} |
 | Show Source | View | ⌥⌘U |
 | Focus | View | ⇧⌘D |
 | Typewriter | View | ⇧⌘T |
