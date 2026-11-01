@@ -32,26 +32,27 @@ final class CodeHighlights {
     /// Moves the entries past an edit. An edit inside a block's code keeps the spans it missed until the new ones come.
     func textDidChange(edited: NSRange, delta: Int) {
         let oldEnd = NSMaxRange(edited) - delta
-        entries = entries.compactMap { entry in
-            var entry = entry
-            if NSMaxRange(entry.range) <= edited.location, entry.range.length > 0 { return entry }
-            if edited.location < entry.range.location, oldEnd <= entry.range.location {
-                entry.range.location += delta
-                return entry
+        var gone = IndexSet()
+        for index in entries.indices {
+            let range = entries[index].range
+            if NSMaxRange(range) <= edited.location, range.length > 0 { continue }
+            if edited.location < range.location, oldEnd <= range.location {
+                entries[index].range.location += delta
+                continue
             }
-            guard entry.range.location <= edited.location, oldEnd <= NSMaxRange(entry.range) else {
-                forget(entry)
-                return nil
+            guard range.location <= edited.location, oldEnd <= NSMaxRange(range) else {
+                gone.insert(index)
+                continue
             }
-            let (start, end) = (edited.location - entry.range.location, oldEnd - entry.range.location)
-            entry.range.length += delta
-            entry.spans = entry.spans.compactMap { span in
+            let (start, end) = (edited.location - range.location, oldEnd - range.location)
+            entries[index].range.length += delta
+            entries[index].spans = entries[index].spans.compactMap { span in
                 if NSMaxRange(span.range) <= start { return span }
                 guard span.range.location >= end else { return nil }
                 return CodeSpan(range: NSRange(location: span.range.location + delta, length: span.range.length), codeClass: span.codeClass)
             }
-            return entry
         }
+        for index in gone.reversed() { forget(entries.remove(at: index)) }
     }
 
     /// Matches the entries in `paragraphs` to the fenced blocks there, and asks for the spans of code that changed.
