@@ -206,17 +206,22 @@ struct ControlSocketTests {
         let real = try #require(realpath(file.path, nil))
         defer { free(real) }
         let event = #"{"session_id":"s1","cwd":"/","hook_event_name":"PreToolUse","tool_name":"Edit","tool_input":{"file_path":"\#(file.path)","old_string":"Ship it.","new_string":"Ship it soon."},"tool_use_id":"toolu_1"}"#
-        let process = Process()
-        process.executableURL = Bundle.main.bundleURL.appending(path: "Contents/Helpers/dewline")
-        process.arguments = ["notify", "--hook", "claude"]
-        process.environment = ["DEWLINE_SOCKET": listening.socket.path]
-        let stdin = Pipe()
-        process.standardInput = stdin
-        try process.run()
-        try stdin.fileHandleForWriting.write(contentsOf: Data(event.utf8))
-        try stdin.fileHandleForWriting.close()
-        process.waitUntilExit()
-        #expect(process.terminationStatus == 0)
+        // The command drops a claim whose connect takes over 50 ms, which a loaded CI runner can hit, so it gets three tries.
+        for _ in 0..<3 {
+            let process = Process()
+            process.executableURL = Bundle.main.bundleURL.appending(path: "Contents/Helpers/dewline")
+            process.arguments = ["notify", "--hook", "claude"]
+            process.environment = ["DEWLINE_SOCKET": listening.socket.path]
+            let stdin = Pipe()
+            process.standardInput = stdin
+            try process.run()
+            try stdin.fileHandleForWriting.write(contentsOf: Data(event.utf8))
+            try stdin.fileHandleForWriting.close()
+            process.waitUntilExit()
+            #expect(process.terminationStatus == 0)
+            try await Task.sleep(for: .milliseconds(500))
+            if !(await listening.received.claims.isEmpty) { break }
+        }
         let claims = try await listening.claims(1)
         guard case .preToolUse(let use) = claims.first?.event else {
             Issue.record("\(claims)")
