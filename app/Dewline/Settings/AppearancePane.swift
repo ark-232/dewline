@@ -7,88 +7,54 @@ struct AppearancePane: View {
     @State private var installing = false
 
     var body: some View {
-        let excerpt = Excerpt.open
-        Form {
-            Section {
-                LabeledContent("Appearance") {
-                    HStack(spacing: 16) {
-                        ForEach(ThemeStore.Appearance.allCases) { mode in
-                            ModeTile(mode: mode, store: store)
-                        }
-                    }
+        let dark = scheme == .dark
+        let columns = Array(repeating: GridItem(.flexible(), spacing: 16, alignment: .top), count: 3)
+        let themes: [(String?, [(String, Theme)])] = [
+            (nil, Theme.all.map { ($0.name, $0) }), ("Dev pack", Theme.devPack.map { ($0.name, $0) }),
+        ]
+        SettingsPage {
+            SettingsSection(
+                title: "Theme", trailing: "\(Theme.all.count) + dev pack",
+                note: "Click a theme to use it in \(dark ? "Dark" : "Light"); Control-click to pick the slot. The dev themes port each editor's own palette, and Nord is dark only."
+            ) {
+                LazyVGrid(columns: columns, alignment: .leading, spacing: 18) {
+                    ForEach(Theme.all) { ThemeCard(theme: $0, store: store, dark: dark) }
                 }
-                Picker(selection: $store.lightTheme) {
-                    ForEach(Theme.all) { Text($0.name).tag($0) }
-                    Divider()
-                    ForEach(Theme.devPack) { Text($0.name).tag($0) }
-                } label: {
-                    Label("In Light", systemImage: "sun.max")
+                Text("Dev pack")
+                    .font(Station.section)
+                    .kerning(Chrome.sectionKern)
+                    .foregroundStyle(Station.color(.ink3))
+                    .padding(.top, 22)
+                    .padding(.bottom, 10)
+                LazyVGrid(columns: columns, alignment: .leading, spacing: 18) {
+                    ForEach(Theme.devPack) { ThemeCard(theme: $0, store: store, dark: dark) }
                 }
-                Picker(selection: $store.darkTheme) {
-                    ForEach(Theme.all) { Text($0.name).tag($0) }
-                    Divider()
-                    ForEach(Theme.devPack) { Text($0.name).tag($0) }
-                } label: {
-                    Label("In Dark", systemImage: "moon")
+            }
+            SettingsSection(note: "Match system follows macOS between the light theme and the dark one.") {
+                SettingsRow(label: "Mode") {
+                    TextChoice(label: "Mode", selection: $store.appearance, options: [("Light", .light), ("Dark", .dark), ("Match system", .auto)])
                 }
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 14), count: 4), spacing: 14) {
-                    ForEach(Theme.all + Theme.devPack) { theme in
-                        ThemeCard(theme: theme, store: store, excerpt: excerpt, dark: scheme == .dark)
-                    }
+                SettingsRow(label: "Light theme") {
+                    MenuField("Light theme", selection: $store.lightTheme, sections: themes)
                 }
-                .padding(.vertical, 6)
-            } header: {
-                FontPreview(store: store, colors: scheme == .dark ? store.darkTheme.darkColors : store.lightTheme.lightColors)
-            } footer: {
-                Text("Auto follows macOS. Click a theme to use it in \(scheme == .dark ? "Dark" : "Light"); Control-click to pick the slot. The dev themes port each editor's own palette, and Nord is dark only.")
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                SettingsRow(label: "Dark theme") {
+                    MenuField("Dark theme", selection: $store.darkTheme, sections: themes)
+                }
             }
             FontSlots(store: store, library: library, installing: $installing)
-            Section {
-                LabeledContent("Text size") {
-                    Stepper(value: $store.bodySize, in: ThemeStore.bodySizes, step: 1) {
-                        Text("\(Int(store.bodySize)) pt").monospacedDigit()
-                    }
-                    .accessibilityLabel("Text size")
-                    .accessibilityValue("\(Int(store.bodySize)) points")
+            SettingsSection(title: "The page", note: "Line width counts characters per line at this size; a narrower window fills its width.") {
+                SettingsRow(label: "Text size") {
+                    KeyStepper(label: "Text size", value: $store.bodySize, range: ThemeStore.bodySizes, step: 1,
+                               text: { "\(Int($0)) pt" }, spoken: { "\(Int($0)) points" })
                 }
-                LabeledContent("Line height") {
-                    HStack(spacing: 10) {
-                        Slider(value: Binding { store.lineHeight } set: { store.lineHeight = ($0 * 100).rounded() / 100 }, in: ThemeStore.lineHeights) {
-                            EmptyView()
-                        } minimumValueLabel: {
-                            Text("Tight")
-                        } maximumValueLabel: {
-                            Text("Loose")
-                        }
-                        .accessibilityLabel("Line height")
-                        .accessibilityValue(store.lineHeight.formatted(.number.precision(.fractionLength(2))))
-                        Text(store.lineHeight, format: .number.precision(.fractionLength(2)))
-                            .monospacedDigit()
-                            .frame(width: 34, alignment: .trailing)
-                    }
-                    .frame(width: 300)
+                SettingsRow(label: "Line height") {
+                    KeyStepper(label: "Line height", value: $store.lineHeight, range: ThemeStore.lineHeights, step: 0.02,
+                               text: { $0.formatted(.number.precision(.fractionLength(2))) })
                 }
-                LabeledContent("Line width") {
-                    HStack(spacing: 10) {
-                        Slider(value: Binding { store.columnWidth } set: { store.columnWidth = $0.rounded() }, in: ThemeStore.columnWidths) {
-                            EmptyView()
-                        } minimumValueLabel: {
-                            Text("50")
-                        } maximumValueLabel: {
-                            Text("90")
-                        }
-                        .accessibilityLabel("Line width")
-                        .accessibilityValue("\(Int(store.columnWidth)) characters")
-                        Text("\(Int(store.columnWidth)) characters")
-                            .monospacedDigit()
-                            .frame(width: 92, alignment: .trailing)
-                    }
-                    .frame(width: 358)
+                SettingsRow(label: "Line width") {
+                    KeyStepper(label: "Line width", value: $store.columnWidth, range: ThemeStore.columnWidths, step: 2,
+                               text: { "\(Int($0)) ch" }, spoken: { "\(Int($0)) characters" })
                 }
-            } footer: {
-                Text("Line width counts characters per line at this size; a narrower window fills its width.")
-                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             RestoreDefaults {
                 let factory = ThemeStore.factory
@@ -109,91 +75,46 @@ struct AppearancePane: View {
     }
 }
 
-/// A writer's name set as its insertion mark (a wash under a solid underline, dashed for an unknown app), a color well,
-/// and, when a theme color sits within ΔE 8, the clash and a button for the nearest clear hue.
-struct WriterRow: View {
-    let writer: Writer
-    let store: ThemeStore
-    let dark: Bool
-
-    var body: some View {
-        let color = Color(nsColor: store.writerColor(writer))
-        let clash = store.clash(writer)
-        let well = Binding {
-            color
-        } set: { picked in
-            if let pick = OKLCH(NSColor(picked)) { store.writerHues[writer] = pick }
-        }
-        LabeledContent {
-            HStack(spacing: 10) {
-                if let hue = clash?.clearHue {
-                    Button {
-                        store.writerHues[writer] = hue
-                    } label: {
-                        Label {
-                            Text("Use Clear Hue")
-                        } icon: {
-                            Circle().fill(Color(nsColor: (dark ? writer.colors(hue).dark : writer.colors(hue).light).color)).frame(width: 10, height: 10)
-                        }
-                    }
-                    .controlSize(.small)
-                    .help("Moves \(writer.name) to hue \(Int(hue.h.rounded()))°, the nearest one clear of both themes")
-                }
-                ColorPicker("\(writer.name) color", selection: well, supportsOpacity: false)
-                    .labelsHidden()
-            }
-        } label: {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(writer.name)
-                    .underline(pattern: writer == .unknown ? .dash : .solid, color: color)
-                    .padding(.horizontal, 3)
-                    .background(color.opacity(dark ? 0.24 : 0.15), in: .rect(cornerRadius: 2))
-                if let clash {
-                    Text("Close to \(clash.theme.name)'s \(clash.token.label) in \(clash.dark ? "Dark" : "Light") (ΔE \(clash.deltaE.formatted(.number.precision(.fractionLength(1)))))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-        .accessibilityElement(children: .contain)
-    }
-}
-
-/// A theme's thumbnail, light above the diagonal and dark below, with a ring when the current slot holds it.
+/// A theme as a window in miniature, in the current mode, with its name under it. A 1.5 pt signal ring, 2 pt out,
+/// marks the theme the current mode uses; a mono tag says when the other mode uses it.
 private struct ThemeCard: View {
     let theme: Theme
     let store: ThemeStore
-    let excerpt: Excerpt
     let dark: Bool
+    @Environment(\.displayScale) private var scale
 
     var body: some View {
         let selected = (dark ? store.darkTheme : store.lightTheme) == theme
+        let other = (dark ? store.lightTheme : store.darkTheme) == theme
+        let card = RoundedRectangle(cornerRadius: 9, style: .continuous)
         Button {
             if dark { store.darkTheme = theme } else { store.lightTheme = theme }
         } label: {
-            VStack(spacing: 6) {
-                Thumbnail(light: theme, dark: theme, store: store, excerpt: excerpt)
-                .frame(height: 100)
-                .clipShape(.rect(cornerRadius: 6))
-                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.separator, lineWidth: 0.5))
-                .padding(3)
-                .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(selected ? Color.accentColor : .clear, lineWidth: 2))
-                HStack(spacing: 4) {
+            VStack(alignment: .leading, spacing: 8) {
+                MiniWindow(theme: theme, dark: dark, claude: Writer.claude.colors(store.writerHues[.claude]))
+                    .aspectRatio(1.55, contentMode: .fit)
+                    .clipShape(card)
+                    .overlay(card.strokeBorder(Station.stroke, lineWidth: 1 / scale))
+                    .padding(3.5)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12.5, style: .continuous)
+                            .strokeBorder(selected ? Station.color(.signal) : .clear, lineWidth: 1.5)
+                    )
+                HStack(alignment: .firstTextBaseline) {
                     Text(theme.name)
-                    if store.lightTheme == theme {
-                        Image(systemName: "sun.max.fill").help("Used in Light")
-                    }
-                    if store.darkTheme == theme {
-                        Image(systemName: "moon.fill").help("Used in Dark")
+                        .font(selected ? Station.labelActive : Station.label)
+                        .foregroundStyle(Station.color(selected ? .ink : .ink2))
+                    Spacer(minLength: 4)
+                    if selected || other {
+                        Text(selected ? "current" : dark ? "in light" : "in dark")
+                            .font(Station.mono(11))
+                            .foregroundStyle(Station.color(.ink3))
                     }
                 }
-                .font(.callout)
-                .imageScale(.small)
-                .foregroundStyle(selected ? .primary : .secondary)
+                .padding(.horizontal, 3.5)
             }
-            .contentShape(.rect)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(BareButtonStyle(radius: 12.5))
         .contextMenu {
             Button("Use in Light") { store.lightTheme = theme }
             Button("Use in Dark") { store.darkTheme = theme }
@@ -205,30 +126,50 @@ private struct ThemeCard: View {
     }
 }
 
-/// Light, Dark or Auto: a swatch of the slot's theme over the mode's name.
-private struct ModeTile: View {
-    let mode: ThemeStore.Appearance
-    let store: ThemeStore
+/// The Station window drawn small in a theme's colors: the tinted frame, a sidebar island, and an editor island with
+/// its horizon (the lit segment and a Claude bead) over a title and two lines.
+private struct MiniWindow: View {
+    let theme: Theme
+    let dark: Bool
+    let claude: (light: OKLCH, dark: OKLCH)
 
     var body: some View {
-        let selected = store.appearance == mode
-        Button {
-            store.appearance = mode
-        } label: {
-            VStack(spacing: 5) {
-                Thumbnail(light: mode == .dark ? nil : store.lightTheme, dark: mode == .light ? nil : store.darkTheme, store: store, lines: true)
-                .frame(width: 68, height: 44)
-                .clipShape(.rect(cornerRadius: 5))
-                .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(.separator, lineWidth: 0.5))
-                .padding(2)
-                .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(selected ? Color.accentColor : .clear, lineWidth: 2))
-                Text(mode.rawValue.capitalized)
-                    .font(.callout)
-                    .foregroundStyle(selected ? .primary : .secondary)
+        let colors = dark ? theme.darkColors : theme.lightColors
+        let bead = Color(nsColor: (dark ? claude.dark : claude.light).color)
+        let titleFont = Station.brand(11, weight: 600)
+        let glowOpacity = Double(Chrome.glowOpacity(dark: dark))
+        Canvas { context, size in
+            func color(_ token: Token) -> Color {
+                Color(nsColor: colors[token] ?? colors[.ink2]!)
+            }
+            context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(color(.frame)))
+            let inset: CGFloat = 6
+            let top: CGFloat = 12
+            let side = CGRect(x: inset, y: top, width: (size.width * 0.27).rounded(), height: size.height - top - inset)
+            let editor = CGRect(x: side.maxX + 4, y: top, width: size.width - side.maxX - 4 - inset, height: side.height)
+            context.fill(Path(roundedRect: side, cornerRadius: 4, style: .continuous), with: .color(color(.islandSide)))
+            context.fill(Path(roundedRect: editor, cornerRadius: 4, style: .continuous), with: .color(color(.islandEditor)))
+            for (index, width) in [0.62, 0.44, 0.7].enumerated() {
+                let bar = CGRect(x: side.minX + 7, y: side.minY + 10 + CGFloat(index) * 7, width: (side.width - 14) * width, height: 2)
+                context.fill(Path(roundedRect: bar, cornerRadius: 1), with: .color(color(.ink2).opacity(0.55)))
+            }
+            let line = editor.minY + 6
+            context.fill(Path(CGRect(x: editor.minX, y: line, width: editor.width, height: 1)), with: .color(color(.hairline)))
+            let lit = CGRect(x: editor.minX + 8, y: line - 0.5, width: (editor.width * 0.3).rounded(), height: 2)
+            var glow = context
+            glow.addFilter(.shadow(color: color(.glow).opacity(glowOpacity), radius: 2))
+            glow.fill(Path(roundedRect: lit, cornerRadius: 1), with: .color(color(.signal)))
+            let dot = CGRect(x: lit.minX + lit.width * 0.66 - 3, y: line + 0.5 - 3, width: 6, height: 6)
+            context.fill(Path(ellipseIn: dot.insetBy(dx: -1, dy: -1)), with: .color(color(.islandEditor)))
+            context.fill(Path(ellipseIn: dot), with: .color(bead))
+            let title = context.resolve(Text("Field notes").font(titleFont).foregroundStyle(color(.heading)))
+            context.draw(title, at: CGPoint(x: editor.minX + 10, y: editor.minY + 14), anchor: .topLeading)
+            for (index, width) in [0.72, 0.5].enumerated() {
+                let bar = CGRect(x: editor.minX + 10, y: editor.minY + 34 + CGFloat(index) * 7, width: (editor.width - 20) * width, height: 2)
+                context.fill(Path(roundedRect: bar, cornerRadius: 1), with: .color(color(.ink2).opacity(0.5)))
             }
         }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityHidden(true)
     }
 }
 
@@ -270,119 +211,3 @@ func flowAroundDiagonal(
     return origins
 }
 
-/// A theme in miniature (synthesis 2.8): its tint behind a glass sidebar and the toolbar band, with the sky for Dusk
-/// and Nightwatch, and its paper with the excerpt. With both themes given, `light` fills the corner above the diagonal
-/// and `dark` the corner below it, and the words flow around the diagonal so none is cut by it: the light half sets
-/// the opening, the dark half the rest. With `lines`, bars stand in for the words.
-struct Thumbnail: View {
-    var light: Theme?
-    var dark: Theme?
-    let store: ThemeStore
-    var excerpt = Excerpt()
-    var lines = false
-
-    private struct Word {
-        let text: String
-        let token: Token
-        var selected = false
-    }
-
-    /// The heading's words, then the paragraph's, or bars for a heading and four lines.
-    private var words: [Word] {
-        if lines {
-            return [Word(text: "", token: .heading)] + [Token.ink, .ink, .link, .ink].map { Word(text: "", token: $0) }
-        }
-        let paragraph = excerpt.paragraph
-        let body = paragraph.split(separator: " ").prefix(60).map { word in
-            let range = NSRange(word.startIndex..<word.endIndex, in: paragraph)
-            let link = excerpt.links.contains { NSIntersectionRange($0, range).length > 0 }
-            return Word(text: String(word), token: link ? .link : .ink, selected: NSIntersectionRange(excerpt.selection, range).length > 0)
-        }
-        return excerpt.heading.split(separator: " ").map { Word(text: String($0), token: .heading) } + body
-    }
-
-    var body: some View {
-        let words = words
-        let headingFont = Font(Faces.font(store.headingFace, size: 10, weight: .semibold))
-        let bodyFont = Font(Faces.font(store.bodyFace, size: 7))
-        let halves: [(Theme, Bool, ThumbnailHalf)] = switch (light, dark) {
-        case let (light?, dark?): [(light, false, .upper), (dark, true, .lower)]
-        case let (light?, nil): [(light, false, .whole)]
-        case let (nil, dark?): [(dark, true, .whole)]
-        case (nil, nil): []
-        }
-        Canvas { context, size in
-            let band = (size.height * 0.15).rounded()
-            let sidebar = CGRect(x: 0, y: 0, width: (size.width * 0.2).rounded(), height: size.height)
-            let page = CGRect(x: sidebar.maxX, y: band, width: size.width - sidebar.maxX, height: size.height - band)
-            let inset: CGFloat = lines ? 4 : 6
-            let column = page.insetBy(dx: inset, dy: inset - 1)
-            let space: CGFloat = lines ? 3 : 2
-            func text(_ word: Word, _ color: Color) -> Text {
-                let text = Text(word.text).font(word.token == .heading ? headingFont : bodyFont).foregroundStyle(color)
-                return word.token == .link ? text.underline() : text
-            }
-            let bars: [CGFloat] = [0.4, 0.62, 0.5, 0.28, 0.56]
-            let sizes = words.indices.map { index in
-                lines
-                    ? CGSize(width: column.width * bars[index], height: index == 0 ? 3 : 2)
-                    : context.resolve(text(words[index], .black)).measure(in: size)
-            }
-            let breaks: Set<Int> = lines ? Set(words.indices) : [words.firstIndex { $0.token != .heading } ?? words.count]
-            var next = 0
-            for (theme, dark, half) in halves {
-                let colors = dark ? theme.darkColors : theme.lightColors
-                func color(_ token: Token) -> Color {
-                    Color(nsColor: colors[token]!)
-                }
-                var context = context
-                if half != .whole {
-                    context.clip(to: Path { path in
-                        path.move(to: CGPoint(x: 0, y: half == .upper ? 0 : size.height))
-                        path.addLine(to: CGPoint(x: size.width, y: 0))
-                        path.addLine(to: CGPoint(x: half == .upper ? 0 : size.width, y: size.height))
-                        path.closeSubpath()
-                    })
-                }
-                // The backdrop: the tint, under the sky that reaches its horizon at the foot of the toolbar band.
-                let backdrop = theme.backdrop(dark: dark)
-                let tint = Color(nsColor: backdrop.tint.color)
-                context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(tint))
-                if !backdrop.sky.isEmpty {
-                    let height = band * 1.5
-                    let stops = backdrop.sky.enumerated().map { index, stop in
-                        Gradient.Stop(color: Color(nsColor: stop.color), location: CGFloat(index) / CGFloat(backdrop.sky.count - 1) / 1.5)
-                    }
-                    context.fill(
-                        Path(CGRect(x: 0, y: 0, width: size.width, height: height)),
-                        with: .linearGradient(Gradient(stops: stops + [Gradient.Stop(color: tint, location: 1)]), startPoint: .zero, endPoint: CGPoint(x: 0, y: height))
-                    )
-                }
-                // The sidebar's glass over the backdrop: an accent row and three rows of second ink.
-                context.fill(Path(sidebar), with: .color(.white.opacity(dark ? 0.06 : 0.3)))
-                let row = sidebar.width - (lines ? 6 : 10)
-                for (index, (width, token)) in [(0.5, Token.accent), (0.8, .ink2), (0.65, .ink2), (0.75, .ink2)].enumerated() {
-                    let bar = CGRect(x: lines ? 3 : 5, y: band + (lines ? 3 : 4) + CGFloat(index) * (lines ? 4 : 6), width: row * width, height: lines ? 2 : 2.5)
-                    context.fill(Path(roundedRect: bar, cornerRadius: bar.height / 2), with: .color(color(token).opacity(token == .accent ? 1 : 0.45)))
-                }
-                context.fill(Path(page), with: .color(color(.paper)))
-                let origins = flowAroundDiagonal(
-                    sizes[next...], breaks: breaks, space: space, leading: lines ? 3 : 1.5, in: column, cut: size, half: half
-                )
-                for (index, origin) in zip(next..., origins) {
-                    let frame = CGRect(origin: origin, size: sizes[index])
-                    if lines {
-                        let ink = words[index].token == .ink ? color(.ink).opacity(0.75) : color(words[index].token)
-                        context.fill(Path(roundedRect: frame, cornerRadius: frame.height / 2), with: .color(ink))
-                        continue
-                    }
-                    if words[index].selected {
-                        context.fill(Path(frame.insetBy(dx: -space / 2, dy: 0)), with: .color(color(.selection)))
-                    }
-                    context.draw(context.resolve(text(words[index], color(words[index].token))), at: origin, anchor: .topLeading)
-                }
-                next += origins.count
-            }
-        }
-    }
-}

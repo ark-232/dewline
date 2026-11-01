@@ -31,6 +31,8 @@ The shortcuts `app/Dewline/MainMenu.swift` puts in the menu bar, written here by
 | Move Line Down | Edit | ⌥⌘] |
 | Keep Change | Edit | ⌘↩ |
 | Revert Change | Edit | ⌥⌘⌫ |
+| Keep All Changes | Edit | ⇧⌘↩ |
+| Revert All Changes | Edit | ⌥⇧⌘⌫ |
 | Bold | Format | ⌘B |
 | Italic | Format | ⌘I |
 | Strikethrough | Format | ⇧⌘X |
@@ -51,6 +53,8 @@ The shortcuts `app/Dewline/MainMenu.swift` puts in the menu bar, written here by
 | Command Palette… | View | ⇧⌘P |
 | Review Changes | View | ⇧⌘R |
 | Show Sidebar | View | ⌃⌘S |
+| Show Previous Tab | View | ⌘{ |
+| Show Next Tab | View | ⌘} |
 | Show Source | View | ⌥⌘U |
 | Focus | View | ⇧⌘D |
 | Typewriter | View | ⇧⌘T |
@@ -60,6 +64,8 @@ The shortcuts `app/Dewline/MainMenu.swift` puts in the menu bar, written here by
 | Unfold All | View | ⌥⇧⌘→ |
 | Back | Go | ⌘[ |
 | Forward | Go | ⌘] |
+| Next Change | Go | ⌃⌘↓ |
+| Previous Change | Go | ⌃⌘↑ |
 | Minimize | Window | ⌘M |
 | Launch Window | Window | ⇧⌘1 |
 | Dewline Help | Help | ⌘? |

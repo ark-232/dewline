@@ -157,7 +157,7 @@ final class ThemeStore {
         func nearest(_ colors: (light: OKLCH, dark: OKLCH)) -> (theme: Theme, token: Token, dark: Bool, deltaE: Double)? {
             var best: (theme: Theme, token: Token, dark: Bool, deltaE: Double)?
             for (theme, dark, color) in [(lightTheme, false, colors.light), (darkTheme, true, colors.dark)] {
-                for (token, value) in dark ? theme.dark : theme.light where value.c >= 0.03 || color.c >= 0.03 {
+                for (token, value) in dark ? theme.dark : theme.light where !Token.station.contains(token) && (value.c >= 0.03 || color.c >= 0.03) {
                     let deltaE = value.deltaE(color)
                     if deltaE < best?.deltaE ?? .infinity { best = (theme, token, dark, deltaE) }
                 }
@@ -273,8 +273,9 @@ final class ThemeStore {
         let kern: CGFloat
     }
 
-    /// Heading levels 1 to 6 (synthesis 2.3), scaled with the body size. Editorial sets the title large and section
-    /// heads in small caps.
+    /// Heading levels 1 to 6 (synthesis 2.3), scaled with the body size. Standard follows the site: H1 34 / 620 with
+    /// -0.025 em tracking, H2 22 / 600, H3 17 / 600, on Bricolage's optical size axis when the face is Bricolage.
+    /// Editorial sets the title large and section heads in small caps.
     func heading(_ level: Int) -> Heading {
         if let heading = headings[level] { return heading }
         let scale = bodySize / 17
@@ -285,17 +286,22 @@ final class ThemeStore {
             ]
             return NSFont(descriptor: font.fontDescriptor.addingAttributes([.featureSettings: features]), size: font.pointSize)!
         }
+        func display(_ size: CGFloat, _ weight: CGFloat, opticalSize: CGFloat? = nil) -> NSFont {
+            headingFace == Chrome.brandFamily
+                ? Chrome.brand(size, weight: weight, opticalSize: opticalSize)
+                : Faces.font(headingFace, size: size, weight: .semibold)
+        }
         let heading = switch (level, headingStyle) {
         case (1, .editorial):
             Heading(font: Faces.font(headingFace, size: 44 * scale), lineHeight: 50 * scale, kern: 0)
         case (2, .editorial):
             Heading(font: smallCaps(Faces.font(headingFace, size: 15 * scale, weight: .medium)), lineHeight: 25 * scale, kern: 0.75 * scale)
         case (1, _):
-            Heading(font: Faces.font(headingFace, size: 32 * scale, weight: .medium), lineHeight: 38 * scale, kern: 0)
+            Heading(font: display(34 * scale, 620, opticalSize: 48), lineHeight: 40 * scale, kern: -0.85 * scale)
         case (2, _):
-            Heading(font: Faces.font(headingFace, size: 24 * scale, weight: .medium), lineHeight: 30 * scale, kern: 0)
+            Heading(font: display(22 * scale, 600), lineHeight: 28 * scale, kern: 0)
         case (3, _):
-            Heading(font: Faces.font(headingFace, size: 19 * scale, weight: .semibold), lineHeight: 26 * scale, kern: 0)
+            Heading(font: display(17 * scale, 600), lineHeight: 24 * scale, kern: 0)
         default:
             Heading(font: Faces.font(bodyFace, size: bodySize, weight: .semibold), lineHeight: bodyLineHeight, kern: 0)
         }
@@ -325,7 +331,7 @@ struct Pairing: Identifiable {
     var missing: [FontCatalog.Family] { faces.filter { !Faces.exists($0) }.compactMap(FontCatalog.family) }
 
     static let all = [
-        Pairing(name: "Editorial", body: "New York", heading: "Newsreader", code: "JetBrains Mono"),
+        Pairing(name: "Editorial", body: "Newsreader", heading: "Bricolage Grotesque", code: "JetBrains Mono"),
         Pairing(name: "Manuscript", body: "Courier Prime", heading: "Courier Prime", code: "Courier Prime"),
         Pairing(name: "Hyperlegible", body: "Atkinson Hyperlegible Next", heading: "Atkinson Hyperlegible Next", code: "Atkinson Hyperlegible Mono"),
     ]
@@ -334,10 +340,10 @@ struct Pairing: Identifiable {
 /// Faces by family name, where New York, SF Pro, SF Pro Rounded and SF Mono name the system designs.
 enum Faces {
     static let body = "New York"
-    static let heading = "New York"
+    static let heading = "Bricolage Grotesque"
     static let code = "JetBrains Mono"
     static let system = ["New York", "SF Pro", "SF Pro Rounded", "SF Mono"]
-    static let bundled = ["JetBrains Mono"]
+    static let bundled = ["Bricolage Grotesque", "JetBrains Mono"]
 
     private static func design(_ family: String) -> NSFontDescriptor.SystemDesign? {
         switch family {
@@ -372,6 +378,18 @@ enum Faces {
         if let design = design(family) {
             let descriptor = NSFont.systemFont(ofSize: size, weight: weight).fontDescriptor.withDesign(design)!
             return NSFont(descriptor: descriptor, size: size)!
+        }
+        if family == "Bricolage Grotesque" {
+            // The variable font's default instance is 96 pt ExtraBold, so the weight and optical size axes are set.
+            let wght: CGFloat = switch weight.rawValue {
+            case ..<NSFont.Weight.medium.rawValue: 400
+            case ..<NSFont.Weight.semibold.rawValue: 500
+            case ..<NSFont.Weight.bold.rawValue: 600
+            default: 700
+            }
+            let axes = ["wght": wght, "opsz": min(max(size, 12), 96), "wdth": 100]
+            let variation = Dictionary(uniqueKeysWithValues: axes.map { (NSNumber(value: $0.key.utf8.reduce(0) { $0 << 8 | Int($1) }), $0.value) })
+            return NSFont(descriptor: NSFontDescriptor(fontAttributes: [.family: family, .variation: variation]), size: size)!
         }
         let descriptor = NSFontDescriptor(fontAttributes: [.family: family, .traits: [NSFontDescriptor.TraitKey.weight: weight.rawValue]])
         return NSFont(descriptor: descriptor, size: size)!

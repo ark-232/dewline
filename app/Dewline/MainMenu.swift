@@ -84,6 +84,10 @@ enum MainMenu {
         menu.addItem(withTitle: "Keep Change", action: #selector(EditorTextView.keepChange(_:)), keyEquivalent: "\r")
         let revert = menu.addItem(withTitle: "Revert Change", action: #selector(EditorTextView.revertChange(_:)), keyEquivalent: "\u{8}")
         revert.keyEquivalentModifierMask = [.command, .option]
+        let keepAll = menu.addItem(withTitle: "Keep All Changes", action: #selector(EditorTextView.keepAllChanges(_:)), keyEquivalent: "\r")
+        keepAll.keyEquivalentModifierMask = [.command, .shift]
+        let revertAll = menu.addItem(withTitle: "Revert All Changes", action: #selector(EditorTextView.revertAllChanges(_:)), keyEquivalent: "\u{8}")
+        revertAll.keyEquivalentModifierMask = [.command, .option, .shift]
         return menu
     }
 
@@ -137,7 +141,8 @@ enum MainMenu {
         menu.addItem(.separator())
         let sidebar = menu.addItem(withTitle: "Show Sidebar", action: #selector(NSSplitViewController.toggleSidebar(_:)), keyEquivalent: "s")
         sidebar.keyEquivalentModifierMask = [.command, .control]
-        menu.addItem(withTitle: "Show Tab Bar", action: #selector(NSWindow.toggleTabBar(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Show Previous Tab", action: #selector(MainWindowController.showPreviousTab(_:)), keyEquivalent: "{")
+        menu.addItem(withTitle: "Show Next Tab", action: #selector(MainWindowController.showNextTab(_:)), keyEquivalent: "}")
         menu.addItem(.separator())
         let source = menu.addItem(withTitle: "Show Source", action: #selector(EditorTextView.toggleSource(_:)), keyEquivalent: "u")
         source.keyEquivalentModifierMask = [.command, .option]
@@ -160,6 +165,14 @@ enum MainMenu {
         let menu = NSMenu(title: "Go")
         menu.addItem(withTitle: "Back", action: #selector(MainWindowController.goBack(_:)), keyEquivalent: "[")
         menu.addItem(withTitle: "Forward", action: #selector(MainWindowController.goForward(_:)), keyEquivalent: "]")
+        menu.addItem(.separator())
+        for (title, action, key) in [
+            ("Next Change", #selector(EditorTextView.nextChange(_:)), NSDownArrowFunctionKey),
+            ("Previous Change", #selector(EditorTextView.previousChange(_:)), NSUpArrowFunctionKey),
+        ] {
+            let item = menu.addItem(withTitle: title, action: action, keyEquivalent: String(UnicodeScalar(key)!))
+            item.keyEquivalentModifierMask = [.command, .control]
+        }
         return menu
     }
 

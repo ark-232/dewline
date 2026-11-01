@@ -6,54 +6,54 @@ struct GeneralPane: View {
     let updates: Updates
 
     var body: some View {
-        Form {
-            Section {
-                Picker("On launch", selection: $preferences.onLaunch) {
-                    Text("Reopen last files").tag(Preferences.OnLaunch.lastFiles)
-                    Text("Show the launch window").tag(Preferences.OnLaunch.launchWindow)
+        SettingsPage {
+            SettingsSection(note: "Live renders Markdown as you write; Source shows the plain text. View > Show Source (⌥⌘U) switches a window.") {
+                SettingsRow(label: "On launch") {
+                    TextChoice(label: "On launch", selection: $preferences.onLaunch, options: [
+                        ("Reopen last files", .lastFiles), ("Show the launch window", .launchWindow),
+                    ])
                 }
-                Picker("Open documents in", selection: $preferences.opensInSource) {
-                    Text("Live").tag(false)
-                    Text("Source").tag(true)
+                SettingsRow(label: "Open documents in") {
+                    TextChoice(label: "Open documents in", selection: $preferences.opensInSource, options: [("Live", false), ("Source", true)])
                 }
-            } footer: {
-                Text("Live renders Markdown as you write; Source shows the plain text. View > Show Source (⌥⌘U) switches a window.")
-                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Section {
-                LabeledContent("New files go in") {
+            SettingsSection(note: "The first save of a new document starts here.") {
+                SettingsRow(label: "New files go in") {
                     FolderField(url: preferences.newFileFolder) { preferences.newFileFolder = $0 }
                 }
-            } footer: {
-                Text("The first save of a new document starts here.")
-                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Section {
-                Toggle("Check for updates automatically", isOn: Binding { updates.automaticChecks } set: { updates.setAutomaticChecks($0) })
-                Toggle("Get beta builds", isOn: Binding { updates.beta } set: { updates.setBeta($0) })
-                LabeledContent("Last checked") {
-                    HStack(spacing: 10) {
-                        Text(updates.lastCheck?.formatted(date: .abbreviated, time: .shortened) ?? "Never")
-                            .foregroundStyle(.secondary)
-                        // Sparkle starts no check while it holds a staged update.
-                        Button("Check Now") { updates.checkNow() }
-                            .disabled(updates.staged != nil)
+            SettingsSection(title: "Updates", note: updates.updater == nil ? "This build does not update itself." : Updates.lineText) {
+                Group {
+                    SettingsRow(label: "Check automatically") {
+                        OnOff(label: "Check for updates automatically", isOn: Binding { updates.automaticChecks } set: { updates.setAutomaticChecks($0) })
+                    }
+                    SettingsRow(label: "Beta builds", detail: "Betas also get every stable release.") {
+                        OnOff(label: "Get beta builds", isOn: Binding { updates.beta } set: { updates.setBeta($0) })
+                    }
+                    SettingsRow(label: "Last checked") {
+                        HStack(spacing: 14) {
+                            Text(updates.lastCheck?.formatted(date: .abbreviated, time: .shortened) ?? "Never")
+                                .font(Station.mono(12))
+                                .foregroundStyle(Station.color(.ink2))
+                            // Sparkle starts no check while it holds a staged update.
+                            Button("Check Now") { updates.checkNow() }
+                                .buttonStyle(.station)
+                                .disabled(updates.staged != nil)
+                        }
                     }
                 }
+                .disabled(updates.updater == nil)
                 if let error = updates.lastError {
-                    Text(error)
-                        .foregroundStyle(.secondary)
+                    SettingsNote(error)
+                        .padding(.top, 8)
                 }
                 if let text = updates.stagedText {
                     Text(text)
+                        .font(Station.label)
+                        .foregroundStyle(Station.color(.ink))
+                        .padding(.top, 8)
                 }
-            } header: {
-                Text("Updates")
-            } footer: {
-                Text(updates.updater == nil ? "This build does not update itself." : Updates.lineText)
-                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .disabled(updates.updater == nil)
             RestoreDefaults {
                 let factory = Preferences.factory
                 preferences.onLaunch = factory.onLaunch
@@ -61,30 +61,6 @@ struct GeneralPane: View {
                 preferences.newFileFolder = factory.newFileFolder
                 updates.setAutomaticChecks(Bundle.main.object(forInfoDictionaryKey: "SUEnableAutomaticChecks") as? Bool ?? false)
                 updates.setBeta(false)
-            }
-        }
-    }
-}
-
-/// A path with a Choose… button that asks for a folder.
-struct FolderField: View {
-    let url: URL
-    let chose: (URL) -> Void
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Text(abbreviatedPath(url))
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .foregroundStyle(.secondary)
-                .help(url.path)
-            Button("Choose…") {
-                let panel = NSOpenPanel()
-                panel.canChooseFiles = false
-                panel.canChooseDirectories = true
-                panel.canCreateDirectories = true
-                panel.directoryURL = url
-                if panel.runModal() == .OK, let chosen = panel.url { chose(chosen) }
             }
         }
     }

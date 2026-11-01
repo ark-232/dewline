@@ -49,9 +49,11 @@ struct MarkWriter: Equatable {
 }
 
 /// Paints marked changes over the text at render time, never as text edits: a wash in the writer's hue under
-/// inserted text with an underline in the writer's style, a 3 pt tick in the left gutter and the writer's name on
-/// hover. Removed text hangs under its line as a struck ghost and a conflict's other version as a card, each in space
-/// the styler reserves below the paragraph. The marks sit under the text; ghosts, cards and the bar sit over it.
+/// inserted text with an underline in the writer's style, a 3 pt tick in the left gutter, the writer's dot, name and
+/// time right of the measure on the change's first line in windows 900 pt wide or more, and the name on hover. Short
+/// removed text reads inline at its deletion point as a struck ghost, in a gap the styler opens just before the
+/// change; longer removed text and a conflict's other version hang under the paragraph, in space the styler reserves
+/// below it. The marks sit under the text; ghosts and cards sit over it.
 @MainActor
 final class ChangeMarks: NSView, NSViewToolTipOwner {
     weak var textView: EditorTextView?
@@ -62,17 +64,37 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
     private(set) var painted: [UInt64: NSRange] = [:]
     /// When each marked change's fade began.
     private var shown: [UInt64: CFTimeInterval] = [:]
+    /// When each marked change landed here, for its margin label.
+    private var landed: [UInt64: Date] = [:]
     /// Ghosts and cards by change, with the offset of the character whose paragraph they hang under.
     private(set) var hangers: [UInt64: (anchor: Int, view: NSView)] = [:]
     private var tips: [(rect: NSRect, change: UInt64)] = []
     private var dirty = false
     private var observing: NSView?
-    let bar = ChangeBar()
 
     static let fade: CFTimeInterval = 0.2
     private static let gap: CGFloat = 6
+    /// Below this window width the margin labels hide.
+    static let labelWidth: CGFloat = 900
+
+    /// The time on a margin label, 09:41.
+    private static let clock: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
 
     override var isFlipped: Bool { true }
+
+    /// The margin labels come and go with the width.
+    override func setFrameSize(_ newSize: NSSize) {
+        let widened = newSize.width != frame.width
+        super.setFrameSize(newSize)
+        if widened, !changes.isEmpty {
+            dirty = true
+            textView?.needsLayout = true
+        }
+    }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         nil
@@ -91,6 +113,8 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
         let now = CACurrentMediaTime()
         shown = shown.filter { marked[$0.key] != nil }
         for id in marked.keys where shown[id] == nil { shown[id] = now }
+        landed = landed.filter { marked[$0.key] != nil }
+        for id in marked.keys where landed[id] == nil { landed[id] = .now }
         self.changes = marked
         updateHangers()
         dirty = true
@@ -99,22 +123,33 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
 
     // MARK: Hangers
 
+    /// Whether `view` is a ghost that reads inline.
+    private static func isInline(_ view: NSView) -> Bool {
+        (view as? Ghost)?.inlineWidth != nil
+    }
+
     private func updateHangers() {
         guard let textView else { return }
-        let length = textView.textStorage!.length
-        var wanted: [UInt64: Int] = [:]
+        let text = textView.textStorage!.mutableString
+        let length = text.length
+        // Each hanger's anchor under its paragraph, and for removed text the character before the deletion point when
+        // that is on the same line: an inline ghost's gap opens after it.
+        var wanted: [UInt64: (hang: Int, inline: Int?)] = [:]
         for (id, change) in changes where change.conflict || !change.removed.isEmpty {
             let end = change.range.length > 0 ? NSMaxRange(change.range) - 1 : change.range.location - 1
-            wanted[id] = min(max(end, 0), max(length - 1, 0))
+            let at = change.range.location
+            let inline = !change.conflict && at > 0 && at <= length && ![0x0A, 0x0D].contains(text.character(at: at - 1)) ? at - 1 : nil
+            wanted[id] = (min(max(end, 0), max(length - 1, 0)), inline)
         }
         var touched: [Int] = []
-        for (id, hanger) in hangers where wanted[id] == nil {
+        for (id, hanger) in hangers where wanted[id].map({ Self.isInline(hanger.view) && $0.inline == nil }) ?? true {
             hanger.view.removeFromSuperview()
             hangers[id] = nil
             touched.append(hanger.anchor)
         }
-        for (id, anchor) in wanted {
+        for (id, want) in wanted {
             if let hanger = hangers[id] {
+                let anchor = Self.isInline(hanger.view) ? want.inline ?? want.hang : want.hang
                 if hanger.anchor != anchor { hangers[id] = (anchor, hanger.view) }
                 continue
             }
@@ -123,7 +158,8 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
                 ? ConflictCard(MarkWriter(change.origin), theirs: change.theirs) { [weak self] decision in
                     self?.live?.decide(id, decision)
                 }
-                : Ghost(change.removed, writer: MarkWriter(change.origin))
+                : Ghost(change.removed, writer: MarkWriter(change.origin), inlineUpTo: want.inline == nil ? 0 : columnWidth * 0.6)
+            let anchor = Self.isInline(view) ? want.inline ?? want.hang : want.hang
             textView.addSubview(view)
             hangers[id] = (anchor, view)
             touched.append(anchor)
@@ -157,14 +193,21 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
 
     private func measureHangers() {
         let width = columnWidth
-        for hanger in hangers.values where hanger.view.frame.width != width {
+        for hanger in hangers.values where hanger.view.frame.width != width && !Self.isInline(hanger.view) {
             hanger.view.setFrameSize(NSSize(width: width, height: (hanger.view as? Hanging)?.height(for: width) ?? 0))
         }
     }
 
     /// Space to reserve under the paragraphs holding these offsets, for the styler.
     func space(in range: NSRange) -> [(anchor: Int, height: CGFloat)] {
-        hangers.values.filter { NSLocationInRange($0.anchor, range) }.map { ($0.anchor, $0.view.frame.height + 2 * Self.gap) }
+        hangers.values.filter { NSLocationInRange($0.anchor, range) && !Self.isInline($0.view) }.map { ($0.anchor, $0.view.frame.height + 2 * Self.gap) }
+    }
+
+    /// Gaps to open after these offsets for inline ghosts, for the styler.
+    func gaps(in range: NSRange) -> [(after: Int, width: CGFloat)] {
+        hangers.values.filter { NSLocationInRange($0.anchor, range) }.compactMap { hanger in
+            (hanger.view as? Ghost)?.inlineWidth.map { (hanger.anchor, $0) }
+        }
     }
 
     // MARK: Layout
@@ -199,13 +242,26 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
         let motion = Motion.current != .off
         let storage = textView.textStorage!
         var hung: [UInt64: CGFloat] = [:]
+        let right = left + columnWidth + 32
+        let labels = (window?.frame.width ?? 0) >= Self.labelWidth
+        var labeled: Set<CGFloat> = []
         // Hangers under one paragraph stack in change order; each change in it anchors at its own offset.
         func paragraph(_ anchor: Int) -> NSRange {
             storage.mutableString.paragraphRange(for: NSRange(location: min(anchor, storage.length), length: 0))
         }
         for (id, hanger) in hangers.sorted(by: { $0.key < $1.key }) {
+            if let ghost = hanger.view as? Ghost, let width = ghost.inlineWidth {
+                // The gap opens after the anchor character and ends where the change's own text starts, so the ghost
+                // sits right before what replaced it.
+                guard hanger.anchor < storage.length, let gap = segments(NSRange(location: hanger.anchor, length: 1)).last else { continue }
+                let start = changes[id].map(\.range.location) ?? storage.length
+                let next = start < storage.length ? segments(NSRange(location: start, length: 1)).first : nil
+                let end = next.flatMap { abs($0.frame.minY - gap.frame.minY) < 1 ? $0.frame.minX : nil } ?? gap.frame.maxX + width
+                ghost.frame.origin = NSPoint(x: end - width, y: gap.frame.minY + gap.baseline - ghost.ascent)
+                continue
+            }
             guard let top = textBottom(at: hanger.anchor) else { continue }
-            let stacked = hangers.filter { $0.key < id && paragraph($0.value.anchor) == paragraph(hanger.anchor) }
+            let stacked = hangers.filter { $0.key < id && !Self.isInline($0.value.view) && paragraph($0.value.anchor) == paragraph(hanger.anchor) }
                 .map { $0.value.view.frame.height + Self.gap }
             let y = top + Self.gap + stacked.reduce(0, +)
             hanger.view.frame.origin = NSPoint(x: left, y: y)
@@ -246,6 +302,23 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
             tick.backgroundColor = color.cgColor
             group.addSublayer(tick)
             tips.append((tick.frame.insetBy(dx: -6, dy: 0), id))
+            if labels, let first = lines.first.map({ ($0.frame.minY, $0.frame.minY + $0.baseline) })
+                ?? lineRect(at: change.range.location).map({ ($0.minY, $0.minY + ($0.height * 0.78).rounded()) }),
+                labeled.insert(first.0).inserted
+            {
+                let label = marginLabel(writer, color: color, at: landed[id] ?? .now)
+                let size = label.preferredFrameSize()
+                if right + 10 + size.width <= bounds.width - 8 {
+                    let font = Chrome.mono(11)
+                    label.frame = NSRect(x: right + 10, y: (first.1 - font.ascender).rounded(), width: ceil(size.width), height: ceil(size.height))
+                    let dot = CALayer()
+                    dot.frame = NSRect(x: right, y: (first.1 - font.xHeight / 2 - 3).rounded(), width: 6, height: 6)
+                    dot.cornerRadius = 3
+                    dot.backgroundColor = color.cgColor
+                    group.addSublayer(dot)
+                    group.addSublayer(label)
+                }
+            }
             if motion, let start = shown[id], now - start < Self.fade {
                 let fade = CABasicAnimation(keyPath: "opacity")
                 fade.fromValue = 0
@@ -260,7 +333,18 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
         }
         CATransaction.commit()
         for tip in tips { addToolTip(tip.rect, owner: self, userData: nil) }
-        placeBar()
+    }
+
+    /// "Claude 09:41" in mono 11: the name in the writer's color, the time in `ink3`.
+    private func marginLabel(_ writer: MarkWriter, color: NSColor, at date: Date) -> CATextLayer {
+        let ink3 = Chrome.color(.ink3).resolved(for: effectiveAppearance)
+        let foreground = NSAttributedString.Key(kCTForegroundColorAttributeName as String)
+        let text = NSMutableAttributedString(string: writer.name, attributes: [.font: Chrome.mono(11), foreground: color.cgColor])
+        text.append(NSAttributedString(string: " " + Self.clock.string(from: date), attributes: [.font: Chrome.mono(11), foreground: ink3.cgColor]))
+        let layer = CATextLayer()
+        layer.string = text
+        layer.contentsScale = window?.backingScaleFactor ?? 2
+        return layer
     }
 
     private struct Segment {
@@ -345,30 +429,6 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
         guard let caret = textView?.selectedRanges.first?.rangeValue.location else { return nil }
         let holding = changes.filter { NSLocationInRange(caret, $0.value.range) || caret == NSMaxRange($0.value.range) }
         return holding.first { $0.value.conflict }?.key ?? holding.keys.min()
-    }
-
-    /// The bar follows the caret at the next layout.
-    func caretMoved() {
-        guard !changes.isEmpty || bar.superview != nil else { return }
-        dirty = true
-        textView?.needsLayout = true
-    }
-
-    private func placeBar() {
-        guard let textView, let id = changeAtCaret, let change = changes[id], !change.conflict else {
-            bar.removeFromSuperview()
-            return
-        }
-        let lines = segments(change.range)
-        guard let last = lines.last?.frame ?? lineRect(at: change.range.location) else { return }
-        var bottom = last.maxY
-        if let hanger = hangers[id]?.view { bottom = max(bottom, hanger.frame.maxY) }
-        bar.show(MarkWriter(change.origin)) { [weak self] keep in
-            if keep { self?.live?.keep(id) } else { self?.live?.revert(id) }
-        }
-        let left = textView.textContainerOrigin.x + (textView.textContainer?.lineFragmentPadding ?? 0)
-        bar.frame = NSRect(origin: NSPoint(x: left, y: bottom + 8), size: bar.fittingSize)
-        if bar.superview !== textView { textView.addSubview(bar) }
     }
 
     /// Cmd-Return: keeps the change under the caret, or both versions of a conflict.

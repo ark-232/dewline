@@ -105,9 +105,14 @@ enum Token: String, CaseIterable, Sendable {
     /// Code highlighting's colors. A dev theme authors them from its editor's palette; Dewline's themes derive them
     /// (`Theme.coded`).
     case codeKeyword, codeString, codeNumber, codeType, codeFunction, codeComment, codeTag, codeInserted, codeDeleted
+    /// The Station chrome's roles (`Theme.stationed`): the window's frame behind the islands, the editor and sidebar
+    /// islands, raised and sunken surfaces, keycaps, hairlines, tertiary ink, and the signal that draws lines, with the
+    /// glow around the horizon's lit segment and the mark's bead.
+    case frame, islandEditor, islandSide, raised, sunken, keycap, hairline, ink3, signal, glow
 
     static let code: [Token] = [.codeKeyword, .codeString, .codeNumber, .codeType, .codeFunction, .codeComment, .codeTag, .codeInserted, .codeDeleted]
-    static let required = allCases.filter { $0 != .sky1 && $0 != .sky2 && !code.contains($0) }
+    static let station: [Token] = [.frame, .islandEditor, .islandSide, .raised, .sunken, .keycap, .hairline, .ink3, .signal, .glow]
+    static let required = allCases.filter { $0 != .sky1 && $0 != .sky2 && !code.contains($0) && !station.contains($0) }
 
     /// The name in words: "code keyword", "ink 2".
     var label: String {
@@ -131,20 +136,29 @@ struct Theme: Identifiable, Hashable, Sendable {
 
     var hasSky: Bool { light[.sky1] != nil }
 
-    /// `table` holds one row per token: its name, then L C h for light and L C h for dark.
+    /// `table` holds one row per token: its name, then L C h for light and L C h for dark. A `-` in place of either
+    /// triple leaves that side to the derivation.
     init(_ name: String, _ summary: String, _ table: String) {
         var light: [Token: OKLCH] = [:]
         var dark: [Token: OKLCH] = [:]
         for row in table.split(separator: "\n") {
-            let fields = row.split(separator: " ", omittingEmptySubsequences: true)
-            let token = Token(rawValue: String(fields[0]))!
-            let values = fields.dropFirst().map { Double($0)! }
-            light[token] = OKLCH(l: values[0], c: values[1], h: values[2])
-            dark[token] = OKLCH(l: values[3], c: values[4], h: values[5])
+            var fields = row.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+            let token = Token(rawValue: fields.removeFirst())!
+            func triple() -> OKLCH? {
+                if fields.first == "-" {
+                    fields.removeFirst()
+                    return nil
+                }
+                let values = fields.prefix(3).map { Double($0)! }
+                fields.removeFirst(3)
+                return OKLCH(l: values[0], c: values[1], h: values[2])
+            }
+            light[token] = triple()
+            dark[token] = triple()
         }
         let authored = (light: light, dark: dark)
-        light = Self.coded(light)
-        dark = Self.coded(dark)
+        light = Self.stationed(Self.coded(light), increased: false)
+        dark = Self.stationed(Self.coded(dark), increased: false)
         self.name = name
         self.summary = summary
         self.light = light
@@ -152,8 +166,39 @@ struct Theme: Identifiable, Hashable, Sendable {
         lightColors = light.mapValues(\.color)
         darkColors = dark.mapValues(\.color)
         // A dark-only port carries its dark block in the light slot too, so contrast rises away from the paper.
-        increasedLightColors = Self.coded(Self.increased(authored.light, dark: light[.paper]!.l < 0.5)).mapValues(\.color)
-        increasedDarkColors = Self.coded(Self.increased(authored.dark, dark: dark[.paper]!.l < 0.5)).mapValues(\.color)
+        increasedLightColors = Self.stationed(Self.coded(Self.increased(authored.light, dark: light[.paper]!.l < 0.5)), increased: true).mapValues(\.color)
+        increasedDarkColors = Self.stationed(Self.coded(Self.increased(authored.dark, dark: dark[.paper]!.l < 0.5)), increased: true).mapValues(\.color)
+    }
+
+    /// `tokens` with the Station chrome's roles, stepped off the paper in its own hue so every theme has them: the frame
+    /// a step lighter than the paper in dark and darker in light, the sidebar island half a step, hairlines further,
+    /// ink3 30% of the way from ink2 to the paper, and the signal at the brand's lightness in the accent's hue. Under
+    /// Increase Contrast hairlines take ink3. A role the theme authors stays.
+    static func stationed(_ authored: [Token: OKLCH], increased: Bool) -> [Token: OKLCH] {
+        let paper = authored[.paper]!
+        let accent = authored[.accent]!
+        let dark = paper.l < 0.5
+        let hue = authored[.sidebarTint]!.h
+        let chroma = min(paper.c * 1.6, 0.03)
+        func step(_ delta: Double) -> OKLCH {
+            OKLCH(l: min(max(paper.l + (dark ? delta : -delta), 0), 1), c: chroma, h: hue)
+        }
+        let ink3 = authored[.ink3] ?? authored[.ink2]!.mixed(with: paper, by: 0.3)
+        let signal = authored[.signal] ?? OKLCH(l: dark ? 0.78 : 0.50, c: min(accent.c, dark ? 0.12 : 0.16), h: accent.h)
+        var derived: [Token: OKLCH] = [
+            .frame: step(dark ? 0.057 : 0.075),
+            .islandEditor: paper,
+            .islandSide: step(dark ? 0.026 : 0.034),
+            .raised: dark ? step(0.075) : OKLCH(l: min(paper.l + 0.01, 1), c: paper.c / 2, h: paper.h),
+            .sunken: step(dark ? 0.04 : 0.05),
+            .keycap: step(dark ? 0.107 : 0.034),
+            .hairline: step(0.14),
+            .ink3: ink3,
+            .signal: signal,
+            .glow: authored[.glow] ?? signal,
+        ]
+        if increased { derived[.hairline] = ink3 }
+        return authored.merging(derived) { authored, _ in authored }
     }
 
     /// `tokens` with code highlighting's colors: keywords in the accent's hue, the rest at hues turned from the link's,
@@ -244,6 +289,14 @@ struct Theme: Identifiable, Hashable, Sendable {
         sidebarTint     0.93  0.03  262   0.26  0.04  264
         codeBackground  0.965 0.01  255   0.24  0.02  262
         quoteRule       0.62  0.14  266   0.62  0.13  264
+        frame           0.918 0.016 248   0.257 0.033 234
+        islandSide      0.959 0.009 248   0.226 0.029 238
+        raised          1.0   0     248   -
+        sunken          0.943 0.012 248   -
+        keycap          0.959 0.007 248   -
+        hairline        0.879 0.015 251   -
+        ink3            0.619 0.027 254   -
+        signal          0.504 0.155 253   0.78  0.12  238
         """)
 
     static let aurora = Theme("Aurora", "Sage paper by day; polar-night navy with green links after dark.", """
@@ -258,6 +311,8 @@ struct Theme: Identifiable, Hashable, Sendable {
         sidebarTint     0.93  0.035 155   0.25  0.035 230
         codeBackground  0.96  0.015 160   0.23  0.025 240
         quoteRule       0.66  0.12  152   0.66  0.13  155
+        frame           -                 0.247 0.028 176
+        islandSide      -                 0.216 0.022 175
         """)
 
     static let dawnline = Theme("Dawnline", "A blush of dawn in the paper, ultramarine ink and accents; warm ink on indigo at night.", """
@@ -272,6 +327,8 @@ struct Theme: Identifiable, Hashable, Sendable {
         sidebarTint     0.94  0.02  20    0.27  0.035 268
         codeBackground  0.965 0.008 255   0.25  0.022 268
         quoteRule       0.70  0.08  258   0.64  0.09  252
+        frame           -                 0.267 0.025 314
+        islandSide      -                 0.236 0.02  314
         """)
 
     static let dusk = Theme("Dusk", "Blue hour: indigo above a green afterglow, mint accents, periwinkle links.", """
@@ -288,6 +345,8 @@ struct Theme: Identifiable, Hashable, Sendable {
         quoteRule       0.66  0.11  160   0.66  0.11  160
         sky1            0.80  0.06  270   0.17  0.06  272
         sky2            0.93  0.04  160   0.34  0.06  165
+        frame           -                 0.267 0.051 289
+        islandSide      -                 0.236 0.043 288
         """)
 
     static let nightwatch = Theme("Nightwatch", "Dark-first, for the radar room: deep navy, sky-blue accents; overcast steel by day.", """
@@ -304,6 +363,14 @@ struct Theme: Identifiable, Hashable, Sendable {
         quoteRule       0.55  0.12  255   0.60  0.12  245
         sky1            0.86  0.03  250   0.12  0.035 265
         sky2            0.95  0.012 245   0.23  0.05  250
+        frame           -                 0.223 0.03  253
+        islandSide      -                 0.192 0.027 252
+        raised          -                 0.241 0.035 256
+        sunken          -                 0.206 0.03  255
+        keycap          -                 0.273 0.037 255
+        hairline        -                 0.306 0.035 257
+        ink3            -                 0.565 0.036 250
+        signal          0.504 0.155 253   0.78  0.12  238
         """)
 
     static let carbon = Theme("Carbon", "Onionskin and carbon ink, the manuscript.", """

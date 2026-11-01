@@ -1,9 +1,10 @@
 import AppKit
 
-/// The palette: one floating panel over the window in front, in the theme's colors. Shift-Cmd-P opens it on ">",
+/// The palette: one opaque Station panel over the window in front, which dims behind it. Shift-Cmd-P opens it on ">",
 /// the menu bar's enabled commands and the settings; Shift-Cmd-O opens it empty, which finds Markdown files by name in
 /// the window's folder, Recents and Pinned. "@" lists the open file's headings, ":" goes to a line, "#" finds headings
-/// across the folder and "?" lists these prefixes; "notes@intro" and "notes:42" reach into a file.
+/// across the folder and "?" lists these prefixes; "notes@intro" and "notes:42" reach into a file. A typed prefix
+/// turns into a scope chip in front of the field, and Delete on the empty field takes it back.
 final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTableViewDataSource, NSTableViewDelegate {
     private static var shared: QuickOpenPanel?
 
@@ -12,8 +13,8 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
         let panel = shared ?? QuickOpenPanel()
         shared = panel
         if panel.isVisible, panel.isKeyWindow {
-            if panel.choices != nil || panel.field.stringValue.hasPrefix(">") == commands { return panel.dismiss() }
-            panel.field.stringValue = commands ? ">" : ""
+            if panel.choices != nil || panel.query.hasPrefix(">") == commands { return panel.dismiss() }
+            panel.setQuery(commands ? ">" : "")
             panel.refresh()
             return
         }
@@ -37,40 +38,61 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
         case command(PaletteHit)
         case heading(PaletteHeading, positions: [Int])
         case line(Int)
-        case prefix(String, title: String, symbol: String)
+        case prefix(String, title: String)
         case choice(Int, positions: [Int])
 
         var selectable: Bool {
             if case .header = self { return false }
             return true
         }
+
+        /// Headers 30 pt; every result one line at 40.
+        var height: CGFloat {
+            if case .header = self { return 30 }
+            return 40
+        }
     }
 
-    private static let rowHeight: CGFloat = 32
-    private static let width: CGFloat = 640
-    /// Eight rows and half of the ninth show, so a longer list reads as one that scrolls.
-    private static let visibleRows: CGFloat = 8.5
-    private static let prefixes: [(String, String, String)] = [
-        (">", "Commands and settings", "command"),
-        ("@", "Headings in this file", "list.bullet.indent"),
-        (":", "Go to a line", "arrow.right.to.line"),
-        ("#", "Headings in the folder", "number"),
-        ("", "Files by name (add @ or : to reach into one)", "doc.text"),
+    private static let width: CGFloat = 680
+    /// The input row, the horizon under it and the list's padding above and below.
+    private static let chromeHeight: CGFloat = 56 + 1 + 6 + 6
+    /// About seven and a half rows show, so a longer list reads as one that scrolls.
+    private static let listMax: CGFloat = 340
+    private static let prefixes: [(String, String)] = [
+        (">", "Commands and settings"),
+        ("@", "Headings in this file"),
+        (":", "Go to a line"),
+        ("#", "Headings in the folder"),
+        ("", "Files by name (add @ or : to reach into one)"),
     ]
+    /// The scope chip's word for each prefix.
+    private static let scopes: [Character: String] = [">": "Commands", "@": "Outline", ":": "Line", "#": "Headings", "?": "Help"]
     /// Commands offered before you type, by action, after the agent changes and the recent ones.
     private static let suggested = [
         "newWindowForTab:", "openFolder:", "findInFiles:", "toggleSource:", "toggleFocusMode:", "toggleTypewriterMode:",
         "goToLine:", "showSettings:",
     ]
+    /// The Agent changes group, by action, in this order.
+    private static let agentActions = [
+        "keepChange:", "revertChange:", "keepAllChanges:", "revertAllChanges:", "nextChange:", "previousChange:", "toggleReview:",
+    ]
 
     private let field = NSTextField()
-    private let icon = NSImageView()
+    private let mark = DewMark()
+    private let chip = ScopeChip()
+    private let horizon = PaletteHorizon()
     private let table = QuickOpenTable()
+    private let fade = TopFade()
     private let empty = NSTextField(labelWithString: "")
     private let background = PanelBackground()
-    private let rules = [PanelRule(), PanelRule()]
-    private let footer = NSTextField(labelWithString: "")
+    private let backdrop = Backdrop()
     private var listHeight: NSLayoutConstraint?
+    /// The prefix typed first, shown as the chip and kept out of the field.
+    private var scope: Character?
+    /// Files with an agent's undecided changes in any open document, by path, with the writer of the latest.
+    private var touched: [String: (url: URL, writer: MarkWriter)] = [:]
+    /// How many of `boosted` are recents; the rest are pins.
+    private var recentCount = 0
 
     /// The window in front, which files open in.
     private weak var target: NSWindow?
@@ -101,7 +123,8 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
     private var pointer: NSPoint?
 
     private init() {
-        super.init(contentRect: NSRect(x: 0, y: 0, width: Self.width, height: 134), styleMask: [.borderless], backing: .buffered, defer: true)
+        super.init(contentRect: NSRect(x: 0, y: 0, width: Self.width, height: Self.chromeHeight + 40), styleMask: [.borderless], backing: .buffered,
+                   defer: true)
         isFloatingPanel = true
         hidesOnDeactivate = true
         isReleasedWhenClosed = false
@@ -121,16 +144,17 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
 
     private func content() -> NSView {
         let root = background
-        icon.symbolConfiguration = .init(pointSize: 16, weight: .regular)
-        icon.setAccessibilityElement(false)
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
-        field.font = .systemFont(ofSize: 18)
+        field.font = Chrome.title
         field.lineBreakMode = .byTruncatingHead
         field.cell?.isScrollable = true
         field.delegate = self
-        let (rule, footerRule) = (rules[0], rules[1])
+        field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let input = NSStackView(views: [mark, chip, field])
+        input.spacing = 12
+        input.alignment = .centerY
         let column = NSTableColumn(identifier: .init("row"))
         column.resizingMask = .autoresizingMask
         table.addTableColumn(column)
@@ -138,7 +162,7 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
         table.style = .plain
         table.backgroundColor = .clear
         table.intercellSpacing = .zero
-        table.rowHeight = Self.rowHeight
+        table.rowHeight = 40
         table.refusesFirstResponder = true
         table.allowsTypeSelect = false
         table.dataSource = self
@@ -153,43 +177,59 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
         scroll.automaticallyAdjustsContentInsets = false
-        empty.font = .systemFont(ofSize: 13)
+        scroll.contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(self, selector: #selector(scrolled), name: NSView.boundsDidChangeNotification, object: scroll.contentView)
+        empty.font = Chrome.label
         empty.alignment = .center
-        footer.font = .systemFont(ofSize: 11)
-        footer.lineBreakMode = .byTruncatingTail
-        for view in [icon, field, rule, scroll, empty, footerRule, footer] as [NSView] {
+        fade.isHidden = true
+        for view in [input, horizon, scroll, fade, empty] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             root.addSubview(view)
         }
-        let listHeight = scroll.heightAnchor.constraint(equalToConstant: Self.rowHeight)
+        let listHeight = scroll.heightAnchor.constraint(equalToConstant: 40)
         self.listHeight = listHeight
         NSLayoutConstraint.activate([
-            icon.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 16),
-            icon.centerYAnchor.constraint(equalTo: field.centerYAnchor),
-            icon.widthAnchor.constraint(equalToConstant: 20),
-            field.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 10),
-            field.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -16),
-            field.centerYAnchor.constraint(equalTo: root.topAnchor, constant: 24),
-            rule.topAnchor.constraint(equalTo: root.topAnchor, constant: 48),
-            rule.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            rule.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            rule.heightAnchor.constraint(equalToConstant: 1),
-            scroll.topAnchor.constraint(equalTo: rule.bottomAnchor, constant: 6),
-            scroll.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 6),
-            scroll.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -6),
+            input.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 20),
+            input.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -20),
+            input.centerYAnchor.constraint(equalTo: root.topAnchor, constant: 28),
+            horizon.centerYAnchor.constraint(equalTo: root.topAnchor, constant: 56.5),
+            horizon.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            horizon.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            horizon.heightAnchor.constraint(equalToConstant: 10),
+            scroll.topAnchor.constraint(equalTo: root.topAnchor, constant: 57 + 6),
+            scroll.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 8),
+            scroll.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -8),
             listHeight,
+            fade.topAnchor.constraint(equalTo: scroll.topAnchor),
+            fade.leadingAnchor.constraint(equalTo: scroll.leadingAnchor),
+            fade.trailingAnchor.constraint(equalTo: scroll.trailingAnchor),
+            fade.heightAnchor.constraint(equalToConstant: 24),
             empty.centerYAnchor.constraint(equalTo: scroll.centerYAnchor),
             empty.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 24),
             empty.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -24),
-            footerRule.topAnchor.constraint(equalTo: scroll.bottomAnchor, constant: 6),
-            footerRule.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            footerRule.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            footerRule.heightAnchor.constraint(equalToConstant: 1),
-            footer.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 16),
-            footer.trailingAnchor.constraint(lessThanOrEqualTo: root.trailingAnchor, constant: -16),
-            footer.centerYAnchor.constraint(equalTo: footerRule.bottomAnchor, constant: 14),
         ])
         return root
+    }
+
+    /// The top fade shows once the list scrolls under it.
+    @objc private func scrolled(_ notification: Notification) {
+        fade.isHidden = ((notification.object as? NSClipView)?.bounds.minY ?? 0) <= 0
+    }
+
+    /// What the palette searches: the scope's prefix, then the field.
+    private var query: String {
+        (scope.map(String.init) ?? "") + field.stringValue
+    }
+
+    /// Sets the query; a leading prefix goes to the chip.
+    private func setQuery(_ text: String) {
+        if let first = text.first, Self.scopes[first] != nil {
+            scope = first
+            field.stringValue = String(text.dropFirst())
+        } else {
+            scope = nil
+            field.stringValue = text
+        }
     }
 
     // MARK: Showing
@@ -208,6 +248,8 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
         let visits = Library.recents.filter { isFile($0.url) }
         recents = Dictionary(visits.map { ($0.url.path, $0.date) }) { first, _ in first }
         boosted = visits.map(\.url) + Library.pins.filter(isFile)
+        recentCount = visits.count
+        touched = Self.touched()
         let menu = NSApp.mainMenu.map { MenuCommand.all(in: $0, excluding: #selector(AppDelegate.showCommandPalette(_:))) } ?? []
         let dark = (target ?? returnTo)?.effectiveAppearance.isDark ?? NSApp.effectiveAppearance.isDark
         // Smart Punctuation is a setting row, with its value.
@@ -220,22 +262,43 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
         pointer = nil
         headingScan = nil
 
-        field.stringValue = showsCommands ? ">" : ""
+        setQuery(showsCommands ? ">" : "")
         pendingChoice = nil
         merging?.cancel()
         files = QuickOpen.merge([], boosted: boosted, in: folder)
         if let indexed = index?.files { merge(indexed) }
         recolor()
         refresh()
+        dim(target)
         makeKeyAndOrderFront(nil)
         makeFirstResponder(field)
         placeCaret()
     }
 
+    /// Dims the window the palette belongs to, under the panel; a click there passes through and closes the panel.
+    private func dim(_ window: NSWindow?) {
+        guard let content = window?.contentView else { return backdrop.removeFromSuperview() }
+        backdrop.frame = content.bounds
+        backdrop.autoresizingMask = [.width, .height]
+        content.addSubview(backdrop, positioned: .above, relativeTo: nil)
+    }
+
+    /// Open files carrying an agent's undecided changes, each with the writer of its latest one.
+    private static func touched() -> [String: (url: URL, writer: MarkWriter)] {
+        var touched: [String: (url: URL, writer: MarkWriter)] = [:]
+        for case let document as MarkdownDocument in NSDocumentController.shared.documents {
+            guard let live = document.live,
+                let latest = live.changes.filter({ $0.value.marked && $0.value.origin != .user }).max(by: { $0.key < $1.key })
+            else { continue }
+            touched[live.url.path] = (live.url, MarkWriter(latest.value.origin))
+        }
+        return touched
+    }
+
     private func placeCaret() {
         guard let editor = field.currentEditor() as? NSTextView else { return }
         let theme = ThemeStore.shared
-        editor.insertionPointColor = theme.color(.accent)
+        editor.insertionPointColor = theme.color(.signal)
         editor.selectedTextAttributes = [.backgroundColor: theme.color(.selection)]
         editor.selectedRange = NSRange(location: (field.stringValue as NSString).length, length: 0)
     }
@@ -243,15 +306,13 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
     /// The theme's colors on the panel's own views; rows take them as they draw.
     private func recolor() {
         let theme = ThemeStore.shared
-        for view in [background] + rules {
+        for view in [background, horizon, chip, fade, backdrop, mark] as [NSView] {
             view.needsDisplay = true
         }
         field.textColor = theme.color(.ink)
-        footer.textColor = theme.color(.ink2)
-        empty.textColor = theme.color(.ink2)
-        icon.contentTintColor = theme.color(.ink2)
+        empty.textColor = theme.color(.ink3)
         if let editor = field.currentEditor() as? NSTextView {
-            editor.insertionPointColor = theme.color(.accent)
+            editor.insertionPointColor = theme.color(.signal)
             editor.selectedTextAttributes = [.backgroundColor: theme.color(.selection)]
         }
     }
@@ -268,7 +329,7 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
     private func placeholder(_ text: String) {
         field.placeholderString = text
         field.placeholderAttributedString = NSAttributedString(string: text, attributes: [
-            .font: NSFont.systemFont(ofSize: 18), .foregroundColor: ThemeStore.shared.color(.ink2),
+            .font: Chrome.title, .foregroundColor: ThemeStore.shared.color(.ink3),
         ])
     }
 
@@ -306,7 +367,7 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
     @objc private func indexChanged(_ notification: Notification) {
         guard isVisible, let index, notification.object as AnyObject === index, let indexed = index.files else { return }
         merge(indexed)
-        if choices == nil, case .files = Self.mode(of: field.stringValue) { refresh() }
+        if choices == nil, case .files = Self.mode(of: query) { refresh() }
     }
 
     private static func mode(of query: String) -> Mode {
@@ -335,10 +396,9 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
     private func refresh() {
         search?.cancel()
         search = nil
-        let query = field.stringValue
+        let query = query
         if let choices {
-            chrome(choices.title, symbol: choices.symbol, footer: "↑↓ Preview    ↩ Keep    ⎋ Restore")
-            placeholder(choices.title)
+            chrome(choices.title, chip: choices.title, placeholder: "Type to filter")
             let letters = FuzzyText.query(query)
             show(choices.names.enumerated().compactMap { index, name -> Row? in
                 if letters.isEmpty { return .choice(index, positions: []) }
@@ -348,21 +408,21 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
         }
         switch Self.mode(of: query) {
         case .commands(let text):
-            chrome("Command Palette", symbol: "command", footer: "↩ Run    ⇥ Open a setting    ⎋ Clear    Delete > to find files")
+            chrome("Command Palette", placeholder: "Run a command or change a setting")
             show(commandRows(text))
         case .help:
-            chrome("Palette Prefixes", symbol: "questionmark.circle", footer: "↩ Use the prefix")
-            show(Self.prefixes.map { .prefix($0.0, title: $0.1, symbol: $0.2) })
+            chrome("Palette Prefixes", placeholder: "Pick a prefix")
+            show(Self.prefixes.map { .prefix($0.0, title: $0.1) })
         case .headings(let text):
-            chrome("Go to Heading", symbol: "list.bullet.indent", footer: "↩ Go to the heading    Delete @ to find files")
+            chrome("Go to Heading", placeholder: "Go to a heading in this file")
             let headings = currentHeadings()
             show(PaletteHeading.rank(text, in: headings)?.map { .heading($0.heading, positions: $0.positions) } ?? [])
         case .line(let text):
-            chrome("Go to Line", symbol: "arrow.right.to.line", footer: "↩ Go to the line    Delete : to find files")
+            chrome("Go to Line", placeholder: "Type a line number")
             let number = Int(text.trimmingCharacters(in: .whitespaces))
             show(number.map { [.line($0)] } ?? [])
         case .folderHeadings(let text):
-            chrome("Headings in Folder", symbol: "number", footer: "↩ Go to the heading    ⌘↩ In a new tab")
+            chrome("Headings in Folder", placeholder: "Find a heading in the folder")
             guard let urls = index?.files?.map(\.url) else { return show([]) }
             let folder = folder
             let scan = headingScan ?? Task { await PaletteHeading.scan(urls, in: folder) }
@@ -372,17 +432,20 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
                 return ranked.map { .heading($0.heading, positions: $0.positions) }
             }
         case .files(let text):
-            chrome("Quick Open", symbol: "magnifyingglass", footer: "↩ Open    ⌘↩ Open in New Tab    > Commands    ? Help")
+            chrome("Quick Open", placeholder: "Open a file, or type > for commands")
             if text.allSatisfy(\.isWhitespace) {
-                show(QuickOpen.rank("", in: files)?.map { .file($0, line: nil) } ?? [])
+                show(restingFileRows())
             } else {
-                run { panel in await Self.ranked(text, in: panel.files)?.map { .file($0, line: nil) } }
+                run { panel in
+                    guard let found = await Self.ranked(text, in: panel.files) else { return nil }
+                    return panel.mixedRows(found, commands: PaletteRank.rank(text, in: panel.commands, frecency: panel.frecency))
+                }
             }
         case .fileLine(let text, let line):
-            chrome("Go to Line in File", symbol: "arrow.right.to.line", footer: "↩ Open at the line    ⌘↩ In a new tab")
+            chrome("Go to Line in File", placeholder: "Open a file, or type > for commands")
             run { panel in await Self.ranked(text, in: panel.files)?.map { .file($0, line: line) } }
         case .fileHeadings(let text, let heading):
-            chrome("Go to Heading in File", symbol: "list.bullet.indent", footer: "↩ Open at the heading    ⌘↩ In a new tab")
+            chrome("Go to Heading in File", placeholder: "Open a file, or type > for commands")
             run { panel in
                 guard let top = await Self.ranked(text, in: panel.files)?.first else { return nil }
                 let headings = await panel.headings(of: top.file)
@@ -391,12 +454,56 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
         }
     }
 
-    private func chrome(_ name: String, symbol: String, footer hint: String) {
+    /// Names the panel for VoiceOver and shows the chip for a scope or a setting's values, else the dew-line mark.
+    private func chrome(_ name: String, chip word: String? = nil, placeholder text: String) {
         title = name
         field.setAccessibilityLabel(name)
-        icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
-        footer.stringValue = hint
-        if choices == nil { placeholder("Open a file by name, or type ? for more") }
+        let word = word ?? scope.flatMap { Self.scopes[$0] }
+        chip.title = word ?? ""
+        chip.isHidden = word == nil
+        mark.isHidden = word != nil
+        placeholder(text)
+        updateHorizon()
+    }
+
+    /// The lit stretch of the horizon runs from the panel's left edge to the end of the typed text.
+    private func updateHorizon() {
+        background.layoutSubtreeIfNeeded()
+        let typed = ceil((field.stringValue as NSString).size(withAttributes: [.font: Chrome.title]).width)
+        let start = field.convert(NSPoint.zero, to: background).x + 2
+        horizon.lit = min(start + typed, background.bounds.width - 24)
+    }
+
+    /// With nothing typed: files with an agent's changes (three at most), then recents, then pins.
+    private func restingFileRows() -> [Row] {
+        var rows: [Row] = []
+        let agent = touched.values.sorted { $0.url.lastPathComponent < $1.url.lastPathComponent }.prefix(3)
+        if !agent.isEmpty {
+            rows.append(.header("Agent files"))
+            rows += agent.map { .file(QuickOpenResult(file: QuickOpenFile($0.url, in: folder), positions: []), line: nil) }
+        }
+        let shown = Set(agent.map(\.url.path))
+        let rest = (QuickOpen.rank("", in: files) ?? []).filter { !shown.contains($0.file.url.path) }
+        let recent = rest.filter { ($0.file.boost ?? 0) < recentCount }
+        let pinned = rest.filter { ($0.file.boost ?? 0) >= recentCount }
+        if !recent.isEmpty { rows += [.header("Recent")] + recent.map { .file($0, line: nil) } }
+        if !pinned.isEmpty { rows += [.header("Pinned")] + pinned.map { .file($0, line: nil) } }
+        return rows
+    }
+
+    /// An unprefixed search's groups: files with an agent's changes, the other files, then the three best commands
+    /// whose titles hold the letters. A lone group shows without its header.
+    private func mixedRows(_ found: [QuickOpenResult], commands hits: [PaletteHit]) -> [Row] {
+        let agent = found.filter { touched[$0.file.url.path] != nil }
+        let other = found.filter { touched[$0.file.url.path] == nil }
+        let commands = hits.filter { !$0.positions.isEmpty }.prefix(3)
+        let groups: [(String, [Row])] = [
+            ("Agent files", agent.map { .file($0, line: nil) }),
+            ("Files", other.map { .file($0, line: nil) }),
+            ("Commands", commands.map(Row.command)),
+        ].filter { !$0.1.isEmpty }
+        guard groups.count > 1 else { return groups.first?.1 ?? [] }
+        return groups.flatMap { [Row.header($0.0)] + $0.1 }
     }
 
     /// Runs `work` after the files merge, off the keystroke, and shows its rows unless a later key cancelled it.
@@ -428,8 +535,8 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
         }
         let pending = Review.files(in: target ?? returnTo).reduce(0) { $0 + $1.changes.values.count(where: \.marked) }
         if pending > 0 {
-            let actions = [#selector(EditorTextView.keepChange(_:)), #selector(EditorTextView.revertChange(_:)), #selector(ReviewPanel.toggleReview(_:))]
-            group("Agent Changes · \(pending) pending", actions.compactMap { action in commands.first { $0.selector == action } })
+            let actions = Self.agentActions.compactMap { action in commands.first { $0.selector.map(NSStringFromSelector) == action } }
+            group("Agent changes · \(pending) pending", actions)
         }
         group("Recent", PaletteHistory.recent.compactMap { id in commands.first { $0.id == id } })
         let suggested = Self.suggested.compactMap { action in commands.first { $0.selector.map(NSStringFromSelector) == action } }
@@ -487,7 +594,7 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
 
     private func emptyText() -> String {
         if let choices { return "No \(choices.title.lowercased()) matches." }
-        switch Self.mode(of: field.stringValue) {
+        switch Self.mode(of: query) {
         case .commands(let text): return "No commands match \(Self.quoted(text))."
         case .help: return ""
         case .headings: return target?.windowController is MainWindowController ? "No headings match." : "Open a file to list its headings."
@@ -506,16 +613,16 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
         "\u{201C}\(text.trimmingCharacters(in: .whitespaces))\u{201D}"
     }
 
-    /// Sizes the panel to its rows, eight and a half at most, and puts its top 20% down the target window, centered
-    /// across it.
+    /// Sizes the panel to its rows, about seven and a half at most, and puts its top 22% down the target window,
+    /// centered across it.
     private func place() {
-        let count = rows.count > 8 ? Self.visibleRows : CGFloat(max(rows.count, 1))
-        listHeight?.constant = count * Self.rowHeight
-        let height = 90 + count * Self.rowHeight
+        let list = rows.isEmpty ? 40 : min(rows.map(\.height).reduce(0, +), Self.listMax)
+        listHeight?.constant = list
+        let height = Self.chromeHeight + list
         let screen = target?.screen ?? NSScreen.main
         guard let visible = screen?.visibleFrame else { return }
         let anchor = target?.frame ?? visible
-        var frame = NSRect(x: anchor.midX - Self.width / 2, y: anchor.maxY - anchor.height * 0.2 - height, width: Self.width, height: height)
+        var frame = NSRect(x: anchor.midX - Self.width / 2, y: anchor.maxY - anchor.height * 0.22 - height, width: Self.width, height: height)
         frame.origin.x = min(max(frame.minX, visible.minX + 8), visible.maxX - frame.width - 8)
         frame.origin.y = max(frame.minY, visible.minY + 8)
         setFrame(frame, display: isVisible)
@@ -535,8 +642,10 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
         headingScan?.cancel()
         headingScan = nil
         if isKeyWindow { returnTo?.makeKeyAndOrderFront(nil) }
+        backdrop.removeFromSuperview()
         orderOut(nil)
         files = []
+        touched = [:]
         commands = []
         rows = []
         table.reloadData()
@@ -556,8 +665,8 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
         switch rows[row] {
         case .header: break
         case .command(let hit): run(hit.command)
-        case .prefix(let prefix, _, _):
-            field.stringValue = prefix
+        case .prefix(let prefix, _):
+            setQuery(prefix)
             placeCaret()
             refresh()
         case .choice:
@@ -603,7 +712,7 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
             }
             return
         }
-        controller.window?.makeKeyAndOrderFront(nil)
+        controller.showWindow(nil)
         controller.open(url, newTab: newTab)
         guard let tab = NSDocumentController.shared.document(for: url)?.windowControllers.first as? MainWindowController else { return }
         if let textView = tab.textView { tab.window?.makeFirstResponder(textView) }
@@ -633,10 +742,10 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
 
     /// Shows a setting's values with the current one selected.
     private func enter(_ level: PaletteChoices, from id: String) {
-        choicesFrom = (field.stringValue, id)
+        choicesFrom = (query, id)
         choices = level
         previewed = level.current
-        field.stringValue = ""
+        setQuery("")
         refresh()
         placeCaret()
     }
@@ -648,7 +757,7 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
         self.choices = nil
         choicesFrom = nil
         previewed = nil
-        field.stringValue = from.query
+        setQuery(from.query)
         refresh()
         placeCaret()
     }
@@ -711,12 +820,22 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
         return super.performKeyEquivalent(with: event)
     }
 
+    /// A prefix typed first, or pasted with its query, moves into the chip.
     func controlTextDidChange(_ notification: Notification) {
+        if scope == nil, choices == nil, let first = field.stringValue.first, Self.scopes[first] != nil {
+            setQuery(field.stringValue)
+            placeCaret()
+        }
         refresh()
     }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
         switch selector {
+        case #selector(deleteBackward(_:)) where field.stringValue.isEmpty && choices != nil:
+            leaveChoices()
+        case #selector(deleteBackward(_:)) where field.stringValue.isEmpty && scope != nil:
+            scope = nil
+            refresh()
         case #selector(moveUp(_:)): move(-1)
         case #selector(moveDown(_:)): move(1)
         case #selector(scrollPageUp(_:)), #selector(pageUp(_:)): move(-8)
@@ -735,10 +854,10 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
     /// Escape: back from a setting's values, else clears the query down to its prefix, else closes.
     private func cancel() {
         if choices != nil { return leaveChoices() }
-        let query = field.stringValue
+        let query = query
         let bare = query.first.map { ">@:#?".contains($0) } == true ? String(query.prefix(1)) : ""
         guard query != bare else { return dismiss() }
-        field.stringValue = bare
+        setQuery(bare)
         placeCaret()
         refresh()
     }
@@ -753,70 +872,95 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
         rows.indices.contains(row) && rows[row].selectable
     }
 
+    func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
+        rows.indices.contains(row) ? rows[row].height : 40
+    }
+
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
-        QuickOpenRowView()
+        PaletteRowView()
     }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        if case .header(let name) = rows[row] {
+            let header = tableView.makeView(withIdentifier: PaletteHeader.identifier, owner: nil) as? PaletteHeader ?? PaletteHeader()
+            header.title = name
+            return header
+        }
         let cell = tableView.makeView(withIdentifier: PaletteCell.identifier, owner: nil) as? PaletteCell ?? PaletteCell()
-        switch rows[row] {
-        case .header(let name):
-            cell.show(symbol: nil, trailing: .empty, label: name) { _ in
-                NSAttributedString(string: name, attributes: [
-                    .font: NSFont.systemFont(ofSize: 11, weight: .semibold), .foregroundColor: ThemeStore.shared.color(.ink2),
-                ])
-            }
+        cell.content = content(of: rows[row])
+        return cell
+    }
+
+    /// What a row draws, the hints its selection shows and what VoiceOver says for it.
+    private func content(of row: Row) -> PaletteCell.Content {
+        var content = PaletteCell.Content()
+        func spoken(_ parts: [String?]) -> String {
+            parts.compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
+        }
+        switch row {
+        case .header:
+            break
         case .file(let result, let line):
             let text = result.file.text
             let path = text.string as NSString
             let name = path.substring(from: text.nameStart)
             let folderPath = text.nameStart > 0 ? path.substring(to: text.nameStart - 1) : folder.map { FileManager.default.displayName(atPath: $0.url.path) } ?? ""
-            let detail = line.map { "Line \($0)" } ?? recents[result.file.url.path].map(Self.relative) ?? (result.file.boost != nil ? "Pinned" : "")
-            cell.show(symbol: "doc.text", trailing: .text(detail), label: [name, folderPath, detail].filter { !$0.isEmpty }.joined(separator: ", ")) { selected in
-                let title = Self.styled(name, result.positions, from: text.nameStart, size: 13, role: .title, selected: selected)
-                title.append(Self.styled("   " + folderPath, text.nameStart > 0 ? result.positions.map { $0 + 3 } : [], size: 11, role: .dim, selected: selected))
-                return title
-            }
+            let writer = touched[result.file.url.path]?.writer
+            let detail = line.map { "line \($0)" } ?? recents[result.file.url.path].map { relativeTime($0) } ?? (result.file.boost != nil ? "pinned" : "")
+            let positions = result.positions.compactMap { $0 >= text.nameStart ? $0 - text.nameStart : nil }
+            content.lead = writer.map { .dot($0.color) } ?? .none
+            content.title = [.init(name, positions: positions, dimUnmatched: !positions.isEmpty)]
+            content.subtitle = [folderPath.isEmpty ? "" : folderPath + "/", writer?.name ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
+            content.trailing = .text(detail)
+            content.hints = [("↩", "open"), ("⌘↩", "new tab")]
+            content.spoken = spoken([name, folderPath, writer.map { "changed by \($0.name)" }, detail])
         case .command(let hit):
             let command = hit.command
             let value = command.value?()
-            let trailing: PaletteCell.Trailing = value.map { .text($0) } ?? command.keys.map { .keys($0.caps) } ?? .empty
-            let spoken = [command.group + ": " + command.title, hit.alias.map { "also \($0)" }, value, command.keys?.spoken]
-            cell.show(symbol: command.symbol, trailing: trailing, label: spoken.compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")) { selected in
-                let title = Self.styled(command.group + ": ", [], size: 13, role: .dim, selected: selected)
-                title.append(Self.styled(command.title, hit.positions, size: 13, role: .title, selected: selected))
-                if let alias = hit.alias {
-                    title.append(Self.styled(" (\(alias))", hit.aliasPositions.map { $0 + 2 }, size: 13, role: .dim, selected: selected))
-                }
-                return title
+            content.title = [.init(command.title, positions: hit.positions)]
+            if let alias = hit.alias { content.title.append(.init("(\(alias))", positions: hit.aliasPositions.map { $0 + 1 }, style: .aside)) }
+            content.title.append(.init(command.group, style: .aside))
+            content.trailing = value.map { .text($0) } ?? command.keys.map { .keys($0.caps) } ?? .empty
+            content.hints = switch command.action {
+            case .menu: [("↩", "run")]
+            case .toggle: [("↩", "switch")]
+            case .choose: [("↩", "values")]
             }
+            content.spoken = spoken([command.group + ": " + command.title, hit.alias.map { "also \($0)" }, value, command.keys?.spoken])
         case .heading(let heading, let positions):
-            let indent = String(repeating: "  ", count: max(heading.level - 1, 0))
-            cell.show(symbol: "number", trailing: .text("Line \(heading.line)"),
-                      label: [heading.title, heading.file, "line \(heading.line)"].filter { !$0.isEmpty }.joined(separator: ", ")) { selected in
-                let title = Self.styled(indent + heading.title, positions.map { $0 + indent.utf16.count }, size: 13, role: .title, selected: selected)
-                if !heading.file.isEmpty { title.append(Self.styled("   " + heading.file, [], size: 11, role: .dim, selected: selected)) }
-                return title
+            content.lead = .tag("h\(heading.level)")
+            content.title = [.init(heading.title, positions: positions)]
+            if heading.file.isEmpty {
+                content.trailing = .text("line \(heading.line)")
+            } else {
+                content.subtitle = "\(heading.file) · line \(heading.line)"
             }
+            content.hints = heading.url == nil ? [("↩", "go")] : [("↩", "go"), ("⌘↩", "new tab")]
+            content.spoken = spoken([heading.title, heading.file, "line \(heading.line)"])
         case .line(let line):
             let lines = (target?.windowController as? MainWindowController)?.textView.map { view in
                 (view.string as NSString).components(separatedBy: "\n").count
             }
-            cell.show(symbol: "arrow.right.to.line", trailing: .text(lines.map { "of \($0)" } ?? ""), label: "Go to line \(line)") { selected in
-                Self.styled("Go to Line \(line)", [], size: 13, role: .title, selected: selected)
-            }
-        case .prefix(let prefix, let title, let symbol):
-            cell.show(symbol: symbol, trailing: .keys(prefix.isEmpty ? [] : [prefix]), label: title) { selected in
-                Self.styled(title, [], size: 13, role: .title, selected: selected)
-            }
+            content.lead = .tag(":")
+            content.title = [.init("Go to line \(line)")]
+            content.trailing = .text(lines.map { "of \($0)" } ?? "")
+            content.hints = [("↩", "go")]
+            content.spoken = "Go to line \(line)"
+        case .prefix(let prefix, let title):
+            content.title = [.init(title)]
+            content.trailing = .keys(prefix.isEmpty ? [] : [prefix])
+            content.hints = [("↩", "use")]
+            content.spoken = title
         case .choice(let index, let positions):
             let name = choices?.names[index] ?? ""
             let current = choices?.current == index
-            cell.show(symbol: current ? "checkmark" : "", trailing: .text(current ? "Current" : ""), label: name) { selected in
-                Self.styled(name, positions, size: 13, role: .title, selected: selected)
-            }
+            content.lead = current ? .bead : .none
+            content.title = [.init(name, positions: positions)]
+            content.trailing = .text(current ? "current" : "")
+            content.hints = [("↩", "keep"), ("⎋", "restore")]
+            content.spoken = spoken([name, current ? "current" : nil])
         }
-        return cell
+        return content
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {
@@ -836,33 +980,6 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
             .announcement: label,
             .priority: NSAccessibilityPriorityLevel.high.rawValue,
         ])
-    }
-
-    private static func relative(_ date: Date) -> String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .short
-        return Date.now.timeIntervalSince(date) < 60 ? "Just now" : formatter.localizedString(for: date, relativeTo: .now)
-    }
-
-    fileprivate enum Role { case title, dim }
-
-    /// `text` with the letters at `positions` (offsets into the matched string, which `text` starts `from`) in
-    /// semibold, in ink or the dim ink, or in the paper color on the selected row's accent.
-    private static func styled(_ text: String, _ positions: [Int], from start: Int = 0, size: CGFloat, role: Role, selected: Bool)
-        -> NSMutableAttributedString {
-        let theme = ThemeStore.shared
-        let ink = selected ? theme.color(.paper) : theme.color(.ink)
-        let color = role == .title ? ink : selected ? theme.color(.paper).withAlphaComponent(0.72) : theme.color(.ink2)
-        let line = NSMutableParagraphStyle()
-        line.lineBreakMode = .byTruncatingTail
-        let string = NSMutableAttributedString(string: text, attributes: [
-            .font: NSFont.systemFont(ofSize: size), .foregroundColor: color, .paragraphStyle: line,
-        ])
-        let strong: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: size, weight: .semibold), .foregroundColor: ink]
-        for position in positions where position >= start && position - start < string.length {
-            string.addAttributes(strong, range: NSRange(location: position - start, length: 1))
-        }
-        return string
     }
 }
 
@@ -887,10 +1004,18 @@ private final class QuickOpenTable: NSTableView {
     }
 }
 
-/// A row: an SF Symbol, a one-line title with its dim group or folder, and at the right a shortcut as keycaps or a
-/// value. Colors follow the row's selection.
-private final class PaletteCell: NSTableCellView {
+/// A result row on one line, drawn: a 16 pt leading slot (a writer's dot, a mono tag or the current value's bead), the
+/// title in Bricolage with its matched letters underlined in signal, an optional mono subtitle after it, and at the
+/// right a value or keycaps. On the selected row the keyboard hints in mono take the value's place.
+private final class PaletteCell: NSView, ChromeSelectable {
     static let identifier = NSUserInterfaceItemIdentifier("palette")
+
+    enum Lead {
+        case none
+        case dot(NSColor)
+        case tag(String)
+        case bead
+    }
 
     enum Trailing {
         case empty
@@ -898,84 +1023,264 @@ private final class PaletteCell: NSTableCellView {
         case keys([String])
     }
 
-    private let symbol = NSImageView()
-    private let label = NSTextField(labelWithString: "")
-    private let value = NSTextField(labelWithString: "")
-    private let caps = Keycaps()
-    private var leading: NSLayoutConstraint?
-    private var title: (Bool) -> NSAttributedString = { _ in NSAttributedString() }
+    /// A run of the title line: the title, or an aside after it in `ink3`, such as an alias or a command's menu.
+    struct Segment {
+        enum Style { case title, aside }
+        let text: String
+        var positions: [Int]
+        var style: Style
+        /// Unmatched letters drop to `ink2`, so a file name's match stands out.
+        var dimUnmatched: Bool
+
+        init(_ text: String, positions: [Int] = [], style: Style = .title, dimUnmatched: Bool = false) {
+            self.text = text
+            self.positions = positions
+            self.style = style
+            self.dimUnmatched = dimUnmatched
+        }
+    }
+
+    struct Content {
+        var lead = Lead.none
+        var title: [Segment] = []
+        var subtitle = ""
+        var trailing = Trailing.empty
+        var hints: [(key: String, word: String)] = []
+        var spoken = ""
+    }
+
+    var content = Content() {
+        didSet {
+            setAccessibilityLabel(content.spoken)
+            needsDisplay = true
+        }
+    }
+
+    var selected = false {
+        didSet {
+            if selected != oldValue { needsDisplay = true }
+        }
+    }
+
+    /// Where the title font's baseline sits below the top of its line.
+    private static let baseline = NSLayoutManager().defaultBaselineOffset(for: Chrome.brand(14))
 
     init() {
         super.init(frame: .zero)
         identifier = Self.identifier
-        symbol.symbolConfiguration = .init(pointSize: 16, weight: .regular)
-        label.maximumNumberOfLines = 1
-        label.lineBreakMode = .byTruncatingTail
-        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        value.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
-        let trailing = NSStackView(views: [value, caps])
-        trailing.spacing = 0
-        trailing.setContentHuggingPriority(.required, for: .horizontal)
-        trailing.setContentCompressionResistancePriority(.required, for: .horizontal)
-        for view in [symbol, label, trailing] {
-            view.translatesAutoresizingMaskIntoConstraints = false
-            addSubview(view)
-        }
-        let leading = label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 40)
-        self.leading = leading
-        NSLayoutConstraint.activate([
-            symbol.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
-            symbol.centerYAnchor.constraint(equalTo: centerYAnchor),
-            symbol.widthAnchor.constraint(equalToConstant: 20),
-            leading,
-            label.centerYAnchor.constraint(equalTo: centerYAnchor),
-            label.trailingAnchor.constraint(lessThanOrEqualTo: trailing.leadingAnchor, constant: -12),
-            trailing.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
-            trailing.centerYAnchor.constraint(equalTo: centerYAnchor),
-        ])
+        setAccessibilityElement(true)
+        setAccessibilityRole(.staticText)
     }
 
     required init?(coder: NSCoder) {
         fatalError("PaletteCell is built in code")
     }
 
-    override var backgroundStyle: NSView.BackgroundStyle {
-        didSet { paint() }
-    }
+    override var isFlipped: Bool { true }
 
-    func show(symbol name: String?, trailing: Trailing, label spoken: String, title: @escaping (Bool) -> NSAttributedString) {
-        symbol.image = name.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: nil) }
-        leading?.constant = name == nil ? 14 : 40
-        self.title = title
-        switch trailing {
+    override func draw(_ dirtyRect: NSRect) {
+        let titleY = bounds.midY
+        var right = bounds.maxX - 12
+        let hinting = selected && !content.hints.isEmpty
+        switch content.trailing {
         case .empty:
-            value.isHidden = true
-            caps.isHidden = true
-        case .text(let text):
-            value.stringValue = text
-            value.isHidden = text.isEmpty
-            caps.isHidden = true
-        case .keys(let keys):
-            caps.caps = keys
-            caps.isHidden = keys.isEmpty
-            value.isHidden = true
+            break
+        case .text(let text) where !text.isEmpty && !hinting:
+            let string = NSAttributedString(string: text, attributes: [.font: Chrome.mono(11), .foregroundColor: Chrome.color(.ink3)])
+            let size = string.size()
+            string.draw(at: NSPoint(x: right - size.width, y: titleY - size.height / 2))
+            right -= ceil(size.width) + 12
+        case .keys(let keys) where !keys.isEmpty:
+            let width = Keycap.width(keys)
+            Keycap.draw(keys, x: right - width, midY: titleY, onFill: false, alpha: selected ? 1 : 0.6)
+            right -= width + 12
+        default:
+            break
         }
-        setAccessibilityLabel(spoken)
-        paint()
+        if hinting {
+            let hints = Self.hints(content.hints)
+            let size = hints.size()
+            hints.draw(at: NSPoint(x: right - size.width, y: titleY - size.height / 2))
+            right -= ceil(size.width) + 16
+        }
+        drawLead(midY: titleY)
+        let left: CGFloat = 44
+        let width = max(right - left, 0)
+        guard !content.subtitle.isEmpty else {
+            drawTitle(x: left, width: width, midY: titleY)
+            return
+        }
+        let line = NSMutableParagraphStyle()
+        line.lineBreakMode = .byTruncatingMiddle
+        let subtitle = NSAttributedString(string: content.subtitle, attributes: [
+            .font: Chrome.mono(11.5), .foregroundColor: Chrome.color(.ink3), .paragraphStyle: line,
+        ])
+        // The title keeps at least 60% of the room; the subtitle takes what is left and gives up its middle first.
+        let wanted = ceil(subtitle.size().width)
+        let title = drawTitle(x: left, width: max(width * 0.6, width - wanted - 12), midY: titleY)
+        let x = left + title + 12
+        let height = ceil(subtitle.size().height)
+        subtitle.draw(with: NSRect(x: x, y: titleY - height / 2 + 1, width: max(left + width - x, 0), height: height),
+                      options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
     }
 
-    private func paint() {
-        let selected = backgroundStyle == .emphasized
-        let theme = ThemeStore.shared
-        let dim = selected ? theme.color(.paper).withAlphaComponent(0.72) : theme.color(.ink2)
-        symbol.contentTintColor = dim
-        value.textColor = dim
-        caps.selected = selected
-        label.attributedStringValue = title(selected)
+    private func drawLead(midY: CGFloat) {
+        let dot = NSRect(x: 21, y: midY - 3, width: 6, height: 6)
+        switch content.lead {
+        case .none:
+            break
+        case .dot(let color):
+            color.setFill()
+            NSBezierPath(ovalIn: dot).fill()
+        case .bead:
+            NSGraphicsContext.saveGraphicsState()
+            let glow = NSShadow()
+            glow.shadowColor = Chrome.color(.glow).withAlphaComponent(CGFloat(Chrome.glowOpacity(dark: effectiveAppearance.isDark)))
+            glow.shadowBlurRadius = 4
+            glow.shadowOffset = .zero
+            glow.set()
+            Chrome.color(.signal).setFill()
+            NSBezierPath(ovalIn: dot).fill()
+            NSGraphicsContext.restoreGraphicsState()
+        case .tag(let tag):
+            let string = NSAttributedString(string: tag, attributes: [.font: Chrome.mono(10.5), .foregroundColor: Chrome.color(.ink3)])
+            let size = string.size()
+            string.draw(at: NSPoint(x: 24 - size.width / 2, y: midY - size.height / 2))
+        }
+    }
+
+    /// The title line, truncated at the tail, with a 1.5 pt signal underline 2 pt under the baseline of each run of
+    /// matched letters that is not cut off. Returns the width it took.
+    @discardableResult
+    private func drawTitle(x: CGFloat, width: CGFloat, midY: CGFloat) -> CGFloat {
+        let (string, matched) = Self.title(content.title)
+        let size = string.size()
+        let box = NSRect(x: x, y: midY - ceil(size.height) / 2, width: width, height: ceil(size.height))
+        string.draw(with: box, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+        let taken = min(ceil(size.width), width)
+        guard !matched.isEmpty else { return taken }
+        // Past this x the tail is cut off and an ellipsis drawn.
+        let limit = size.width <= width ? box.maxX : box.maxX - 14
+        let y = box.minY + Self.baseline + 2
+        Chrome.color(.signal).setFill()
+        var runs: [(start: Int, end: Int)] = []
+        for position in matched.sorted() {
+            if let last = runs.last, last.end == position {
+                runs[runs.count - 1].end = position + 1
+            } else {
+                runs.append((position, position + 1))
+            }
+        }
+        for run in runs {
+            let x0 = box.minX + string.attributedSubstring(from: NSRange(location: 0, length: run.start)).size().width
+            let x1 = box.minX + string.attributedSubstring(from: NSRange(location: 0, length: run.end)).size().width
+            guard x1 <= limit else { break }
+            NSRect(x: x0, y: y, width: x1 - x0, height: 1.5).fill()
+        }
+        return taken
+    }
+
+    /// The segments as one line two spaces apart, and the offsets of their matched letters in it.
+    private static func title(_ segments: [Segment]) -> (NSAttributedString, [Int]) {
+        let result = NSMutableAttributedString()
+        var matched: [Int] = []
+        for segment in segments where !segment.text.isEmpty {
+            let aside = segment.style == .aside
+            let size: CGFloat = aside ? 13 : 14
+            if result.length > 0 { result.append(NSAttributedString(string: "  ", attributes: [.font: Chrome.brand(size)])) }
+            let start = result.length
+            let color = Chrome.color(aside ? .ink3 : segment.dimUnmatched ? .ink2 : .ink)
+            result.append(NSAttributedString(string: segment.text, attributes: [.font: Chrome.brand(size), .foregroundColor: color]))
+            let length = (segment.text as NSString).length
+            let strong: [NSAttributedString.Key: Any] = [.font: Chrome.brand(size, weight: 560), .foregroundColor: Chrome.color(aside ? .ink2 : .ink)]
+            for position in segment.positions where position >= 0 && position < length {
+                result.addAttributes(strong, range: NSRange(location: start + position, length: 1))
+                matched.append(start + position)
+            }
+        }
+        let line = NSMutableParagraphStyle()
+        line.lineBreakMode = .byTruncatingTail
+        result.addAttribute(.paragraphStyle, value: line, range: NSRange(location: 0, length: result.length))
+        return (result, matched)
+    }
+
+    /// "↩ open   ⌘↩ new tab": keys in `ink2`, words in `ink3`, mono 11.
+    private static func hints(_ hints: [(key: String, word: String)]) -> NSAttributedString {
+        let result = NSMutableAttributedString()
+        let font = Chrome.mono(11)
+        for (index, hint) in hints.enumerated() {
+            if index > 0 { result.append(NSAttributedString(string: "   ", attributes: [.font: font])) }
+            result.append(NSAttributedString(string: hint.key, attributes: [.font: font, .foregroundColor: Chrome.color(.ink2)]))
+            result.append(NSAttributedString(string: " " + hint.word, attributes: [.font: font, .foregroundColor: Chrome.color(.ink3)]))
+        }
+        return result
     }
 }
 
-/// Each key of a shortcut in its own rounded box, at 11 points.
+/// A group header: Bricolage 11.5 / 600 in sentence case, `ink3`, sitting on the bottom of its 30 pt row.
+private final class PaletteHeader: NSView {
+    static let identifier = NSUserInterfaceItemIdentifier("paletteHeader")
+
+    var title = "" {
+        didSet {
+            setAccessibilityLabel(title)
+            needsDisplay = true
+        }
+    }
+
+    init() {
+        super.init(frame: .zero)
+        identifier = Self.identifier
+        setAccessibilityElement(true)
+        setAccessibilityRole(.staticText)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("PaletteHeader is built in code")
+    }
+
+    override var isFlipped: Bool { true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let string = Chrome.sectionTitle(title, color: Chrome.color(.ink3))
+        string.draw(at: NSPoint(x: 12, y: bounds.maxY - 6 - string.size().height))
+    }
+}
+
+/// The selected row: a `signal` wash at 8 pt radius and a 2 x 16 pt signal tick 6 pt in from its left edge, 3 pt wide
+/// under Increase Contrast. No fill above the wash, no hover.
+private final class PaletteRowView: NSTableRowView {
+    override var isSelected: Bool {
+        didSet {
+            // A row view being set up has no columns yet; `didAddSubview` passes the state on once its cell arrives.
+            guard isSelected != oldValue, numberOfColumns > 0 else { return }
+            (view(atColumn: 0) as? ChromeSelectable)?.selected = isSelected
+        }
+    }
+
+    override var isEmphasized: Bool {
+        get { false }
+        set {}
+    }
+
+    override func drawBackground(in dirtyRect: NSRect) {}
+
+    override func drawSelection(in dirtyRect: NSRect) {
+        Chrome.wash.setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: 8, yRadius: 8).fill()
+        let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
+        let tick = NSRect(x: 6, y: bounds.midY - 8, width: contrast ? 3 : 2, height: 16)
+        Chrome.color(.signal).setFill()
+        NSBezierPath(roundedRect: tick, xRadius: 1, yRadius: 1).fill()
+    }
+
+    override func didAddSubview(_ subview: NSView) {
+        super.didAddSubview(subview)
+        (subview as? ChromeSelectable)?.selected = isSelected
+    }
+}
+
+/// A shortcut as Station keycaps, one cap per key.
 private final class Keycaps: NSView {
     var caps: [String] = [] {
         didSet {
@@ -983,40 +1288,13 @@ private final class Keycaps: NSView {
             needsDisplay = true
         }
     }
-    var selected = false {
-        didSet { needsDisplay = true }
-    }
-
-    private static let font = NSFont.systemFont(ofSize: 11)
-    private static let height: CGFloat = 18
-    private static let spacing: CGFloat = 3
-
-    private static func width(_ cap: String) -> CGFloat {
-        max(height, ceil((cap as NSString).size(withAttributes: [.font: font]).width) + 8)
-    }
 
     override var intrinsicContentSize: NSSize {
-        NSSize(width: caps.map(Self.width).reduce(0, +) + Self.spacing * CGFloat(max(caps.count - 1, 0)), height: Self.height)
+        NSSize(width: Keycap.width(caps), height: Keycap.height)
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let theme = ThemeStore.shared
-        let paper = theme.color(.paper)
-        let attributes: [NSAttributedString.Key: Any] = [.font: Self.font, .foregroundColor: selected ? paper : theme.color(.ink2)]
-        var x: CGFloat = 0
-        for cap in caps {
-            let width = Self.width(cap)
-            let box = NSRect(x: x, y: (bounds.height - Self.height) / 2, width: width, height: Self.height).insetBy(dx: 0.5, dy: 0.5)
-            let path = NSBezierPath(roundedRect: box, xRadius: 4, yRadius: 4)
-            (selected ? paper.withAlphaComponent(0.16) : theme.color(.codeBackground)).setFill()
-            path.fill()
-            (selected ? paper.withAlphaComponent(0.5) : theme.color(.syntax)).setStroke()
-            path.lineWidth = 1
-            path.stroke()
-            let size = (cap as NSString).size(withAttributes: attributes)
-            (cap as NSString).draw(at: NSPoint(x: box.midX - size.width / 2, y: box.midY - size.height / 2), withAttributes: attributes)
-            x += width + Self.spacing
-        }
+        Keycap.draw(caps, x: 0, midY: bounds.midY, onFill: false)
     }
 }
 
@@ -1039,13 +1317,12 @@ private enum ShortcutHint {
         let hint = panel ?? make()
         panel = hint
         caps.caps = keys
-        caps.selected = false
         hint.contentView?.needsDisplay = true
         (hint.contentView?.subviews.first as? NSStackView)?.views.compactMap { $0 as? NSTextField }.forEach {
-            $0.textColor = ThemeStore.shared.color(.ink2)
+            $0.textColor = Chrome.color(.ink2)
         }
         hint.contentView?.layoutSubtreeIfNeeded()
-        let size = hint.contentView?.fittingSize ?? NSSize(width: 160, height: 30)
+        let size = hint.contentView?.fittingSize ?? NSSize(width: 160, height: 32)
         hint.setFrame(NSRect(x: window.frame.midX - size.width / 2, y: window.frame.minY + 24, width: size.width, height: size.height), display: true)
         hint.parent?.removeChildWindow(hint)
         window.addChildWindow(hint, ordered: .above)
@@ -1062,7 +1339,7 @@ private enum ShortcutHint {
     }
 
     private static func make() -> NSPanel {
-        let hint = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 160, height: 30), styleMask: [.borderless, .nonactivatingPanel],
+        let hint = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 160, height: 32), styleMask: [.borderless, .nonactivatingPanel],
                            backing: .buffered, defer: true)
         hint.isOpaque = false
         hint.backgroundColor = .clear
@@ -1071,7 +1348,7 @@ private enum ShortcutHint {
         hint.animationBehavior = .none
         hint.isReleasedWhenClosed = false
         let text = NSTextField(labelWithString: "Next time:")
-        text.font = .systemFont(ofSize: 12)
+        text.font = Chrome.label
         let row = NSStackView(views: [text, caps])
         row.spacing = 8
         row.translatesAutoresizingMaskIntoConstraints = false
@@ -1089,36 +1366,170 @@ private enum ShortcutHint {
     }
 }
 
-/// The selected result on the theme's accent, with the row's text in the paper color.
-private final class QuickOpenRowView: NSTableRowView {
-    override func drawSelection(in dirtyRect: NSRect) {
-        ThemeStore.shared.color(.accent).setFill()
-        NSBezierPath(roundedRect: bounds.insetBy(dx: 0, dy: 1), xRadius: 6, yRadius: 6).fill()
-    }
-
-    override var interiorBackgroundStyle: NSView.BackgroundStyle {
-        isSelected ? .emphasized : .normal
-    }
-}
-
-/// The panel's ground: the theme's paper with a hairline edge, rounded like a window.
+/// The panel's ground: opaque `raised` at a 14 pt radius with a `strokeSubtle` edge, and in dark a 1 pt highlight of
+/// `ink` at 6% along the inside of the top edge. No vibrancy.
 private final class PanelBackground: NSView {
+    private let highlight = NSView()
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        highlight.wantsLayer = true
+        highlight.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(highlight)
+        NSLayoutConstraint.activate([
+            highlight.topAnchor.constraint(equalTo: topAnchor, constant: 1),
+            highlight.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            highlight.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            highlight.heightAnchor.constraint(equalToConstant: 1),
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("PanelBackground is built in code")
+    }
+
     override var wantsUpdateLayer: Bool { true }
 
     override func updateLayer() {
-        layer?.backgroundColor = ThemeStore.shared.color(.paper).cgColor
-        layer?.borderColor = ThemeStore.shared.color(.syntax).cgColor
+        layer?.backgroundColor = Chrome.color(.raised).cgColor
+        layer?.borderColor = Chrome.strokeSubtle.cgColor
         layer?.borderWidth = 1
         layer?.cornerRadius = 14
         layer?.cornerCurve = .continuous
+        highlight.layer?.backgroundColor = effectiveAppearance.isDark ? Chrome.color(.ink).withAlphaComponent(0.06).cgColor : NSColor.clear.cgColor
     }
 }
 
-/// A hairline between the field, the results and the footer.
-private final class PanelRule: NSView {
+/// The horizon under the input, the editor's line in small: a `hairline` across the panel, lit in signal with its glow
+/// from the left edge to `lit`, where a bead sits, then fading out over 24 pt.
+private final class PaletteHorizon: NSView {
+    var lit: CGFloat = 0 {
+        didSet {
+            if lit != oldValue { needsDisplay = true }
+        }
+    }
+
+    private let rule = CALayer()
+    private let glowing = CAGradientLayer()
+    private let bead = CALayer()
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        for sublayer in [rule, glowing, bead] {
+            layer?.addSublayer(sublayer)
+        }
+        glowing.startPoint = CGPoint(x: 0, y: 0.5)
+        glowing.endPoint = CGPoint(x: 1, y: 0.5)
+        glowing.shadowOffset = .zero
+        glowing.shadowRadius = 3
+        bead.cornerRadius = 4.5
+        bead.borderWidth = 1.5
+        setAccessibilityElement(false)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("PaletteHorizon is built in code")
+    }
+
     override var wantsUpdateLayer: Bool { true }
 
+    override func layout() {
+        super.layout()
+        needsDisplay = true
+    }
+
     override func updateLayer() {
-        layer?.backgroundColor = ThemeStore.shared.color(.syntax).cgColor
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        let appearance = effectiveAppearance
+        let signal = Chrome.color(.signal).resolved(for: appearance)
+        let mid = bounds.midY
+        let lit = min(max(lit, 0), bounds.width)
+        let end = min(lit + 24, bounds.width)
+        rule.frame = NSRect(x: 0, y: mid - 0.5, width: bounds.width, height: 1)
+        rule.backgroundColor = Chrome.color(.hairline).resolved(for: appearance).cgColor
+        glowing.frame = NSRect(x: 0, y: mid - 1, width: end, height: 2)
+        glowing.colors = [signal.cgColor, signal.cgColor, signal.withAlphaComponent(0).cgColor]
+        glowing.locations = [0, NSNumber(value: Double(end > 0 ? lit / end : 0)), 1]
+        glowing.shadowColor = Chrome.color(.glow).resolved(for: appearance).cgColor
+        glowing.shadowOpacity = Chrome.glowOpacity(dark: appearance.isDark)
+        // A 6 pt bead in a 1.5 pt ring of the panel's color, so it reads as sitting on the line.
+        bead.frame = NSRect(x: lit - 4.5, y: mid - 4.5, width: 9, height: 9)
+        bead.backgroundColor = signal.cgColor
+        bead.borderColor = Chrome.color(.raised).resolved(for: appearance).cgColor
+    }
+}
+
+/// The scope a typed prefix sets, in front of the field: mono 11 `signal` on the wash, 22 pt tall, 6 pt radius.
+private final class ScopeChip: NSView {
+    var title = "" {
+        didSet {
+            invalidateIntrinsicContentSize()
+            needsDisplay = true
+        }
+    }
+
+    private var string: NSAttributedString {
+        NSAttributedString(string: title, attributes: [.font: Chrome.mono(11, weight: .medium), .foregroundColor: Chrome.color(.signal)])
+    }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        setAccessibilityElement(false)
+        setContentHuggingPriority(.required, for: .horizontal)
+        setContentCompressionResistancePriority(.required, for: .horizontal)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("ScopeChip is built in code")
+    }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: ceil(string.size().width) + 16, height: 22)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        Chrome.wash.setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6).fill()
+        let string = string
+        let size = string.size()
+        string.draw(at: NSPoint(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2))
+    }
+}
+
+/// A 24 pt fade from the panel's color at the top of the list, shown while rows scroll under it.
+private final class TopFade: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let raised = Chrome.color(.raised)
+        NSGradient(starting: raised, ending: raised.withAlphaComponent(0))?.draw(in: bounds, angle: -90)
+    }
+}
+
+/// The dim over the window behind the palette: `rgba(4,9,15,0.6)` in dark, `rgba(17,27,40,0.5)` in light. Clicks pass
+/// through it.
+private final class Backdrop: NSView {
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("Backdrop is built in code")
+    }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func updateLayer() {
+        let dim = effectiveAppearance.isDark
+            ? NSColor(srgbRed: 4 / 255, green: 9 / 255, blue: 15 / 255, alpha: 0.6)
+            : NSColor(srgbRed: 17 / 255, green: 27 / 255, blue: 40 / 255, alpha: 0.5)
+        layer?.backgroundColor = dim.cgColor
     }
 }

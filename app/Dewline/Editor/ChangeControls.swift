@@ -28,28 +28,56 @@ private func paint(_ layer: CALayer?, in view: NSView, radius: CGFloat) {
 @MainActor
 private func label(_ text: String, size: CGFloat, weight: NSFont.Weight = .regular, color: Token) -> NSTextField {
     let label = NSTextField(labelWithString: text)
-    label.font = .systemFont(ofSize: size, weight: weight)
+    label.font = Chrome.brand(size, weight: weight == .semibold ? 600 : 450)
     label.textColor = ThemeStore.shared.color(color)
     return label
 }
 
-/// A push button that calls `action` when clicked.
+/// A button that calls `action` when clicked, drawn as Station's chrome: the prominent one filled with ink and set in
+/// the island's color, the others bare text in `ink2`. Signal never fills it.
 @MainActor
 private final class ActionButton: NSButton {
     private var handler: () -> Void = {}
+    private var prominent = false
 
     convenience init(_ title: String, prominent: Bool = false, shortcut: String? = nil, label: String, _ action: @escaping () -> Void) {
         self.init(frame: .zero)
         self.title = title
+        self.prominent = prominent
         handler = action
         target = self
         self.action = #selector(clicked)
-        bezelStyle = .push
-        controlSize = .small
-        font = .systemFont(ofSize: NSFont.smallSystemFontSize, weight: prominent ? .semibold : .regular)
-        if prominent { bezelColor = ThemeStore.shared.color(.accent) }
+        isBordered = false
+        wantsLayer = true
         toolTip = shortcut.map { "\(title) (\($0))" }
         setAccessibilityLabel(label)
+        paint()
+        NotificationCenter.default.addObserver(self, selector: #selector(paint), name: ThemeStore.didChange, object: nil)
+    }
+
+    override var intrinsicContentSize: NSSize {
+        let size = super.intrinsicContentSize
+        return NSSize(width: size.width + (prominent ? 24 : 8), height: 24)
+    }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        layer?.cornerRadius = 6
+        layer?.backgroundColor = prominent ? ThemeStore.shared.color(.ink).resolved(for: effectiveAppearance).cgColor : nil
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        paint()
+    }
+
+    @objc private func paint() {
+        attributedTitle = NSAttributedString(string: title, attributes: [
+            .font: prominent ? Chrome.labelActive : Chrome.label,
+            .foregroundColor: ThemeStore.shared.color(prominent ? .islandEditor : .ink2),
+        ])
+        needsDisplay = true
     }
 
     @objc private func clicked() {
@@ -57,23 +85,44 @@ private final class ActionButton: NSButton {
     }
 }
 
-/// Removed text, struck, at ink 42% with the strike in the writer's color.
+/// Removed text, struck, at ink 42% with the strike in the writer's color. A short removal on one line reads inline
+/// at its deletion point, in a gap the styler opens there; a longer one hangs under its paragraph.
 @MainActor
 final class Ghost: NSView, Hanging {
-    private let text = NSTextField(wrappingLabelWithString: "")
+    private let string: NSAttributedString
+    private let text: NSTextField?
+    /// The gap an inline ghost takes in its line, its text and a space; nil for a ghost that hangs.
+    let inlineWidth: CGFloat?
+    /// From an inline ghost's top to its baseline.
+    let ascent: CGFloat
 
-    init(_ removed: String, writer: MarkWriter) {
-        super.init(frame: .zero)
+    /// A ghost no wider than `limit` reads inline.
+    init(_ removed: String, writer: MarkWriter, inlineUpTo limit: CGFloat) {
         let shown = removed.hasSuffix("\n") ? String(removed.dropLast()) : removed
-        text.attributedStringValue = NSAttributedString(string: shown, attributes: [
-            .font: ThemeStore.shared.bodyFont,
+        let font = ThemeStore.shared.bodyFont
+        string = NSAttributedString(string: shown, attributes: [
+            .font: font,
             .foregroundColor: ThemeStore.shared.color(.ink).withAlphaComponent(0.42),
             .strikethroughStyle: NSUnderlineStyle.single.rawValue,
             .strikethroughColor: writer.color,
         ])
-        text.isSelectable = false
-        text.setAccessibilityLabel("Removed by \(writer.name): \(shown)")
-        addSubview(text)
+        let width = ceil(string.size().width)
+        let inline = !shown.isEmpty && !shown.contains(where: \.isNewline) && width <= limit
+        inlineWidth = inline ? width + ceil(NSAttributedString(string: " ", attributes: [.font: font]).size().width) : nil
+        ascent = ceil(font.ascender)
+        text = inline ? nil : NSTextField(wrappingLabelWithString: "")
+        super.init(frame: NSRect(x: 0, y: 0, width: width, height: ceil(font.ascender - font.descender)))
+        let label = "Removed by \(writer.name): \(shown)"
+        if let text {
+            text.attributedStringValue = string
+            text.isSelectable = false
+            text.setAccessibilityLabel(label)
+            addSubview(text)
+        } else {
+            setAccessibilityElement(true)
+            setAccessibilityRole(.staticText)
+            setAccessibilityLabel(label)
+        }
     }
 
     required init?(coder: NSCoder) {
@@ -83,13 +132,18 @@ final class Ghost: NSView, Hanging {
     override var isFlipped: Bool { true }
 
     func height(for width: CGFloat) -> CGFloat {
+        guard let text else { return frame.height }
         text.preferredMaxLayoutWidth = width
         return ceil(text.fittingSize.height)
     }
 
     override func layout() {
         super.layout()
-        text.frame = bounds
+        text?.frame = bounds
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        if text == nil { string.draw(at: .zero) }
     }
 }
 
@@ -161,64 +215,5 @@ final class ConflictCard: NSView, Hanging {
     func height(for width: CGFloat) -> CGFloat {
         theirs.preferredMaxLayoutWidth = width - 2 * Self.padding
         return ceil(stack.fittingSize.height)
-    }
-}
-
-/// The opaque strip under the change at the caret: the writer's dot and stamp, Keep (Cmd-Return) and Revert
-/// (Option-Cmd-Delete).
-@MainActor
-final class ChangeBar: NSView {
-    private let stack = NSStackView()
-    private let dot = NSView()
-    private let stamp = NSTextField(labelWithString: "")
-    private var act: (Bool) -> Void = { _ in }
-    private(set) var writer: MarkWriter?
-
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        wantsLayer = true
-        setAccessibilityElement(true)
-        setAccessibilityRole(.group)
-        dot.wantsLayer = true
-        dot.layer?.cornerRadius = 3
-        let keep = ActionButton("Keep", prominent: true, shortcut: "⌘↩", label: "Keep this change") { [weak self] in self?.act(true) }
-        let revert = ActionButton("Revert", shortcut: "⌥⌘⌫", label: "Revert this change") { [weak self] in self?.act(false) }
-        for view in [dot, stamp, keep, revert] { stack.addArrangedSubview(view) }
-        stack.setCustomSpacing(6, after: dot)
-        stack.setCustomSpacing(14, after: stamp)
-        stack.spacing = 6
-        stack.edgeInsets = NSEdgeInsets(top: 0, left: 12, bottom: 0, right: 6)
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stack)
-        NSLayoutConstraint.activate([
-            dot.widthAnchor.constraint(equalToConstant: 6),
-            dot.heightAnchor.constraint(equalToConstant: 6),
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor),
-            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
-            heightAnchor.constraint(equalToConstant: 32),
-        ])
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("ChangeBar is built in code")
-    }
-
-    override var isFlipped: Bool { true }
-    override var wantsUpdateLayer: Bool { true }
-
-    override func updateLayer() {
-        paint(layer, in: self, radius: 16)
-        dot.layer?.backgroundColor = writer?.color.resolved(for: effectiveAppearance).cgColor
-    }
-
-    /// Shows `writer`'s change; `act` gets true for Keep and false for Revert.
-    func show(_ writer: MarkWriter, act: @escaping (Bool) -> Void) {
-        self.act = act
-        guard writer != self.writer else { return }
-        self.writer = writer
-        stamp.attributedStringValue = writer.stamp
-        setAccessibilityLabel("\(writer.name) changed this")
-        needsDisplay = true
     }
 }

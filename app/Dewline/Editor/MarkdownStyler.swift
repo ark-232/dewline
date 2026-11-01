@@ -10,6 +10,8 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
     let highlights = CodeHighlights()
     let tables: Tables
     let tasks: TaskBoxes
+    let fences: CodeFences
+    let math: InlineMath
     private(set) var restyles = 0
     private(set) var showsSource = false
     /// Source line height: 22 pt, or prose's 24.5 pt pitch through `DewlineSourceLineHeight`, until the owner picks one.
@@ -43,7 +45,7 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
     /// The attributes styling owns; restyling leaves every other attribute in the storage as it is.
     private static let keys = [
         NSAttributedString.Key.font, .foregroundColor, .backgroundColor, .paragraphStyle, .underlineStyle, .strikethroughStyle, .kern,
-        .dewlineMarkerFont, .dewlineBlock, .dewlineQuote, .baselineOffset, .dewlineCallout,
+        .dewlineMarkerFont, .dewlineBlock, .dewlineQuote, .baselineOffset, .dewlineCallout, .dewlineCode, .dewlineMath,
     ].map { $0.rawValue as NSString }
     /// The most text one pass styles while more waits: several screens, a few milliseconds of work.
     private static let chunk = BlockMap.screen
@@ -69,6 +71,8 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
         blocks = RenderedBlocks(map: map)
         tables = Tables(map: map)
         tasks = TaskBoxes(map: map)
+        fences = CodeFences(map: map)
+        math = InlineMath(map: map)
         super.init()
         map.merged = { [weak self] changed in self?.restyleLater(changed) }
         for name in [NSNotification.Name.NSUndoManagerDidUndoChange, .NSUndoManagerDidRedoChange] {
@@ -222,6 +226,8 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
             highlights.textDidChange(edited: edit, delta: delta)
             tables.textDidChange(edited: edit, delta: delta)
             tasks.textDidChange(edited: edit, delta: delta)
+            fences.textDidChange(edited: edit, delta: delta)
+            math.textDidChange(edited: edit, delta: delta)
             range = NSUnionRange(range, changed)
             if let unfolded { range = NSUnionRange(range, unfolded) }
             if textView!.defersStyling {
@@ -345,6 +351,11 @@ extension MarkdownStyler {
         styled.addAttributes(baseAttributes, range: whole)
         revealed = revealed.filter { !NSLocationInRange($0.range.location, paragraphs) }
         let selection = selection.map { NSRange(location: $0.location - paragraphs.location, length: $0.length) }
+        // A caret in an agent's marked change, where the Keep bar puts it, leaves the markers around it hidden.
+        let changed = textView?.marks.painted.values.map { NSRange(location: $0.location - paragraphs.location, length: $0.length) } ?? []
+        let revealing = selection.filter { caret in
+            caret.length > 0 || !changed.contains { $0.location <= caret.location && caret.location <= NSMaxRange($0) }
+        }
         for block in map.blocks(in: paragraphs) {
             let offset = block.range.location - paragraphs.location
             let lines = NSRange(location: offset, length: block.range.length)
@@ -395,7 +406,7 @@ extension MarkdownStyler {
                 for marker in span.markers {
                     styled.addAttribute(.dewlineMarkerFont, value: styled.attribute(.font, at: marker.location, effectiveRange: nil)!, range: marker)
                 }
-                let reveal = Self.touches(span, selection)
+                let reveal = Self.touches(span, revealing)
                 if reveal { revealed.insert(span.shifted(by: paragraphs.location)) }
                 mark(span, revealed: reveal || source, in: styled)
             }
@@ -404,6 +415,8 @@ extension MarkdownStyler {
         if !source {
             tables.style(styled, at: paragraphs.location, selection: selection)
             tasks.style(styled, at: paragraphs.location, selection: selection)
+            fences.style(styled, at: paragraphs.location, selection: selection, folds: folds)
+            math.style(styled, at: paragraphs.location, selection: selection)
         }
         for fold in folds {
             let hidden = NSIntersectionRange(fold, paragraphs)
@@ -422,6 +435,12 @@ extension MarkdownStyler {
                 .mutableCopy() as! NSMutableParagraphStyle
             style.paragraphSpacing += height
             styled.addAttribute(.paragraphStyle, value: style, range: paragraph)
+        }
+        // A short removal's ghost reads inline, in a gap after the character before its deletion point.
+        for (after, width) in textView?.marks.gaps(in: paragraphs) ?? [] {
+            let local = NSRange(location: after - paragraphs.location, length: 1)
+            let kern = styled.attribute(.kern, at: local.location, effectiveRange: nil) as? CGFloat ?? 0
+            styled.addAttribute(.kern, value: kern + width, range: local)
         }
         // Only runs whose styling differs are written, once each, so layout invalidates only what changed. The CF
         // accessors return a run's dictionary without bridging it to Swift, which costs more than the comparison.
@@ -481,6 +500,7 @@ extension MarkdownStyler {
         let show = now.subtracting(revealed)
         revealed = now
         let changedBlocks = blocks.revealChanges(selection) + tables.revealChanges(selection) + tasks.revealChanges(selection)
+            + fences.revealChanges(selection, in: storage.mutableString) + math.revealChanges(selection)
         guard !hide.isEmpty || !show.isEmpty || !changedBlocks.isEmpty else { return }
         storage.beginEditing()
         // In document order, the storage's attribute writes stay linear in the span count.
@@ -488,6 +508,8 @@ extension MarkdownStyler {
         for span in show.sorted(by: { $0.range.location < $1.range.location }) { mark(span, revealed: true, in: storage) }
         for range in changedBlocks { restyle(range, in: storage, selection: selection) }
         storage.endEditing()
+        // Code wells and inline math draw behind the text, so a block that changes shape repaints them.
+        if !changedBlocks.isEmpty { textView.needsDisplay = true }
     }
 
     /// Restyles, between events, what a whole parse changed.

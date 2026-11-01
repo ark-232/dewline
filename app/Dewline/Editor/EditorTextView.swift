@@ -52,6 +52,26 @@ final class EditorTextView: CaretTextView {
     var edited: ((NSRange, Int) -> Void)?
     /// Called when a composition or a Writing Tools session ends.
     var inputEnded: (() -> Void)?
+    /// The mono line over the text, in `ink3`, such as the file's path and word count; nil leaves the room to the text.
+    var metaLine: String? {
+        didSet {
+            guard metaLine != oldValue else { return }
+            if metaLine != nil, meta == nil {
+                let label = NSTextField(labelWithString: "")
+                label.font = Chrome.mono(11.5)
+                label.lineBreakMode = .byTruncatingMiddle
+                addSubview(label)
+                meta = label
+            }
+            meta?.stringValue = metaLine ?? ""
+            meta?.isHidden = metaLine == nil
+            if (metaLine == nil) != (oldValue == nil) { fitColumn(to: frame.width) }
+            placeMeta()
+        }
+    }
+    private var meta: NSTextField?
+    /// The room the meta line takes over the text.
+    private static let metaRoom: CGFloat = 36
 
     var defersStyling: Bool {
         composing || hasMarkedText()
@@ -72,6 +92,7 @@ final class EditorTextView: CaretTextView {
         styler.textView = self
         styler.blocks.textView = self
         styler.highlights.textView = self
+        styler.math.textView = self
         textLayoutManager?.renderingAttributesValidator = { [weak self] layout, fragment in
             MainActor.assumeIsolated { self?.styler.highlights.validate(layout, fragment) }
         }
@@ -88,6 +109,10 @@ final class EditorTextView: CaretTextView {
         marks.wantsLayer = true
         addSubview(marks, positioned: .below, relativeTo: nil)
         applyTheme()
+        // The product's own name is not a misspelling, in any document.
+        for word in ["Dewline", "dewline"] {
+            NSSpellChecker.shared.ignoreWord(word, inSpellDocumentWithTag: spellCheckerDocumentTag)
+        }
         NotificationCenter.default.addObserver(self, selector: #selector(themeDidChange(_:)), name: ThemeStore.didChange, object: nil)
     }
 
@@ -130,6 +155,7 @@ final class EditorTextView: CaretTextView {
         selectedTextAttributes = [.backgroundColor: store.color(.selection)]
         typingAttributes = styler.baseAttributes
         vimStatus?.textColor = store.color(.ink2)
+        meta?.textColor = store.color(.ink3)
         isAutomaticQuoteSubstitutionEnabled = store.smartPunctuation
         isAutomaticDashSubstitutionEnabled = store.smartPunctuation
         if isContinuousSpellCheckingEnabled != store.spellCheck { isContinuousSpellCheckingEnabled = store.spellCheck }
@@ -160,13 +186,25 @@ final class EditorTextView: CaretTextView {
     private func fitColumn(to width: CGFloat) {
         let padding = textContainer?.lineFragmentPadding ?? 0
         let margin = max(32, ((width - ThemeStore.shared.measure) / 2 - padding).rounded(.down))
-        let height = typewriterMode ? max(24, ((enclosingScrollView?.contentView.bounds.height ?? 0) / 2).rounded()) : 24
+        let top: CGFloat = metaLine == nil ? 24 : 24 + Self.metaRoom
+        let height = typewriterMode ? max(top, ((enclosingScrollView?.contentView.bounds.height ?? 0) / 2).rounded()) : top
         if textContainerInset != NSSize(width: margin, height: height) {
             textContainerInset = NSSize(width: margin, height: height)
         }
+        placeMeta()
     }
 
-    /// Draws the fold disclosures and each quote's rule at the column's left edge.
+    /// The meta line sits over the column's first line, as wide as the column.
+    private func placeMeta() {
+        guard let meta, metaLine != nil else { return }
+        let padding = textContainer?.lineFragmentPadding ?? 0
+        let size = meta.fittingSize
+        let width = max((textContainer?.size.width ?? 0) - 2 * padding, 0)
+        meta.frame = NSRect(x: textContainerInset.width + padding, y: textContainerInset.height - Self.metaRoom + 4, width: min(size.width, width), height: size.height)
+    }
+
+    /// Draws the fold disclosures, code wells, callouts, each quote's rule at the column's left edge (a callout's well
+    /// stands alone), and inline math.
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
         drawDisclosures(in: rect)
@@ -178,14 +216,16 @@ final class EditorTextView: CaretTextView {
         func line(at index: Int) -> NSRect {
             convert(window.convertFromScreen(firstRect(forCharacterRange: NSRange(location: index, length: 0), actualRange: nil)), from: nil)
         }
+        drawCodeWells(in: visible, line: line(at:))
         drawCallouts(in: visible, line: line(at:))
         ThemeStore.shared.color(.quoteRule).setFill()
         storage.enumerateAttribute(.dewlineQuote, in: visible) { value, range, _ in
-            guard value != nil else { return }
+            guard value != nil, storage.attribute(.dewlineCallout, at: range.location, effectiveRange: nil) == nil else { return }
             let top = line(at: range.location)
             let bottom = line(at: max(NSMaxRange(range) - 1, range.location))
             NSRect(x: textContainerOrigin.x + (textContainer?.lineFragmentPadding ?? 0), y: top.minY, width: 2, height: bottom.maxY - top.minY).fill()
         }
+        drawInlineMath(in: visible, line: line(at:))
     }
 
     /// The text's children plus one image per rendered block, labeled with its source, and one checkbox per task box.
@@ -318,6 +358,26 @@ final class EditorTextView: CaretTextView {
         marks.revertAtCaret()
     }
 
+    /// Shift-Cmd-Return: keeps every marked change in this file.
+    @objc func keepAllChanges(_ sender: Any?) {
+        marks.live?.decideAll(keep: true)
+    }
+
+    /// Option-Shift-Cmd-Delete: reverts every marked change in this file.
+    @objc func revertAllChanges(_ sender: Any?) {
+        marks.live?.decideAll(keep: false)
+    }
+
+    /// Control-Cmd-Down.
+    @objc func nextChange(_ sender: Any?) {
+        Review.step(from: self, forward: true)
+    }
+
+    /// Control-Cmd-Up.
+    @objc func previousChange(_ sender: Any?) {
+        Review.step(from: self, forward: false)
+    }
+
     func storageDidEdit(_ range: NSRange, delta: Int) {
         version += 1
         history.didEdit(range, delta: delta)
@@ -446,7 +506,6 @@ final class EditorTextView: CaretTextView {
 
     override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
         super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
-        marks.caretMoved()
         guard !stillSelecting else { return }
         updateFocus()
         centerCaretSoon()
@@ -608,6 +667,10 @@ final class EditorTextView: CaretTextView {
             return marks.changeAtCaret != nil
         }
         switch menuItem.action {
+        case #selector(keepAllChanges(_:)), #selector(revertAllChanges(_:)):
+            return marks.live?.changes.values.contains(where: \.marked) == true
+        case #selector(nextChange(_:)), #selector(previousChange(_:)):
+            return Review.hasMarked(in: window)
         case #selector(toggleSource(_:)): menuItem.state = styler.showsSource ? .on : .off
         case #selector(toggleFocusMode(_:)): menuItem.state = focusMode ? .on : .off
         case #selector(toggleTypewriterMode(_:)): menuItem.state = typewriterMode ? .on : .off

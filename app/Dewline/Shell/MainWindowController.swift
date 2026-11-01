@@ -1,8 +1,10 @@
 import AppKit
 import MdCore
 
-/// One tab: the sidebar beside the open file, or beside an empty page in a folder window until a file opens.
-final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NSMenuItemValidation {
+/// One tab: the sidebar beside the open file, or beside an empty page in a folder window until a file opens. The
+/// window is Station's: no toolbar, a title band on the theme's frame, and the sidebar and the editor as two islands.
+/// Each tab has its own window; its `TabSet` keeps only the selected one on screen and draws the tab row.
+final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuItemValidation {
     /// Every tab, kept here because a folder window has no document to own its controller.
     private static var all: Set<MainWindowController> = []
 
@@ -10,7 +12,18 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     /// The folder's Markdown files for Quick Open, shared with the folder's other tabs.
     let index: FolderIndex?
     private let sidebar: SidebarViewController
-    private let page = BackdropView()
+    private let split = StationSplitController()
+    private let band: TitleBand
+    /// The editor island: the tab row along its top with the horizon on its bottom edge, the page, and the Keep/Revert
+    /// bar along its bottom.
+    private let editor = IslandView(.islandEditor)
+    private let tabRow = TabRow()
+    private let horizon = HorizonView()
+    /// This window's tabs, shared with the tabs beside this one.
+    private(set) var tabs: TabSet!
+    private let keepBar = KeepBar()
+    private let page = NSView()
+    private var pageContent: NSView?
     /// "Claude finished · 3 places in 2 files · Review", under the tab bar.
     let finished = FinishedLine()
     private(set) var textView: EditorTextView?
@@ -19,66 +32,83 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     private var history = History() {
         didSet { updateNavigation() }
     }
-    private weak var navigation: NSToolbarItemGroup?
-    private let crumbs = NSPathControl()
     /// The breadcrumbs' folders and file, one per path item.
     private var crumbURLs: [URL] = []
     private var countUpdate: Task<Void, Never>?
+    private var edited = false
 
-    init(folder: Folder?) {
+    /// A tab beside `neighbor`, in its window, or a window of its own.
+    init(folder: Folder?, joining neighbor: MainWindowController? = nil) {
         self.folder = folder
         index = folder.map(FolderIndex.of)
         sidebar = SidebarViewController(folder: folder)
-        let split = NSSplitViewController()
-        let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebar)
+        band = TitleBand(sidebarToggle: split)
+        // A plain item, so no system sidebar glass draws under the island; it keeps its width as the window resizes.
+        let sidebarItem = NSSplitViewItem(viewController: sidebar)
+        sidebarItem.canCollapse = true
         sidebarItem.minimumThickness = 200
         sidebarItem.maximumThickness = 360
+        sidebarItem.holdingPriority = NSLayoutConstraint.Priority(260)
         let pageController = NSViewController()
-        pageController.view = page
+        pageController.view = editor
         let pageItem = NSSplitViewItem(viewController: pageController)
-        pageItem.automaticallyAdjustsSafeAreaInsets = true
         split.splitViewItems = [sidebarItem, pageItem]
+        let root = NSViewController()
+        root.view = FrameView(frame: NSRect(x: 0, y: 0, width: 1000, height: 700))
+        root.addChild(split)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
-        window.contentViewController = split
+        window.contentViewController = root
         window.setContentSize(NSSize(width: 1000, height: 700))
-        window.tabbingMode = .preferred
-        window.tabbingIdentifier = folder.map { "folder " + $0.url.path } ?? "files"
+        window.contentMinSize = NSSize(width: 560, height: 360)
+        // Dewline draws the tabs; the system's tab bar can't take Station's look.
+        window.tabbingMode = .disallowed
         // Resume reopens every window at launch, so AppKit restores none.
         window.isRestorable = false
         window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.backgroundColor = Chrome.color(.frame)
         window.identifier = NSUserInterfaceItemIdentifier("Document")
-        if let front = NSApp.orderedWindows.first(where: { $0.windowController is MainWindowController }) {
-            window.cascadeTopLeft(from: front.cascadeTopLeft(from: .zero))
+        MainWindowController.lay(band: band, split: split.view, editor: editor, in: root.view, window: window)
+        MainWindowController.lay(tabs: tabRow, horizon: horizon, page: page, bar: keepBar, in: editor)
+        sidebar.view.setFrameSize(NSSize(width: 248, height: sidebar.view.frame.height))
+        if let front = neighbor?.window ?? NSApp.orderedWindows.first(where: { $0.isVisible && $0.windowController is MainWindowController }) {
+            if neighbor == nil {
+                window.cascadeTopLeft(from: front.cascadeTopLeft(from: .zero))
+            } else {
+                window.setFrame(front.frame, display: false)
+            }
         } else {
             window.center()
         }
         super.init(window: window)
-        let toolbar = NSToolbar(identifier: "Main")
-        toolbar.delegate = self
-        toolbar.displayMode = .iconOnly
-        window.toolbar = toolbar
-        window.toolbarStyle = .unified
+        if let neighbor {
+            tabs = neighbor.tabs
+            tabs.insert(self, after: neighbor)
+        } else {
+            tabs = TabSet(self)
+        }
+        tabRow.tabs = tabs
         window.delegate = self
         sidebar.open = { [weak self] url, newTab in self?.open(url, newTab: newTab) }
         sidebar.jump = { [weak self] heading in self?.jump(to: heading) }
-        crumbs.pathStyle = .standard
-        crumbs.focusRingType = .none
-        crumbs.target = self
-        crumbs.action = #selector(crumbClicked(_:))
-        crumbs.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        crumbs.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        band.crumbClicked = { [weak self] index, view in self?.crumbClicked(index, under: view) }
+        keepBar.beadX = { [weak horizon] id in horizon?.beadX[id] }
+        horizon.beadsMoved = { [weak keepBar] in keepBar?.placeSegment() }
+        NotificationCenter.default.addObserver(self, selector: #selector(updatePresence), name: Collaboration.changed, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(updatePresence), name: LiveFile.changesDidChange, object: nil)
         sidebar.reveal = { [weak self] url, match, newTab in self?.reveal(match, in: url, newTab: newTab) }
         Self.all.insert(self)
         if let folder {
             window.title = FileManager.default.displayName(atPath: folder.url.path)
             window.representedURL = folder.url
             let hint = NSTextField(labelWithString: "Choose a Markdown file in the sidebar.")
-            hint.textColor = .tertiaryLabelColor
+            hint.font = Chrome.label
+            hint.textColor = Chrome.color(.ink3)
             hint.translatesAutoresizingMaskIntoConstraints = false
             let empty = PaperView()
             empty.addSubview(hint)
@@ -89,13 +119,127 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
             setPage(empty)
         }
         updateBreadcrumbs()
+        updateNavigation()
     }
 
     required init?(coder: NSCoder) {
         fatalError("MainWindowController is built in code")
     }
 
+    /// The band across the top of the frame; under it the islands, 6 pt from the window's sides and bottom, and below
+    /// the content area's top.
+    private static func lay(band: TitleBand, split: NSView, editor: NSView, in frame: NSView, window: NSWindow) {
+        for view in [band, split] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            frame.addSubview(view)
+        }
+        let below = split.topAnchor.constraint(equalTo: frame.topAnchor, constant: TitleBand.height)
+        below.priority = .defaultLow
+        var constraints = [
+            band.topAnchor.constraint(equalTo: frame.topAnchor),
+            band.leadingAnchor.constraint(equalTo: frame.leadingAnchor),
+            band.trailingAnchor.constraint(equalTo: frame.trailingAnchor),
+            split.leadingAnchor.constraint(equalTo: frame.leadingAnchor, constant: 6),
+            split.trailingAnchor.constraint(equalTo: frame.trailingAnchor, constant: -6),
+            split.bottomAnchor.constraint(equalTo: frame.bottomAnchor, constant: -6),
+            split.topAnchor.constraint(greaterThanOrEqualTo: band.bottomAnchor),
+            below,
+        ]
+        if let content = window.contentLayoutGuide as? NSLayoutGuide {
+            constraints.append(split.topAnchor.constraint(greaterThanOrEqualTo: content.topAnchor, constant: 4))
+        }
+        NSLayoutConstraint.activate(constraints)
+        band.align(with: editor)
+    }
+
+    private static func lay(tabs: TabRow, horizon: HorizonView, page: NSView, bar: KeepBar, in island: NSView) {
+        for view in [tabs, page, bar, horizon] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            island.addSubview(view)
+        }
+        NSLayoutConstraint.activate([
+            tabs.topAnchor.constraint(equalTo: island.topAnchor),
+            tabs.leadingAnchor.constraint(equalTo: island.leadingAnchor),
+            tabs.trailingAnchor.constraint(equalTo: island.trailingAnchor),
+            tabs.heightAnchor.constraint(equalToConstant: TabRow.height),
+            // The horizon's line runs along the tab row's bottom edge, over the page's top.
+            horizon.centerYAnchor.constraint(equalTo: tabs.bottomAnchor),
+            horizon.leadingAnchor.constraint(equalTo: island.leadingAnchor),
+            horizon.trailingAnchor.constraint(equalTo: island.trailingAnchor),
+            horizon.heightAnchor.constraint(equalToConstant: HorizonView.height),
+            page.topAnchor.constraint(equalTo: tabs.bottomAnchor),
+            page.leadingAnchor.constraint(equalTo: island.leadingAnchor),
+            page.trailingAnchor.constraint(equalTo: island.trailingAnchor),
+            page.bottomAnchor.constraint(equalTo: bar.topAnchor),
+            bar.leadingAnchor.constraint(equalTo: island.leadingAnchor),
+            bar.trailingAnchor.constraint(equalTo: island.trailingAnchor),
+            bar.bottomAnchor.constraint(equalTo: island.bottomAnchor),
+        ])
+    }
+
+    override func setDocumentEdited(_ dirtyFlag: Bool) {
+        super.setDocumentEdited(dirtyFlag)
+        guard dirtyFlag != edited else { return }
+        edited = dirtyFlag
+        updateBreadcrumbs()
+        tabs?.post()
+    }
+
+    /// The tab's name: its file's, or its folder's while the page is empty.
+    var tabName: String {
+        (document as? NSDocument)?.displayName ?? folder.map { FileManager.default.displayName(atPath: $0.url.path) } ?? "Untitled"
+    }
+
+    /// The tab's dot: the writer's color while an agent's changes wait, `ink2` for unsaved edits, else none.
+    var tabDot: NSColor? {
+        let live = (document as? MarkdownDocument)?.live
+        if let change = live?.changes.values.filter(\.marked).min(by: { $0.range.location < $1.range.location }) {
+            return MarkWriter(change.origin).color
+        }
+        return edited ? Chrome.color(.ink2) : nil
+    }
+
+    @objc func showNextTab(_ sender: Any?) {
+        tabs.tab(1)?.showWindow(sender)
+    }
+
+    @objc func showPreviousTab(_ sender: Any?) {
+        tabs.tab(-1)?.showWindow(sender)
+    }
+
+    func windowWillEnterFullScreen(_ notification: Notification) {
+        band.fullScreen(true)
+    }
+
+    func windowDidExitFullScreen(_ notification: Notification) {
+        band.fullScreen(false)
+    }
+
+    /// Who is in this file: the agents with changes waiting in it, then the people sharing it.
+    @objc private func updatePresence() {
+        var people: [(initials: String, writer: Writer)] = []
+        if let live = (document as? MarkdownDocument)?.live {
+            var writers: [Writer] = []
+            for change in live.changes.values.sorted(by: { $0.range.location < $1.range.location }) where change.marked {
+                let writer = MarkWriter(change.origin).writer
+                if writer != .collaborator, writer != .you, !writers.contains(writer) { writers.append(writer) }
+            }
+            people += writers.map { writer in
+                (writer == .codex ? "X" : String(writer.name.prefix(1)).uppercased(), writer)
+            }
+        }
+        if let document = document as? NSDocument, let share = Collaboration.of(document)?.share {
+            people += share.peers.map { peer in
+                let words = peer.name.split(separator: " ").prefix(2)
+                return (words.map { String($0.prefix(1)).uppercased() }.joined(), Writer.collaborator)
+            }
+        }
+        band.show(people: people)
+    }
+
+    /// Selects this tab, in its window's place, and brings it front.
     override func showWindow(_ sender: Any?) {
+        tabs.select(self)
         super.showWindow(sender)
         (NSApp.delegate as? AppDelegate)?.closeLaunchWindow()
         if let window { Updates.shared.windowDidShow(window) }
@@ -140,6 +284,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         NotificationCenter.default.addObserver(self, selector: #selector(updateOutline), name: BlockMap.didParse, object: textView.styler.map)
         NotificationCenter.default.addObserver(self, selector: #selector(scrolled), name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
         self.textView = textView
+        horizon.attach(textView, live: document.live)
+        keepBar.attach(textView, live: document.live)
+        updatePresence()
         if let url = document.fileURL { ReviewInbox.noteOpened(url) }
         sidebar.show(document.fileURL, headings: outline(of: textView.textStorage!.mutableString, in: textView.styler.map))
         markBrokenLinks()
@@ -149,25 +296,31 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         }
         updateBreadcrumbs()
         countWords()
+        tabs?.post()
         window?.makeFirstResponder(textView)
     }
 
     private func setPage(_ content: NSView) {
-        page.contentView = content
+        pageContent?.removeFromSuperview()
+        pageContent = content
+        page.addSubview(content)
         content.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            content.leadingAnchor.constraint(equalTo: page.safeAreaLayoutGuide.leadingAnchor),
+            content.leadingAnchor.constraint(equalTo: page.leadingAnchor),
             content.trailingAnchor.constraint(equalTo: page.trailingAnchor),
-            content.topAnchor.constraint(equalTo: page.safeAreaLayoutGuide.topAnchor),
+            content.topAnchor.constraint(equalTo: page.topAnchor),
             content.bottomAnchor.constraint(equalTo: page.bottomAnchor),
         ])
-        // Over the page's top inset, so the text never moves for it.
+        // A file's page attaches them again once its text is in.
+        horizon.attach(nil, live: nil)
+        keepBar.attach(nil, live: nil)
+        // Over the page's top, so the text never moves for it.
         finished.removeFromSuperview()
         finished.translatesAutoresizingMaskIntoConstraints = false
         page.addSubview(finished)
         NSLayoutConstraint.activate([
-            finished.topAnchor.constraint(equalTo: page.safeAreaLayoutGuide.topAnchor),
-            finished.leadingAnchor.constraint(equalTo: page.safeAreaLayoutGuide.leadingAnchor),
+            finished.topAnchor.constraint(equalTo: page.topAnchor),
+            finished.leadingAnchor.constraint(equalTo: page.leadingAnchor),
             finished.trailingAnchor.constraint(equalTo: page.trailingAnchor),
             finished.heightAnchor.constraint(equalToConstant: FinishedLine.height),
         ])
@@ -176,7 +329,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     /// Opens `url` here, in a new tab when asked or when this tab's text has edits, or selects its tab.
     func open(_ url: URL, newTab: Bool) {
         if let open = NSDocumentController.shared.document(for: url) {
-            open.windowControllers.first?.window?.makeKeyAndOrderFront(nil)
+            open.showWindows()
             return
         }
         guard let document = Self.load(url) else { return }
@@ -220,10 +373,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
 
     @discardableResult
     private func addTab(_ document: MarkdownDocument) -> MainWindowController {
-        let tab = MainWindowController(folder: folder)
+        let tab = MainWindowController(folder: folder, joining: self)
         tab.display(document)
-        window?.addTabbedWindow(tab.window!, ordered: .above)
-        tab.window?.makeKeyAndOrderFront(nil)
+        tab.showWindow(nil)
         return tab
     }
 
@@ -278,7 +430,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         var tab = self
         if (document as? NSDocument)?.fileURL?.standardizedFileURL != entry.url.standardizedFileURL {
             if let open = NSDocumentController.shared.document(for: entry.url) {
-                open.windowControllers.first?.window?.makeKeyAndOrderFront(nil)
+                open.showWindows()
                 return
             }
             guard let document = Self.load(entry.url) else { return }
@@ -291,13 +443,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         if let place = entry.place { tab.restore(place) }
     }
 
-    @objc private func navigate(_ sender: NSToolbarItemGroup) {
-        sender.selectedIndex == 0 ? goBack(sender) : goForward(sender)
-    }
-
     private func updateNavigation() {
-        navigation?.subitems.first?.isEnabled = history.canGoBack
-        navigation?.subitems.last?.isEnabled = history.canGoForward
+        band.back.isEnabled = history.canGoBack
+        band.forward.isEnabled = history.canGoForward
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
@@ -305,6 +453,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         case #selector(goBack(_:)): history.canGoBack
         case #selector(goForward(_:)): history.canGoForward
         case #selector(findInFiles(_:)): folder != nil
+        case #selector(showNextTab(_:)), #selector(showPreviousTab(_:)): tabs.tabs.count > 1
         default: true
         }
     }
@@ -314,31 +463,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     private func updateBreadcrumbs() {
         let file = (document as? NSDocument)?.fileURL
         crumbURLs = breadcrumbs(of: file, in: folder?.url)
-        func item(_ title: String, image: NSImage?, current: Bool) -> NSPathControlItem {
-            let item = NSPathControlItem()
-            item.attributedTitle = NSAttributedString(string: title, attributes: [
-                .font: NSFont.systemFont(ofSize: 13),
-                .foregroundColor: current ? NSColor.labelColor : NSColor.secondaryLabelColor,
-            ])
-            image?.size = NSSize(width: 16, height: 16)
-            item.image = image
-            return item
+        var names = crumbURLs.map { FileManager.default.displayName(atPath: $0.path) }
+        if names.isEmpty, let name = (document as? NSDocument)?.displayName {
+            names = [name]
         }
-        var items = crumbURLs.enumerated().map { index, url in
-            item(FileManager.default.displayName(atPath: url.path), image: NSWorkspace.shared.icon(forFile: url.path), current: index == crumbURLs.count - 1)
-        }
-        if items.isEmpty, let name = (document as? NSDocument)?.displayName {
-            items = [item(name, image: nil, current: true)]
-        }
-        crumbs.pathItems = items
+        band.show(path: names, edited: edited)
+        updateMeta()
     }
 
-    /// Lists the Markdown files of the clicked folder, or of the file's folder, under the click.
-    @objc private func crumbClicked(_ sender: NSPathControl) {
-        guard let clicked = sender.clickedPathItem,
-            let index = sender.pathItems.firstIndex(where: { $0 === clicked }) ?? sender.pathItems.firstIndex(where: { $0.title == clicked.title }),
-            crumbURLs.indices.contains(index)
-        else { return }
+    /// Lists the Markdown files of the clicked folder, or of the file's folder, under the crumb.
+    private func crumbClicked(_ index: Int, under crumb: NSView) {
+        guard crumbURLs.indices.contains(index) else { return }
         let file = (document as? NSDocument)?.fileURL?.standardizedFileURL
         let url = crumbURLs[index]
         let directory = url == file ? url.deletingLastPathComponent() : url
@@ -348,15 +483,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
             let item = menu.addItem(withTitle: entry.url.lastPathComponent, action: #selector(openCrumb(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = entry.url
-            item.image = NSWorkspace.shared.icon(forFile: entry.url.path)
-            item.image?.size = NSSize(width: 16, height: 16)
             item.state = entry.url == file ? .on : .off
         }
         if menu.items.isEmpty {
             menu.addItem(withTitle: "No Markdown Files", action: nil, keyEquivalent: "")
         }
-        let x = sender.convert(NSApp.currentEvent?.locationInWindow ?? .zero, from: nil).x
-        menu.popUp(positioning: nil, at: NSPoint(x: x, y: sender.isFlipped ? sender.bounds.maxY + 4 : -4), in: sender)
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: crumb.isFlipped ? crumb.bounds.maxY + 6 : -6), in: crumb)
     }
 
     @objc private func openCrumb(_ sender: NSMenuItem) {
@@ -369,19 +501,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     static func session() -> Session {
         var windows: [Session.Window] = []
         var seen: Set<ObjectIdentifier> = []
-        for window in NSApp.orderedWindows.reversed() where window.windowController is MainWindowController {
-            let group = window.tabGroup?.windows ?? [window]
-            guard seen.insert(ObjectIdentifier(group[0])).inserted else { continue }
-            // The selected tab is the group's window in front.
-            let front = window.tabGroup?.selectedWindow ?? window
-            let tabs = group.compactMap { $0.windowController as? MainWindowController }
-            let saved = tabs.compactMap { tab -> (Session.Tab, NSWindow)? in
+        for window in NSApp.orderedWindows.reversed() {
+            guard let set = (window.windowController as? MainWindowController)?.tabs, seen.insert(ObjectIdentifier(set)).inserted else { continue }
+            let saved = set.tabs.compactMap { tab -> (Session.Tab, MainWindowController)? in
                 guard let url = (tab.document as? NSDocument)?.fileURL, let place = tab.place else { return nil }
-                return (Session.Tab(path: url.path, place: place), tab.window!)
+                return (Session.Tab(path: url.path, place: place), tab)
             }
-            let folder = tabs.first?.folder?.url.path
+            let folder = set.tabs.first?.folder?.url.path
             guard folder != nil || !saved.isEmpty else { continue }
-            let selected = saved.firstIndex { $0.1 === front } ?? 0
+            let selected = saved.firstIndex { $0.1 === set.selected } ?? 0
             windows.append(Session.Window(folder: folder, tabs: saved.map(\.0), selected: selected))
         }
         return Session(windows: windows)
@@ -401,21 +529,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
                 guard files.fileExists(atPath: tab.path), NSDocumentController.shared.document(for: url) == nil,
                     let document = load(url)
                 else { continue }
-                let controller = MainWindowController(folder: folder)
+                let controller = MainWindowController(folder: folder, joining: first?.tabs.tabs.last)
                 controller.display(document)
-                if let first {
-                    first.window?.addTabbedWindow(controller.window!, ordered: .above)
-                } else {
-                    controller.showWindow(nil)
-                    first = controller
-                }
+                controller.showWindow(nil)
+                if first == nil { first = controller }
                 controller.restore(tab.place)
                 if index == saved.selected || selected == nil { selected = controller }
             }
             if first == nil, let folder {
                 MainWindowController(folder: folder).showWindow(nil)
             }
-            selected?.window?.makeKeyAndOrderFront(nil)
+            selected?.showWindow(nil)
         }
     }
 
@@ -453,7 +577,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
             guard !Task.isCancelled else { return }
             let words = WordCount.label(total: count.total, selected: selection.length > 0 ? count.selected : nil)
             self.window?.subtitle = words
+            self.updateMeta()
         }
+    }
+
+    /// The mono line over the text: the file's path in its folder and the word count, `plans / v2.md · 1,204 words`.
+    private func updateMeta() {
+        guard let textView else { return }
+        let names = crumbURLs.map { FileManager.default.displayName(atPath: $0.path) }
+        let path = names.isEmpty ? (document as? NSDocument)?.displayName ?? "" : names.joined(separator: " / ")
+        textView.metaLine = [path, window?.subtitle ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     /// Lists the headings 300 ms after typing stops, or once a whole parse lands.
@@ -502,6 +635,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     }
 
     func windowWillClose(_ notification: Notification) {
+        tabs.remove(self)
         Self.all.remove(self)
         Task {
             if Self.all.isEmpty { (NSApp.delegate as? AppDelegate)?.nothingIsOpen() }
@@ -526,64 +660,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
             alert.beginSheetModal(for: window!)
         }
     }
-
-    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.toggleSidebar, .sidebarTrackingSeparator, .navigation, .breadcrumbs, .flexibleSpace, .share]
-    }
-
-    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        toolbarDefaultItemIdentifiers(toolbar)
-    }
-
-    // AppKit makes the standard items itself.
-    func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
-        switch itemIdentifier {
-        case .navigation:
-            let group = NSToolbarItemGroup(
-                itemIdentifier: itemIdentifier,
-                images: ["chevron.left", "chevron.right"].map { NSImage(systemSymbolName: $0, accessibilityDescription: nil)! },
-                selectionMode: .momentary,
-                labels: ["Back", "Forward"],
-                target: self,
-                action: #selector(navigate(_:))
-            )
-            group.label = "Back/Forward"
-            group.autovalidates = false
-            for item in group.subitems { item.autovalidates = false }
-            group.subitems.first?.toolTip = "Back"
-            group.subitems.last?.toolTip = "Forward"
-            navigation = group
-            updateNavigation()
-            return group
-        case .breadcrumbs:
-            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
-            item.label = "Path"
-            item.view = crumbs
-            item.isBordered = false
-            item.visibilityPriority = .high
-            NSLayoutConstraint.activate([
-                crumbs.widthAnchor.constraint(greaterThanOrEqualToConstant: 160),
-                crumbs.widthAnchor.constraint(lessThanOrEqualToConstant: 560),
-            ])
-            return item
-        case .share:
-            let item = NSToolbarItem(itemIdentifier: .share)
-            item.label = "Share"
-            item.toolTip = "Edit this file live with someone"
-            item.image = NSImage(systemSymbolName: "person.2", accessibilityDescription: "Share")
-            item.target = self
-            item.action = #selector(shareDocument(_:))
-            return item
-        default:
-            return nil
-        }
-    }
-}
-
-extension NSToolbarItem.Identifier {
-    static let navigation = Self("Navigation")
-    static let breadcrumbs = Self("Breadcrumbs")
-    static let share = Self("Share")
 }
 
 /// A view filled with the theme's paper, following the theme and the appearance.

@@ -65,8 +65,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let engine = MarkdownDocument.sharedEngine
         let control = ControlSocket(path: ControlSocket.standardPath, notify: { claim in
+            Updates.shared.checkBundleOnDisk()
             if let engine { LiveFile.claim(claim, engine: engine) }
         }) { [weak self] request, connection in
+            Updates.shared.checkBundleOnDisk()
             self?.open(request, for: connection)
         }
         do {
@@ -237,7 +239,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Library.noteOpened(folder.url, folder: true)
         let open = NSApp.windows.first { ($0.windowController as? MainWindowController)?.folder?.url.path == folder.url.path }
         if let open {
-            open.makeKeyAndOrderFront(nil)
+            open.windowController?.showWindow(nil)
         } else {
             MainWindowController(folder: folder).showWindow(nil)
         }

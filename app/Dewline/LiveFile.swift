@@ -449,6 +449,16 @@ final class LiveFile {
         decide(change, changes[change]?.conflict == true ? .keep : .other)
     }
 
+    /// Keep All and Revert All: decides every marked change in the file, last first, as one undoable edit.
+    func decideAll(keep: Bool) {
+        guard let textView = document?.textView else { return }
+        let marked = changes.filter(\.value.marked).sorted { $0.value.range.location > $1.value.range.location }.map(\.key)
+        guard !marked.isEmpty else { return }
+        textView.history.perform(keep ? "Keep All Changes" : "Revert All Changes") {
+            for id in marked { keep ? self.keep(id) : self.revert(id) }
+        }
+    }
+
     /// The change's first line of text, for a list: what it put there, else what it took out.
     func excerpt(_ change: UInt64) -> String {
         guard let pending = changes[change], let text = document?.textView?.string as NSString? else { return "" }
@@ -466,12 +476,12 @@ final class LiveFile {
     }
 
     /// Brings the change's tab forward and scrolls its line a third of the way down the page; `caret` puts the caret
-    /// in it, which shows its change bar.
+    /// in it, which makes it the one the Keep bar shows.
     func reveal(_ change: UInt64, caret: Bool) {
         guard let pending = changes[change], let textView = document?.textView, let window = textView.window,
             let scrollView = textView.enclosingScrollView
         else { return }
-        if let group = window.tabGroup, group.selectedWindow !== window { group.selectedWindow = window }
+        if !window.isVisible { window.windowController?.showWindow(nil) }
         if caret {
             window.makeKeyAndOrderFront(nil)
             textView.setSelectedRange(NSRange(location: pending.range.location, length: 0))
