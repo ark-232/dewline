@@ -25,7 +25,7 @@ struct FontSlots: View {
             sections.filter { !$0.1.isEmpty }.map { ($0.0, $0.1.map { ($0, $0) }) }
         }
         let code = [
-            ("System", ["SF Mono"]), ("Bundled", Faces.bundled), ("Catalog", catalogMono.sorted()),
+            ("System", ["SF Mono"]), ("Bundled", [Faces.code]), ("Catalog", catalogMono.sorted()),
             ("Added", addedMono.sorted()), ("This Mac", mac.monospaced.filter { !ours.contains($0) }),
         ]
         SettingsSection(title: "Faces", note: "A pairing sets the body, heading and code fonts at once, downloading any it needs from the catalog.") {
