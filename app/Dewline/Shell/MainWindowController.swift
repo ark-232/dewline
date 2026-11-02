@@ -37,6 +37,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     private var countUpdate: Task<Void, Never>?
     private var linkUpdate: Task<Void, Never>?
     private var edited = false
+    /// A resumed tab's file and place, read when the tab is first selected.
+    private var pending: Session.Tab? {
+        didSet { tabs?.post() }
+    }
 
     /// A tab beside `neighbor`, in its window, or a window of its own.
     init(folder: Folder?, joining neighbor: MainWindowController? = nil) {
@@ -188,7 +192,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
 
     /// The tab's name: its file's, or its folder's while the page is empty.
     var tabName: String {
-        (document as? NSDocument)?.displayName ?? folder.map { FileManager.default.displayName(atPath: $0.url.path) } ?? "Untitled"
+        (document as? NSDocument)?.displayName ?? pending.map { FileManager.default.displayName(atPath: $0.path) } ?? folder.map { FileManager.default.displayName(atPath: $0.url.path) } ?? "Untitled"
     }
 
     /// The tab's dot: the writer's color while an agent's changes wait, `ink2` for unsaved edits, else none.
@@ -240,10 +244,35 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
 
     /// Selects this tab, in its window's place, and brings it front.
     override func showWindow(_ sender: Any?) {
+        let place = readPending()
         tabs.select(self)
         super.showWindow(sender)
         (NSApp.delegate as? AppDelegate)?.closeLaunchWindow()
         if let window { Updates.shared.windowDidShow(window) }
+        shown(at: place)
+    }
+
+    /// Selects this tab and puts its window just behind `front`.
+    func show(behind front: NSWindow) {
+        let place = readPending()
+        tabs.select(self)
+        window?.order(.below, relativeTo: front.windowNumber)
+        shown(at: place)
+    }
+
+    /// Reads a resumed tab's file into it, returning the place to restore once the window is up.
+    private func readPending() -> Place? {
+        guard let tab = pending else { return nil }
+        pending = nil
+        let url = URL(filePath: tab.path)
+        guard NSDocumentController.shared.document(for: url) == nil, let document = Self.load(url) else { return nil }
+        display(document)
+        return tab.place
+    }
+
+    private func shown(at place: Place?) {
+        if let place { restore(place) }
+        sidebar.fillAfterFirstFrame()
     }
 
     /// Shows `document` in this tab, closing the one it replaces, and pushes it on the tab's history unless asked not to.
@@ -506,6 +535,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         for window in NSApp.orderedWindows.reversed() {
             guard let set = (window.windowController as? MainWindowController)?.tabs, seen.insert(ObjectIdentifier(set)).inserted else { continue }
             let saved = set.tabs.compactMap { tab -> (Session.Tab, MainWindowController)? in
+                if let pending = tab.pending { return (pending, tab) }
                 guard let url = (tab.document as? NSDocument)?.fileURL, let place = tab.place else { return nil }
                 return (Session.Tab(path: url.path, place: place), tab)
             }
@@ -517,31 +547,27 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         return Session(windows: windows)
     }
 
-    /// Reopens each window of `session` with its tabs, caret and scroll, skipping files and folders that are gone.
-    static func resume(_ session: Session) {
+    /// Reopens each window of `session` with its tabs, skipping files and folders that are gone. Only each window's
+    /// selected tab reads its file, with its caret and scroll; the others read theirs when first selected. With
+    /// `front`, the windows open behind it.
+    static func resume(_ session: Session, behind front: NSWindow? = nil) {
         let files = FileManager.default
         for saved in session.windows {
             var isFolder: ObjCBool = false
             let folder = saved.folder.flatMap { files.fileExists(atPath: $0, isDirectory: &isFolder) && isFolder.boolValue ? Folder(URL(filePath: $0, directoryHint: .isDirectory)) : nil }
             guard saved.folder == nil || folder != nil else { continue }
-            var first: MainWindowController?
+            var last: MainWindowController?
             var selected: MainWindowController?
             for (index, tab) in saved.tabs.enumerated() {
-                let url = URL(filePath: tab.path)
-                guard files.fileExists(atPath: tab.path), NSDocumentController.shared.document(for: url) == nil,
-                    let document = load(url)
-                else { continue }
-                let controller = MainWindowController(folder: folder, joining: first?.tabs.tabs.last)
-                controller.display(document)
-                controller.showWindow(nil)
-                if first == nil { first = controller }
-                controller.restore(tab.place)
+                guard files.fileExists(atPath: tab.path), NSDocumentController.shared.document(for: URL(filePath: tab.path)) == nil else { continue }
+                let controller = MainWindowController(folder: folder, joining: last)
+                controller.pending = tab
+                last = controller
                 if index == saved.selected || selected == nil { selected = controller }
             }
-            if first == nil, let folder {
-                MainWindowController(folder: folder).showWindow(nil)
+            if let tab = selected ?? folder.map({ MainWindowController(folder: $0) }) {
+                if let front { tab.show(behind: front) } else { tab.showWindow(nil) }
             }
-            selected?.showWindow(nil)
         }
     }
 
@@ -696,5 +722,15 @@ final class PaperView: NSView {
 
     @objc private func themeDidChange(_ notification: Notification) {
         needsDisplay = true
+    }
+}
+
+extension NSWindow {
+    /// Draws the window now and commits the frame, then runs `body` on a later turn of the main run loop, so
+    /// nothing `body` does holds back this frame.
+    func afterDrawing(_ body: @escaping @MainActor () -> Void) {
+        displayIfNeeded()
+        CATransaction.flush()
+        Task { @MainActor in body() }
     }
 }

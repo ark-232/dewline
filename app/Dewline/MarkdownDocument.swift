@@ -289,6 +289,7 @@ final class MarkdownDocument: NSDocument {
 
     override func showWindows() {
         super.showWindows()
+        (NSApp.delegate as? AppDelegate)?.documentDidShow(windowControllers.first?.window)
         if ProcessInfo.processInfo.environment["DEWLINE_CARET_PROBE"] != nil {
             (windowControllers.first as? MainWindowController)?.textView?.probe()
         }
