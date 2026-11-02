@@ -623,7 +623,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         linkUpdate?.cancel()
         guard let textView else { return }
         guard let url = (document as? MarkdownDocument)?.fileURL else { return underline([], in: textView) }
-        let (text, version) = (textView.string, textView.version)
+        let (text, version) = (String(utf8Of: textView.textStorage!.mutableString), textView.version)
         linkUpdate = Task { [weak self, weak textView] in
             let links = await Task.detached(priority: .utility) { brokenTargets(in: text, path: url.path, home: agentHome) }.value
             guard !Task.isCancelled, let self, let textView, textView === self.textView, textView.version == version else { return }
