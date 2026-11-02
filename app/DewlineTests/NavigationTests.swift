@@ -101,7 +101,10 @@ struct NavigationTests {
         defer {
             for tab in tabs {
                 tab.window?.orderOut(nil)
-                if let document = tab.document as? NSDocument { documents.removeDocument(document) }
+                if let document = tab.document as? NSDocument {
+                    document.removeWindowController(tab)
+                    documents.removeDocument(document)
+                }
             }
         }
         #expect(documents.document(for: a) == nil)
