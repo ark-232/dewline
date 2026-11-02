@@ -64,15 +64,17 @@ enum ReviewInbox {
     private static let since = "ReviewSince"
     private static let opened = "ReviewOpened"
 
-    /// The pending files, newest first.
-    static func rows(folder: URL?) -> [AgentRow] {
+    /// The pending files, newest first, found off the main thread: the search stats every memory folder.
+    static func rows(folder: URL?) async -> [AgentRow] {
         let defaults = UserDefaults.standard
         if defaults.object(forKey: since) == nil {
             defaults.set(Date.now.timeIntervalSince1970, forKey: since)
         }
+        let path = folder?.path
+        let files = await Task.detached(priority: .utility) { agentReviewFiles(home: agentHome, folder: path) }.value
         let start = defaults.double(forKey: since)
         let seen = defaults.dictionary(forKey: opened) as? [String: Double] ?? [:]
-        return agentReviewFiles(home: agentHome, folder: folder?.path)
+        return files
             .filter { $0.modified > max(start, seen[$0.path] ?? 0) }
             .prefix(30)
             .map { file in

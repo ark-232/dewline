@@ -42,11 +42,10 @@ final class RenderedBlocks {
         return Set(touched).symmetricDifference(revealed).map(\.range)
     }
 
-    /// Styles the blocks that meet `styled`, a copy of the storage from `offset` on, for a selection in its
-    /// coordinates.
+    /// Styles the blocks that meet `styled`, the restyled text from `offset` on, which carries no `.dewlineBlock` yet,
+    /// for a selection in its coordinates.
     func style(_ styled: NSMutableAttributedString, at offset: Int, selection: [NSRange]) {
         let whole = NSRange(location: 0, length: styled.length)
-        styled.removeAttribute(.dewlineBlock, range: whole)
         guard let textView else { return }
         let text = styled.mutableString
         let paragraphs = NSRange(location: offset, length: styled.length)
