@@ -14,3 +14,49 @@ publish = false
 lto = "fat"
 codegen-units = 1
 strip = true
+
+# Dependencies build for size, except the engine's own (dewline-core's normal dependencies), which open, type, save
+# and highlight run through: diagrams, math, collaboration and UniFFI's runtime are off the keystroke path. A new
+# dependency of dewline-core joins this list.
+[profile.release.package]
+"*" = { opt-level = "s" }
+adler2 = { opt-level = 3 }
+arrayvec = { opt-level = 3 }
+bincode = { opt-level = 3 }
+bitflags = { opt-level = 3 }
+blake3 = { opt-level = 3 }
+cfg-if = { opt-level = 3 }
+constant_time_eq = { opt-level = 3 }
+crc32fast = { opt-level = 3 }
+equivalent = { opt-level = 3 }
+flate2 = { opt-level = 3 }
+fnv = { opt-level = 3 }
+foldhash = { opt-level = 3 }
+hashbrown = { opt-level = 3 }
+imara-diff = { opt-level = 3 }
+indexmap = { opt-level = 3 }
+itoa = { opt-level = 3 }
+libc = { opt-level = 3 }
+memchr = { opt-level = 3 }
+miniz_oxide = { opt-level = 3 }
+nix = { opt-level = 3 }
+once_cell = { opt-level = 3 }
+onig = { opt-level = 3 }
+onig_sys = { opt-level = 3 }
+pulldown-cmark = { opt-level = 3 }
+regex-syntax = { opt-level = 3 }
+same-file = { opt-level = 3 }
+serde = { opt-level = 3 }
+serde_core = { opt-level = 3 }
+serde_json = { opt-level = 3 }
+simd-adler32 = { opt-level = 3 }
+syntect = { opt-level = 3 }
+thiserror = { opt-level = 3 }
+typed-path = { opt-level = 3 }
+unicase = { opt-level = 3 }
+walkdir = { opt-level = 3 }
+zip = { opt-level = 3 }
+zmij = { opt-level = 3 }
+zstd = { opt-level = 3 }
+zstd-safe = { opt-level = 3 }
+zstd-sys = { opt-level = 3 }

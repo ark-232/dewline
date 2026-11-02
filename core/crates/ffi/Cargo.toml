@@ -10,7 +10,7 @@ publish.workspace = true
 
 [lib]
 name = "dewline_ffi"
-crate-type = ["staticlib", "cdylib"]
+crate-type = ["cdylib"]
 
 [[bin]]
 name = "uniffi-bindgen"
