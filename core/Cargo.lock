@@ -995,6 +995,7 @@ version = "0.1.0"
 dependencies = [
  "dewline-core",
  "dewline-sync",
+ "libc",
  "mermaid-rs-renderer",
  "ratex-layout",
  "ratex-parser",

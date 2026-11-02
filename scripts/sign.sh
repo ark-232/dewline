@@ -24,6 +24,7 @@ if [[ -n $identity ]]; then
     sign "$sparkle/Versions/B/Autoupdate"
     sign "$sparkle/Versions/B/Updater.app"
     sign "$sparkle"
+    sign "$app/Contents/Frameworks/DewlineFFI.framework"
     for helper in "$app"/Contents/Helpers/*; do
         if [[ -e $helper ]]; then sign "$helper"; fi
     done

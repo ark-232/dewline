@@ -397,14 +397,14 @@ impl Engine {
         let bytes = read(&real)?;
         let (now, _) = (self.clock)();
         let base_hash = blake3::hash(&bytes);
-        let contents = text::Opened::new(bytes.clone());
+        let base: Arc<[u8]> = bytes.as_slice().into();
+        let contents = text::Opened::new(bytes);
         let (read_only, bom) = match &contents {
             text::Opened::Utf8 { bom, .. } => (false, *bom),
             text::Opened::Other(_) => (true, false),
         };
         let (gitdir, head) = self.find_repo(&real, now);
         let agent_file = self.agents.matches(path) || self.agents.matches(&real);
-        let base: Arc<[u8]> = bytes.into();
         let doc = Doc {
             opened: path.to_owned(),
             private: private(path) || private(&real),
@@ -1247,10 +1247,11 @@ fn read(path: &Path) -> io::Result<Vec<u8>> {
         .read(true)
         .custom_flags(libc::O_NONBLOCK)
         .open(path)?;
-    if !file.metadata()?.is_file() {
+    let metadata = file.metadata()?;
+    if !metadata.is_file() {
         return Err(io::Error::new(io::ErrorKind::InvalidData, "not a file"));
     }
-    let mut bytes = Vec::new();
+    let mut bytes = Vec::with_capacity(metadata.len().min(MAX_FILE + 1) as usize);
     file.take(MAX_FILE + 1).read_to_end(&mut bytes)?;
     if bytes.len() as u64 > MAX_FILE {
         return Err(io::ErrorKind::FileTooLarge.into());

@@ -1,6 +1,7 @@
 #!/bin/bash
 # Measures the editor on this Mac: the perf tests in a Release build, each part of a keystroke (KeystrokeLatency in
-# front), then launch, memory, idle CPU and wakeups, and the app and DMG sizes. Writes perf/<version>.json for the
+# front), then launch, memory, idle CPU and wakeups, and the sizes of the universal app scripts/build-release.sh makes
+# and its DMG (so rustc needs the x86_64 standard library too). Writes perf/<version>.json for the
 # Cargo workspace version, with the 1-minute load average at the start, after the tests and at the end, and each
 # budget in perf/budgets.jq with its result; prints the budgets, the other measurements and whether every budget
 # holds. Windows come to the front while it runs; no app is left running.
@@ -101,8 +102,11 @@ idle "$work/1MB.md" > "$work/idle1MB"
 idle "$work/10MB.md" > "$work/idle10MB"
 load="$load $(sysctl -n vm.loadavg | awk '{ print $2 }')"
 
+# The app and DMG as they ship: the universal archive from build-release.sh, packed the way sign.sh packs it.
+shipped=$("$root/scripts/build-release.sh" "$work/release" | tail -1)
 mkdir "$work/dmg"
-ditto "$app" "$work/dmg/Dewline.app"
+ditto "$shipped" "$work/dmg/Dewline.app"
+ln -s /Applications "$work/dmg/Applications"
 hdiutil create -quiet -format ULMO -volname Dewline -srcfolder "$work/dmg" "$work/Dewline.dmg"
 
 version=$(awk -F'"' '/^\[workspace.package\]/ { s = 1; next } /^\[/ { s = 0 } s && $1 ~ /^version *= */ { print $2; exit }' "$root/core/Cargo.toml")
@@ -113,7 +117,7 @@ jq -n --slurpfile tests "$work/tests.json" --slurpfile cold "$work/cold" --slurp
     --arg mac "$(sysctl -n machdep.cpu.brand_string), $(($(sysctl -n hw.memsize) >> 30)) GB, macOS $(sw_vers -productVersion)" \
     --arg xcode "$(xcodebuild -version | head -1)" --argjson load "[${load// /, }]" \
     --argjson corpus1 "$(stat -f %z "$work/1MB.md")" --argjson corpus10 "$(stat -f %z "$work/10MB.md")" \
-    --argjson app "$(find "$app" -type f -exec stat -f %z {} + | awk '{ s += $1 } END { print s }')" \
+    --argjson app "$(find "$shipped" -type f -exec stat -f %z {} + | awk '{ s += $1 } END { print s }')" \
     --argjson dmg "$(stat -f %z "$work/Dewline.dmg")" --slurpfile first "$work/first" \
     --slurpfile keystrokes "$work/keystrokes" --argjson reruns "$reruns" \
     '{date: $date, commit: $commit, mac: $mac, xcode: $xcode, build: "Release, arm64, unsigned", load: $load,

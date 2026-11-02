@@ -35,6 +35,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     /// The breadcrumbs' folders and file, one per path item.
     private var crumbURLs: [URL] = []
     private var countUpdate: Task<Void, Never>?
+    private var linkUpdate: Task<Void, Never>?
     private var edited = false
 
     /// A tab beside `neighbor`, in its window, or a window of its own.
@@ -604,14 +605,26 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
 
     /// A dotted underline under each relative link and CLAUDE.md `@import` whose file is missing, or whose import
     /// cycles or runs more than 5 deep. Drawn as rendering attributes, so the text's own attributes stay as they are.
+    /// Found off the main thread, so a file's first frame never waits on the search, and drawn only on the text it read.
     private func markBrokenLinks() {
-        guard let textView, let layout = textView.textLayoutManager, let content = layout.textContentManager else { return }
+        linkUpdate?.cancel()
+        guard let textView else { return }
+        guard let url = (document as? MarkdownDocument)?.fileURL else { return underline([], in: textView) }
+        let (text, version) = (textView.string, textView.version)
+        linkUpdate = Task { [weak self, weak textView] in
+            let links = await Task.detached(priority: .utility) { brokenTargets(in: text, path: url.path, home: agentHome) }.value
+            guard !Task.isCancelled, let self, let textView, textView === self.textView, textView.version == version else { return }
+            underline(links.map(\.range), in: textView)
+        }
+    }
+
+    private func underline(_ ranges: [NSRange], in textView: EditorTextView) {
+        guard let layout = textView.textLayoutManager, let content = layout.textContentManager else { return }
         layout.removeRenderingAttribute(.underlineStyle, for: content.documentRange)
         layout.removeRenderingAttribute(.underlineColor, for: content.documentRange)
-        guard let url = (document as? MarkdownDocument)?.fileURL else { return }
-        for link in brokenTargets(in: textView.string, path: url.path, home: agentHome) {
-            guard let start = content.location(content.documentRange.location, offsetBy: link.range.location),
-                let end = content.location(start, offsetBy: link.range.length),
+        for link in ranges {
+            guard let start = content.location(content.documentRange.location, offsetBy: link.location),
+                let end = content.location(start, offsetBy: link.length),
                 let range = NSTextRange(location: start, end: end)
             else { continue }
             layout.addRenderingAttribute(.underlineStyle, value: NSUnderlineStyle([.single, .patternDot]).rawValue, for: range)

@@ -11,6 +11,7 @@ use resvg::{tiny_skia, usvg};
 
 mod agentfiles;
 mod agents;
+mod allocator;
 mod docx;
 mod engine;
 mod highlight;

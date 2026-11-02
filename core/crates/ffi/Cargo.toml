@@ -10,7 +10,7 @@ publish.workspace = true
 
 [lib]
 name = "dewline_ffi"
-crate-type = ["staticlib", "cdylib"]
+crate-type = ["cdylib"]
 
 [[bin]]
 name = "uniffi-bindgen"
@@ -20,6 +20,7 @@ required-features = ["bindgen"]
 [dependencies]
 dewline-core = { path = "../core" }
 dewline-sync = { path = "../sync" }
+libc = "=0.2.191"
 mermaid-rs-renderer = { version = "=0.3.1", default-features = false }
 ratex-layout = "=0.1.15"
 ratex-parser = "=0.1.15"

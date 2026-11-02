@@ -55,6 +55,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     private let agentSection = SidebarNode(.section("Agent files"), children: [])
     private var agentScan: Task<Void, Never>?
     private let review = SidebarNode(.section("Review"), children: [])
+    private var reviewScan: Task<Void, Never>?
     private let loads = SidebarNode(.section("What loads here"), children: [])
     /// "differs from AGENTS.md" for the open file's folder's instruction files, by path.
     private var flags: [String: (flag: String, sections: [String])] = [:]
@@ -308,8 +309,13 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     }
 
     private func listReview() {
-        review.children = ReviewInbox.rows(folder: folder?.url).map { SidebarNode(.agent($0)) }
-        reload()
+        reviewScan?.cancel()
+        reviewScan = Task { [weak self, folder] in
+            let rows = await ReviewInbox.rows(folder: folder?.url)
+            guard !Task.isCancelled, let self, !(rows.isEmpty && review.children?.isEmpty == true) else { return }
+            review.children = rows.map { SidebarNode(.agent($0)) }
+            reload()
+        }
     }
 
     private var sections: [SidebarNode] {
@@ -408,6 +414,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         recents.children = Library.recents.prefix(8).map { visit in
             SidebarNode(.shortcut(FolderEntry(url: visit.url, isFolder: false), visit.date))
         }
+        reload()
         listReview()
     }
 

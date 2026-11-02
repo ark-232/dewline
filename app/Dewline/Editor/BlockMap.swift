@@ -394,17 +394,18 @@ final class BlockMap {
         var found: [Block] = []
         for (index, block) in parse.blocks.enumerated() {
             let end = NSMaxRange(block.range)
-            var spans: [SyntaxSpan] = []
-            while next < tokens.endIndex {
-                let token = tokens[next]
-                // A token lies inside its block; one empty at the end of the text is in the last block.
-                guard token.range.location < end || (index == parse.blocks.count - 1 && token.range.location == end) else { break }
-                let local = block.range.location
-                spans.append(SyntaxSpan(
+            let first = next
+            // A token lies inside its block; one empty at the end of the text is in the last block.
+            while next < tokens.endIndex, tokens[next].range.location < end || (index == parse.blocks.count - 1 && tokens[next].range.location == end) {
+                next += 1
+            }
+            // Mapped from the counted tokens, so each block's array holds no spare capacity.
+            let local = block.range.location
+            let spans = tokens[first..<next].map { token in
+                SyntaxSpan(
                     kind: token.kind, range: NSRange(location: token.range.location - local, length: token.range.length),
                     content: NSRange(location: token.content.location - local, length: token.content.length)
-                ))
-                next += 1
+                )
             }
             guard block.range.location >= skip else { continue }
             let range = NSRange(location: block.range.location - skip + offset, length: block.range.length)
