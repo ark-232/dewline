@@ -278,6 +278,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     /// Shows `document` in this tab, closing the one it replaces, and pushes it on the tab's history unless asked not to.
     func display(_ document: MarkdownDocument, pushing: Bool = true) {
         let leaving = place
+        let text = document.textView?.string ?? document.takeText()
         if let old = self.document as? NSDocument, old !== document {
             old.removeWindowController(self)
             old.close()
@@ -286,7 +287,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             document.addWindowController(self)
         }
         let scrollView = EditorTextView.scrollView()
-        let header = document.fileURL.flatMap { isAgentFile($0) ? frontMatterLine(of: document.text) : nil }
+        let header = document.fileURL.flatMap { isAgentFile($0) ? frontMatterLine(of: text) : nil }
         setPage(header.map { frontMatterPage($0, above: scrollView) } ?? scrollView)
         // Rendered blocks fit the column, so the text arrives once the view has its width.
         window?.layoutIfNeeded()
@@ -295,10 +296,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         textView.noteFolder = folder?.url ?? textView.documentFolder
         textView.openNote = { [weak self] url, heading in self?.follow(url, heading: heading) }
         textView.findInFiles = folder == nil ? nil : { [weak self] tag in self?.sidebar.showSearch(tag) }
-        textView.string = document.text
+        textView.string = text
         // Front matter stays folded until the caret goes into it.
         if let first = textView.styler.map.blocks(in: NSRange(location: 0, length: 0)).first, first.kind == .frontMatter {
-            textView.setSelectedRange(NSRange(location: min(NSMaxRange(first.range), (textView.string as NSString).length), length: 0))
+            textView.setSelectedRange(NSRange(location: min(NSMaxRange(first.range), textView.textStorage!.length), length: 0))
         }
         document.live?.attach(textView)
         // The editor's undo history is the document's, which counts its unsaved edits.
@@ -385,7 +386,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     }
 
     private var hasEdits: Bool {
-        textView.map { $0.string != (document as? MarkdownDocument)?.text } ?? false
+        guard let textView, let document = document as? MarkdownDocument else { return false }
+        return !document.isUnchanged(textView.string)
     }
 
     /// Opens a note a link points to and puts the caret on its heading.
@@ -412,7 +414,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     /// Scrolls the heading's line to the top of the page and puts the caret on it.
     func jump(to heading: Heading) {
         guard let textView, let scrollView = textView.enclosingScrollView,
-            heading.location < (textView.string as NSString).length,
+            heading.location < textView.textStorage!.length,
             let baseline = textView.baseline(at: heading.location)
         else { return }
         if let url = (document as? NSDocument)?.fileURL { history.visit(url, leaving: place) }
@@ -437,7 +439,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     /// Puts the caret and the page back where `place` left them.
     func restore(_ place: Place) {
         guard let textView else { return }
-        let length = (textView.string as NSString).length
+        let length = textView.textStorage!.length
         textView.setSelectedRange(NSRange(location: min(max(place.caret, 0), length), length: 0))
         let top = min(max(place.top, 0), max(length - 1, 0))
         // Lays the text out to the anchor, so the page is tall enough to scroll there.
@@ -577,7 +579,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         guard let match, let tab = NSDocumentController.shared.document(for: url)?.windowControllers.first as? MainWindowController,
             let textView = tab.textView
         else { return }
-        let text = textView.string as NSString
+        let text = textView.textStorage!.mutableString
         let found = (match.preview as NSString).substring(with: match.previewRange)
         guard NSMaxRange(match.range) <= text.length, text.substring(with: match.range) == found else { return }
         tab.window?.makeFirstResponder(textView)
@@ -589,7 +591,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     }
 
     /// Shows the document's word count in the subtitle, and the selection's beside it, 250 ms after the text or the
-    /// selection last changed, counted off the main thread once the map has the whole text.
+    /// selection last changed, once the map has the whole text. It counts on the main thread from the storage itself, a
+    /// piece between events, and starts over when the text changes.
     @objc private func countWords() {
         countUpdate?.cancel()
         countUpdate = Task { [weak self] in
@@ -597,17 +600,27 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             while let map = self?.textView?.styler.map, map.parsed < (self?.textView?.textStorage?.length ?? 0), !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(100))
             }
+            var count = (total: 0, selected: 0)
+            var (start, version) = (0, self?.textView?.version)
+            while !Task.isCancelled, let textView = self?.textView {
+                let text = textView.textStorage!.mutableString
+                if textView.version != version { (count, start, version) = ((0, 0), 0, textView.version) }
+                guard start < text.length else { break }
+                let piece = text.paragraphRange(for: NSRange(location: start, length: min(Self.countedPiece, text.length - start)))
+                let found = WordCount.count(text, in: piece, blocks: textView.styler.map.blocks(in: piece), selection: textView.selectedRange())
+                count = (count.total + found.total, count.selected + found.selected)
+                start = NSMaxRange(piece)
+                try? await Task.sleep(for: .milliseconds(1))
+            }
             guard !Task.isCancelled, let self, let textView = self.textView else { return }
-            let text = textView.string
-            let blocks = textView.styler.map.blocks(in: NSRange(location: 0, length: (text as NSString).length))
-            let selection = textView.selectedRange()
-            let count = await Task.detached(priority: .utility) { WordCount.count(text, blocks: blocks, selection: selection) }.value
-            guard !Task.isCancelled else { return }
-            let words = WordCount.label(total: count.total, selected: selection.length > 0 ? count.selected : nil)
+            let words = WordCount.label(total: count.total, selected: textView.selectedRange().length > 0 ? count.selected : nil)
             self.window?.subtitle = words
             self.updateMeta()
         }
     }
+
+    /// The text one step of the word count reads: a millisecond or two of work.
+    private static let countedPiece = 1 << 15
 
     /// The mono line over the text: the file's path in its folder and the word count, `plans / v2.md · 1,204 words`.
     private func updateMeta() {
@@ -636,7 +649,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         linkUpdate?.cancel()
         guard let textView else { return }
         guard let url = (document as? MarkdownDocument)?.fileURL else { return underline([], in: textView) }
-        let (text, version) = (textView.string, textView.version)
+        let (text, version) = (String(utf8Of: textView.textStorage!.mutableString), textView.version)
         linkUpdate = Task { [weak self, weak textView] in
             let links = await Task.detached(priority: .utility) { brokenTargets(in: text, path: url.path, home: agentHome) }.value
             guard !Task.isCancelled, let self, let textView, textView === self.textView, textView.version == version else { return }

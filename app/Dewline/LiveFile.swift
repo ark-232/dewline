@@ -320,7 +320,7 @@ final class LiveFile {
             refreshAgain = true
             return
         }
-        apply(landing, to: textView, clean: buffer == document?.text)
+        apply(landing, to: textView)
     }
 
     private func waitsForInput(_ textView: EditorTextView) -> Bool {
@@ -330,7 +330,7 @@ final class LiveFile {
 
     /// Applies a committed landing as one storage edit outside undo, keeping the selection by its neighbors and the
     /// caret's line, else the first visible line, where it is on screen.
-    private func apply(_ landing: ChangeEngine.Landing, to textView: EditorTextView, clean: Bool) {
+    private func apply(_ landing: ChangeEngine.Landing, to textView: EditorTextView) {
         let storage = textView.textStorage!
         let edits = landing.edits
         func map(_ offset: Int, _ bias: ChangeEngine.Bias) -> Int {
@@ -396,11 +396,7 @@ final class LiveFile {
         }
         reloadSnapshots()
 
-        if clean {
-            document?.absorbed(textView.string)
-        } else {
-            scheduleAutosave()
-        }
+        if !landing.clean { scheduleAutosave() }
     }
 
     // MARK: Edits and saves
@@ -591,7 +587,7 @@ final class LiveFile {
         }
         switch result {
         case .success:
-            document.saved(buffer, token: token)
+            document.saved(token: token)
             reloadSnapshots()
             return nil
         case .failure(let refusal):

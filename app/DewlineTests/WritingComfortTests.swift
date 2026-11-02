@@ -181,7 +181,7 @@ struct WordCountTests {
         _ = map.textDidChange(text, edited: NSRange(location: 0, length: text.length), delta: text.length)
         let blocks = map.blocks(in: NSRange(location: 0, length: text.length))
         let hello = text.range(of: "Hello world")
-        let count = WordCount.count(Self.sample, blocks: blocks, selection: hello)
+        let count = WordCount.count(text, in: NSRange(location: 0, length: text.length), blocks: blocks, selection: hello)
         #expect(count.total == 13)
         #expect(count.selected == 2)
     }

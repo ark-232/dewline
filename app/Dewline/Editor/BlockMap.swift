@@ -318,8 +318,8 @@ final class BlockMap {
     /// through the main run loop, which unlike the main queue also runs inside a main-queue job.
     private func reparse() {
         idle?.invalidate()
-        // A copy: the storage's string changes under a parse that reads it.
-        let (version, text, old, gap) = (version, text.substring(from: 0), blocks(after: -1, before: .max), front.last.map { NSMaxRange($0.range) } ?? 0)
+        // A copy, in the UTF-8 the parser takes: the storage's string changes under a parse that reads it.
+        let (version, text, old, gap) = (version, String(utf8Of: text), blocks(after: -1, before: .max), front.last.map { NSMaxRange($0.range) } ?? 0)
         queue.async { [parser] in
             guard let parse = try? parser.parse(text) else { return }
             let result = Self.result(of: parse, in: text as NSString, replacing: old, gap: gap)
