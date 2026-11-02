@@ -140,8 +140,10 @@ final class CodeHighlights {
         else { return }
         layout.invalidateRenderingAttributes(for: range)
         // Invalidating waits for each line's next draw, which lines already on screen may not get; color those now.
-        layout.enumerateTextLayoutFragments(from: range.location) { fragment in
-            guard fragment.rangeInElement.location.compare(range.endLocation) == .orderedAscending else { return false }
+        // Only those: enumerating the rest would make a layout fragment for every line of code in the document.
+        guard let shown = layout.textViewportLayoutController.viewportRange?.intersection(range) else { return }
+        layout.enumerateTextLayoutFragments(from: shown.location) { fragment in
+            guard fragment.rangeInElement.location.compare(shown.endLocation) == .orderedAscending else { return false }
             validate(layout, fragment)
             return true
         }

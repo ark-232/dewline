@@ -184,6 +184,32 @@ struct ConstructTests {
         #expect(!laidOutMidway())
     }
 
+    /// Code colors go on at once only on the lines in view; the rest wait for their draw, so a long document's code
+    /// makes no layout fragments below the view.
+    @Test func codeColorsAtOnceOnlyTheLinesInView() async throws {
+        let block = "```swift\nlet x = 1\n```\n\n"
+        let editor = Editor(String(repeating: block, count: 2000), caret: 0)
+        let view = editor.view
+        view.styler.map.reparseNow()
+        view.styler.restyleDocument()
+        editor.window.layoutIfNeeded()
+        let layout = try #require(view.textLayoutManager)
+        let content = try #require(layout.textContentManager)
+        func colored(from offset: Int) -> Bool {
+            var found = false
+            guard let location = content.location(content.documentRange.location, offsetBy: offset) else { return false }
+            layout.enumerateRenderingAttributes(from: location, reverse: false) { _, attributes, _ in
+                found = attributes[.foregroundColor] != nil
+                return !found
+            }
+            return found
+        }
+        let deadline = ContinuousClock.now + .seconds(10)
+        while !colored(from: 0), ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(colored(from: 0))
+        #expect(!colored(from: 1000 * (block as NSString).length))
+    }
+
     @Test func wikilinksShowTheAliasOrTheName() {
         let text = "See [[Note|the alias]] and [[Other#Part]] now\n"
         let editor = Editor(text, caret: 0)
