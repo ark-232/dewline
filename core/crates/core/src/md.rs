@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::ops::Range;
 
@@ -206,7 +207,11 @@ fn run(window: &Window<'_>, table: &Labels) -> Parse {
     // Footnote references resolve only against definitions in the parsed text, so a window gets a copy of each
     // definition it refers to, ahead of it and closed off by an HTML block and a blank line.
     let prefix = footnote_prefix(body, table);
-    let source = [prefix.as_str(), body, window.next].concat();
+    let source = if prefix.is_empty() && window.next.is_empty() {
+        Cow::Borrowed(body)
+    } else {
+        Cow::Owned([prefix.as_str(), body, window.next].concat())
+    };
     let (lo, hi) = (prefix.len(), prefix.len() + body.len());
     let walk = walk(&source, table);
     let inside = |at: usize| (lo..hi).contains(&at);
