@@ -563,7 +563,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     }
 
     /// Shows the document's word count in the subtitle, and the selection's beside it, 250 ms after the text or the
-    /// selection last changed, counted off the main thread once the map has the whole text.
+    /// selection last changed, once the map has the whole text. It counts on the main thread from the storage itself, a
+    /// piece between events, and starts over when the text changes.
     @objc private func countWords() {
         countUpdate?.cancel()
         countUpdate = Task { [weak self] in
@@ -571,17 +572,27 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             while let map = self?.textView?.styler.map, map.parsed < (self?.textView?.textStorage?.length ?? 0), !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(100))
             }
+            var count = (total: 0, selected: 0)
+            var (start, version) = (0, self?.textView?.version)
+            while !Task.isCancelled, let textView = self?.textView {
+                let text = textView.textStorage!.mutableString
+                if textView.version != version { (count, start, version) = ((0, 0), 0, textView.version) }
+                guard start < text.length else { break }
+                let piece = text.paragraphRange(for: NSRange(location: start, length: min(Self.countedPiece, text.length - start)))
+                let found = WordCount.count(text, in: piece, blocks: textView.styler.map.blocks(in: piece), selection: textView.selectedRange())
+                count = (count.total + found.total, count.selected + found.selected)
+                start = NSMaxRange(piece)
+                try? await Task.sleep(for: .milliseconds(1))
+            }
             guard !Task.isCancelled, let self, let textView = self.textView else { return }
-            let text = textView.string
-            let blocks = textView.styler.map.blocks(in: NSRange(location: 0, length: (text as NSString).length))
-            let selection = textView.selectedRange()
-            let count = await Task.detached(priority: .utility) { WordCount.count(text, blocks: blocks, selection: selection) }.value
-            guard !Task.isCancelled else { return }
-            let words = WordCount.label(total: count.total, selected: selection.length > 0 ? count.selected : nil)
+            let words = WordCount.label(total: count.total, selected: textView.selectedRange().length > 0 ? count.selected : nil)
             self.window?.subtitle = words
             self.updateMeta()
         }
     }
+
+    /// The text one step of the word count reads: a millisecond or two of work.
+    private static let countedPiece = 1 << 15
 
     /// The mono line over the text: the file's path in its folder and the word count, `plans / v2.md · 1,204 words`.
     private func updateMeta() {

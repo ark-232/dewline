@@ -9,9 +9,9 @@ enum WordCount {
         .inlineCode, .fencedCode, .image, .inlineMath, .displayMath, .html, .comment, .frontMatter, .definition, .footnoteReference, .embed, .tag,
     ]
 
-    /// The words in `text`, and the words that start in `selection`.
-    static func count(_ text: String, blocks: [BlockMap.Block], selection: NSRange) -> (total: Int, selected: Int) {
-        let text = text as NSString
+    /// The words in `range` of `text`, whole paragraphs that `blocks` cover, and the words among them that start in
+    /// `selection`.
+    static func count(_ text: NSString, in range: NSRange, blocks: [BlockMap.Block], selection: NSRange) -> (total: Int, selected: Int) {
         var skipped = IndexSet()
         for block in blocks {
             if skippedBlocks.contains(block.kind) {
@@ -34,7 +34,7 @@ enum WordCount {
         }
         var total = 0
         var selected = 0
-        text.enumerateSubstrings(in: NSRange(location: 0, length: text.length), options: [.byWords, .substringNotRequired]) { _, word, _, _ in
+        text.enumerateSubstrings(in: range, options: [.byWords, .substringNotRequired]) { _, word, _, _ in
             guard !skipped.contains(word.location) else { return }
             total += 1
             if NSLocationInRange(word.location, selection) { selected += 1 }
