@@ -249,6 +249,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     /// Shows `document` in this tab, closing the one it replaces, and pushes it on the tab's history unless asked not to.
     func display(_ document: MarkdownDocument, pushing: Bool = true) {
         let leaving = place
+        let text = document.textView?.string ?? document.takeText()
         if let old = self.document as? NSDocument, old !== document {
             old.removeWindowController(self)
             old.close()
@@ -257,7 +258,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             document.addWindowController(self)
         }
         let scrollView = EditorTextView.scrollView()
-        let header = document.fileURL.flatMap { isAgentFile($0) ? frontMatterLine(of: document.text) : nil }
+        let header = document.fileURL.flatMap { isAgentFile($0) ? frontMatterLine(of: text) : nil }
         setPage(header.map { frontMatterPage($0, above: scrollView) } ?? scrollView)
         // Rendered blocks fit the column, so the text arrives once the view has its width.
         window?.layoutIfNeeded()
@@ -266,7 +267,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         textView.noteFolder = folder?.url ?? textView.documentFolder
         textView.openNote = { [weak self] url, heading in self?.follow(url, heading: heading) }
         textView.findInFiles = folder == nil ? nil : { [weak self] tag in self?.sidebar.showSearch(tag) }
-        textView.string = document.text
+        textView.string = text
         // Front matter stays folded until the caret goes into it.
         if let first = textView.styler.map.blocks(in: NSRange(location: 0, length: 0)).first, first.kind == .frontMatter {
             textView.setSelectedRange(NSRange(location: min(NSMaxRange(first.range), (textView.string as NSString).length), length: 0))
@@ -356,7 +357,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     }
 
     private var hasEdits: Bool {
-        textView.map { $0.string != (document as? MarkdownDocument)?.text } ?? false
+        guard let textView, let document = document as? MarkdownDocument else { return false }
+        return !document.isUnchanged(textView.string)
     }
 
     /// Opens a note a link points to and puts the caret on its heading.

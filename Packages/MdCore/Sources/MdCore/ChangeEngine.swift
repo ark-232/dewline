@@ -116,6 +116,8 @@ public final class ChangeEngine: Sendable {
         public let origin: Origin
         /// False for a quiet base.
         public let marked: Bool
+        /// Whether the buffer was the base, so the landed buffer is the file.
+        public let clean: Bool
         public let edits: [Edit]
         /// One replace making the same text as `edits`, for big changes; its `change` is 0.
         public let covering: Edit?
@@ -151,10 +153,16 @@ public final class ChangeEngine: Sendable {
             version: landing.version,
             origin: Origin(landing.origin),
             marked: landing.marked,
+            clean: landing.clean,
             edits: landing.edits.map { Edit(change: $0.change, range: range($0.edit.start, $0.edit.end), text: $0.edit.text) },
             covering: landing.covering.map { Edit(change: 0, range: range($0.start, $0.end), text: $0.text) },
             conflicts: landing.conflicts.map { Conflict(change: $0.change, range: range($0.start, $0.end), theirs: $0.theirs) }
         )
+    }
+
+    /// Whether `buffer` is the file as opened, last saved or last landed.
+    public func unchanged(_ doc: UInt64, buffer: String) throws(Failure) -> Bool {
+        try Self.call { try engine.unchanged(doc: doc, buffer: buffer) }
     }
 
     /// A collaborator's `edits` to `buffer` (in order, apart), snapshotting a buffer that differs from the file first,

@@ -19,7 +19,7 @@ struct LiveFileTests {
         try await until { file.textView.string == "Agent note.\n\n# Plan\n\nShip on Friday.\n" }
         #expect(file.textView.selectedRange() == NSRange(location: caret + 13, length: 0))
         #expect(!file.document.isDocumentEdited)
-        #expect(file.document.text == file.textView.string)
+        #expect(file.document.isUnchanged(file.textView.string))
     }
 
     @Test func typingWhileAWriteLandsKeepsBoth() async throws {

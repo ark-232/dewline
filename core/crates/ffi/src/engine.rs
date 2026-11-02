@@ -217,6 +217,8 @@ pub struct Landing {
     pub version: u64,
     pub origin: Origin,
     pub marked: bool,
+    /// Whether the buffer was the base, so the landed buffer is the file.
+    pub clean: bool,
     pub time: SystemTime,
     pub edits: Vec<Landed>,
     pub covering: Option<Edit>,
@@ -230,6 +232,7 @@ impl From<core::Landing> for Landing {
             version: landing.version,
             origin: landing.origin.into(),
             marked: landing.marked,
+            clean: landing.clean,
             time: landing.time,
             edits: landing
                 .edits
@@ -410,6 +413,11 @@ impl Engine {
             .into_iter()
             .map(Edit::from)
             .collect())
+    }
+
+    /// Whether `buffer` is the file as opened, last saved or last landed.
+    pub fn unchanged(&self, doc: u64, buffer: String) -> Result<bool, EngineError> {
+        Ok(self.0.unchanged(DocId(doc), &buffer)?)
     }
 
     /// On the main thread, in the step that applies the landing.

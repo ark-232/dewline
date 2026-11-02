@@ -149,6 +149,8 @@ pub struct Landing {
     pub origin: Origin,
     /// False for a quiet base: no marks, the quiet line instead.
     pub marked: bool,
+    /// Whether the buffer was the base, so the landed buffer is the file.
+    pub clean: bool,
     pub time: SystemTime,
     /// Each edit is one pending change.
     pub edits: Vec<(ChangeId, Edit)>,
@@ -710,6 +712,7 @@ impl Engine {
             version,
             origin: origin.clone(),
             marked: !quiet,
+            clean: !dirty,
             time: wall,
             edits: landed_edits,
             covering,
@@ -774,6 +777,14 @@ impl Engine {
                 .put(&path, &text::encode(buffer, bom), YOU, wall)?;
         }
         Ok(edits)
+    }
+
+    /// Whether `buffer` is the base: the file as opened, last saved or last
+    /// landed.
+    pub fn unchanged(&self, doc: DocId, buffer: &str) -> Result<bool, EngineError> {
+        let state = self.state();
+        let d = state.docs.get(&doc).ok_or(EngineError::Closed)?;
+        Ok(strip(&d.base, d.bom) == Some(buffer))
     }
 
     /// Moves the base to the landing's disk version and keeps its changes.
@@ -1520,13 +1531,16 @@ mod tests {
             !fx.engine.observe(doc).unwrap(),
             "our own file is no change"
         );
+        assert!(fx.engine.unchanged(doc, &text).unwrap());
         fx.replace(&path, "# Notes\n\nOne. Two.\n");
         let (landing, buffer) = fx.land(doc, &text, 1);
         assert_eq!(
-            (landing.origin.clone(), landing.marked),
-            (Origin::External, false)
+            (landing.origin.clone(), landing.marked, landing.clean),
+            (Origin::External, false, true)
         );
         assert_eq!(buffer, "# Notes\n\nOne. Two.\n");
+        assert!(fx.engine.unchanged(doc, &buffer).unwrap());
+        assert!(!fx.engine.unchanged(doc, &text).unwrap());
         // The outgoing base and the new version are kept, in that order.
         assert_eq!(
             fx.origins(&path),
@@ -1559,7 +1573,9 @@ mod tests {
         fx.replace(&path, "one\n\ntwo agent\n");
         let (landing, buffer) = fx.land(doc, typed, 4);
         assert!(landing.marked, "a landing into unsaved text is marked");
+        assert!(!landing.clean);
         assert_eq!(buffer, "one typed\n\ntwo agent\n");
+        assert!(!fx.engine.unchanged(doc, &buffer).unwrap());
         let kept: Vec<String> = fx
             .origins(&path)
             .into_iter()
@@ -1573,6 +1589,7 @@ mod tests {
             fx.engine.save(doc, &buffer, 5, auto()).unwrap(),
             blake3::hash(buffer.as_bytes())
         );
+        assert!(fx.engine.unchanged(doc, &buffer).unwrap());
     }
 
     #[test]
