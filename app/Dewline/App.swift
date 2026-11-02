@@ -26,17 +26,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let defaults = UserDefaults.standard
     /// The test host neither resumes nor saves a session.
     private let isTestHost = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    /// The last session, until it reopens.
+    private var session: Session?
+    /// True while launching to open a file, which then draws before the last session reopens behind it. Finder and
+    /// open(1) hand the file over before launch finishes, and AppKit opens a path on the command line right after;
+    /// the dewline command sets DEWLINE_OPENS_FILE and sends the file over the control socket once the app listens.
+    private var opensFile = ProcessInfo.processInfo.environment["DEWLINE_OPENS_FILE"] != nil || AppDelegate.namesFile(CommandLine.arguments.dropFirst())
+    private var launched = false
 
-    // Before AppKit decides whether to show the launch window, which it shows only when nothing reopened.
+    /// Whether `arguments` hold a path besides `-Key value` pairs, which are defaults.
+    private nonisolated static func namesFile(_ arguments: ArraySlice<String>) -> Bool {
+        var arguments = arguments
+        while let argument = arguments.popFirst() {
+            guard argument.hasPrefix("-") else { return true }
+            arguments = arguments.dropFirst()
+        }
+        return false
+    }
+
     func applicationWillFinishLaunching(_ notification: Notification) {
-        NotificationCenter.default.addObserver(self, selector: #selector(prune), name: NSApplication.didFinishRestoringWindowsNotification, object: nil)
-        guard !isTestHost, let session = Session.load(from: defaults) else { return }
-        MainWindowController.resume(session)
+        guard !isTestHost else { return }
+        session = Session.load(from: defaults) ?? Session(windows: [])
+    }
+
+    /// Reopens the last session's windows, behind `front` when a file opened at launch, then prunes snapshots.
+    private func resume(behind front: NSWindow? = nil) {
+        opensFile = false
+        guard let session else { return }
+        self.session = nil
+        MainWindowController.resume(session, behind: front)
+        prune()
+    }
+
+    /// A document's window showed, which while launching to open a file is that file's.
+    func documentDidShow(_ window: NSWindow?) {
+        if opensFile { resume(after: window) }
+    }
+
+    /// Reopens the last session once `window`, the file asked for at launch, has drawn its first frame.
+    private func resume(after window: NSWindow?) {
+        guard session != nil else { return }
+        guard let window, window.isVisible else { return resume() }
+        window.afterDrawing { [weak self, weak window] in self?.resume(behind: window) }
     }
 
     /// Only the app prunes snapshots, once, with the last session's documents open again.
-    @objc private func prune() {
-        NotificationCenter.default.removeObserver(self, name: NSApplication.didFinishRestoringWindowsNotification, object: nil)
+    private func prune() {
         guard let engine = MarkdownDocument.sharedEngine else { return }
         DispatchQueue.global(qos: .utility).async {
             do throws(ChangeEngine.Failure) {
@@ -49,6 +84,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        launched = true
+        // Before AppKit decides whether to show the launch window, which it shows only when nothing reopened.
+        if opensFile, session != nil {
+            // The dewline command gives up after 10 s; then the session reopens anyway.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+                guard let self, session != nil else { return }
+                resume()
+                if applicationShouldOpenUntitledFile(NSApp) { showWelcome(nil) }
+            }
+        } else {
+            resume()
+        }
         Updates.shared.start()
         NSApp.servicesProvider = inboxService
         // The test host leaves the real socket alone; ControlSocketTests make their own.
@@ -99,7 +146,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 document = try await MarkdownDocument.open(url)
             } catch {
                 connection.reply(.refused(.cannotOpen, message: error.localizedDescription))
-                return
+                return resume(after: nil)
             }
             // Another request may have opened it while this one read.
             if let open = controller.document(for: url) as? MarkdownDocument {
@@ -165,7 +212,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // AppKit asks at launch when nothing opens or restores, and when the Dock icon is clicked with no windows.
     func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {
-        LaunchWindowController.showsWhenNothingIsOpen && !NSApp.windows.contains { $0.windowController is MainWindowController && ($0.isVisible || $0.isMiniaturized) }
+        !opensFile && LaunchWindowController.showsWhenNothingIsOpen && !NSApp.windows.contains { $0.windowController is MainWindowController && ($0.isVisible || $0.isMiniaturized) }
     }
 
     func applicationOpenUntitledFile(_ sender: NSApplication) -> Bool {
@@ -186,10 +233,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     SchemeLinks.handle(url)
                 }
             } else if (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
-                openFolder(at: url)
+                if !launched { opensFile = true }
+                resume(after: openFolder(at: url))
             } else {
-                NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { _, _, error in
-                    if let error { NSApp.presentError(error) }
+                if !launched { opensFile = true }
+                NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { [weak self] _, _, error in
+                    guard let error else { return }
+                    NSApp.presentError(error)
+                    self?.resume(after: nil)
                 }
             }
         }
@@ -234,14 +285,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Opens a window on `url`'s tree, or brings its window forward.
-    func openFolder(at url: URL) {
+    @discardableResult
+    func openFolder(at url: URL) -> NSWindow? {
         let folder = Folder(url)
         Library.noteOpened(folder.url, folder: true)
-        let open = NSApp.windows.first { ($0.windowController as? MainWindowController)?.folder?.url.path == folder.url.path }
-        if let open {
-            open.windowController?.showWindow(nil)
-        } else {
-            MainWindowController(folder: folder).showWindow(nil)
-        }
+        let window = NSApp.windows.first { ($0.windowController as? MainWindowController)?.folder?.url.path == folder.url.path }
+            ?? MainWindowController(folder: folder).window
+        window?.windowController?.showWindow(nil)
+        return window
     }
 }

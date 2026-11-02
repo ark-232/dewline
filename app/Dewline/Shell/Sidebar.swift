@@ -60,7 +60,8 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     /// "differs from AGENTS.md" for the open file's folder's instruction files, by path.
     private var flags: [String: (flag: String, sections: [String])] = [:]
     private var reviewWatch: FolderWatch?
-    private let tree: SidebarNode?
+    /// Listed with the other rows, after the window's first frame.
+    private var tree: SidebarNode?
     private var expandedOnce: Set<ObjectIdentifier> = []
     /// The open file's row in the tree.
     private var fileNode: SidebarNode?
@@ -70,20 +71,15 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     private var section: Int?
     private var watch: FolderWatch?
     private var showsIgnored: Bool
+    /// The rows are listed once the window has drawn its first frame; until then the island shows empty.
+    private var filled = false
+    /// The open file as `show` last had it before the rows were listed.
+    private var waiting: URL??
 
     init(folder: Folder?) {
         self.folder = folder
         find = folder.map(FindInFilesController.init)
-        let showsIgnored = Preferences.shared.showsIgnored
-        self.showsIgnored = showsIgnored
-        tree = folder.map { folder in
-            let listing = folder.children(of: folder.url, showingIgnored: showsIgnored)
-            let rows = listing.entries.map { SidebarNode(.entry($0)) }
-            return SidebarNode(
-                .section("Folder", branch: gitBranch(at: folder.url)),
-                children: rows + (listing.ignored.isEmpty ? [] : [SidebarNode(.ignored(listing.ignored))])
-            )
-        }
+        showsIgnored = Preferences.shared.showsIgnored
         super.init(nibName: nil, bundle: nil)
         find?.reveal = { [weak self] url, match, newTab in self?.reveal(url, match, newTab) }
         find?.close = { [weak self] in self?.showFiles() }
@@ -207,12 +203,32 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             self, selector: #selector(fillUnderReducedTransparency), name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil
         )
         fillUnderReducedTransparency()
+    }
+
+    /// Lists the rows after the window's first frame, so they never hold it back; they appear in the next one.
+    func fillAfterFirstFrame() {
+        guard !filled, let window = view.window else { return }
+        window.afterDrawing { [weak self] in self?.fill() }
+    }
+
+    private func fill() {
+        guard !filled else { return }
+        filled = true
+        tree = folder.map { folder in
+            let listing = folder.children(of: folder.url, showingIgnored: showsIgnored)
+            let rows = listing.entries.map { SidebarNode(.entry($0)) }
+            return SidebarNode(
+                .section("Folder", branch: gitBranch(at: folder.url)),
+                children: rows + (listing.ignored.isEmpty ? [] : [SidebarNode(.ignored(listing.ignored))])
+            )
+        }
         libraryChanged()
         if let folder {
             for path in UserDefaults.standard.stringArray(forKey: "Expanded " + folder.url.path) ?? [] {
                 _ = treeNode(for: folder.url.appending(path: path))
             }
         }
+        if let waiting { show(waiting, headings: headings) }
     }
 
     override func viewDidLayout() {
@@ -244,6 +260,11 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
 
     /// Shows `url` as the open file: reveals and selects its row and lists its headings.
     func show(_ url: URL?, headings: [Heading]) {
+        guard filled else {
+            waiting = url
+            self.headings = headings
+            return
+        }
         listLoads(in: url?.deletingLastPathComponent() ?? folder?.url)
         fileNode?.children = nil
         fileNode = url.flatMap(treeNode(for:))
@@ -325,6 +346,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     }
 
     private func reload() {
+        guard filled else { return }
         outlineView.reloadData()
         for section in sections where expandedOnce.insert(ObjectIdentifier(section)).inserted {
             outlineView.expandItem(section)
@@ -408,6 +430,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     }
 
     @objc private func libraryChanged() {
+        guard filled else { return }
         pinned.children = Library.pins.map { url in
             SidebarNode(.shortcut(FolderEntry(url: url, isFolder: url.hasDirectoryPath), nil))
         }
@@ -546,7 +569,8 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     }
 
     private func roots(of view: NSOutlineView) -> [SidebarNode] {
-        view === loadsView ? (loads.children!.isEmpty ? [] : [loads]) : sections
+        guard filled else { return [] }
+        return view === loadsView ? (loads.children!.isEmpty ? [] : [loads]) : sections
     }
 
     func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {

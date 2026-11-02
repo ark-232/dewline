@@ -50,7 +50,7 @@ final class TabSet {
             selected = next
             if let frame = tab.window?.frame { next.window?.setFrame(frame, display: false) }
             next.window?.isExcludedFromWindowsMenu = false
-            next.window?.makeKeyAndOrderFront(nil)
+            next.showWindow(nil)
         }
         post()
     }
