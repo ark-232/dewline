@@ -4,7 +4,9 @@
 # and its DMG (so rustc needs the x86_64 standard library too). Writes perf/<version>.json for the
 # Cargo workspace version, with the 1-minute load average at the start, after the tests and at the end, and each
 # budget in perf/budgets.jq with its result; prints the budgets, the other measurements and whether every budget
-# holds. Windows come to the front while it runs; no app is left running.
+# holds. The plan times a keystroke in the app being typed in, so the app comes to the front for the tests, the
+# keystrokes and idle, and a run in which it was not refuses to write a result: run it from a terminal in front and leave
+# the Mac alone until it ends. No app is left running.
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -25,6 +27,28 @@ finish() {
 }
 trap finish EXIT
 
+refuse() { # message
+    echo "perf.sh: $1; run it from a terminal in front and leave the Mac alone until it ends" >&2
+    exit 1
+}
+
+# Runs xcodebuild and brings its test host to the front once LaunchServices knows it. macOS lets only the app in front
+# hand the front to another, so this works while the terminal running perf.sh is in front.
+infront() { # xcodebuild arguments
+    xcodebuild "$@" &
+    pid=$!
+    local host
+    while kill -0 "$pid" 2>/dev/null; do
+        if host=$(pgrep -n -f "$app/Contents/MacOS/Dewline") && [[ -n $(lsappinfo find pid="$host") ]]; then
+            open -a "$app"
+            break
+        fi
+        sleep 0.2
+    done
+    wait "$pid"
+    pid=
+}
+
 # Prints the launch probe's milliseconds from process start to the document window's first display.
 launch() { # app document
     rm -f "$work/probe"
@@ -42,7 +66,8 @@ cold() { # n
 }
 
 # Opens a document and waits until the app's CPU time holds for 2 s, then 10 s more. Prints JSON: the footprint
-# then, and over the next 60 s the CPU, idle wakeups, context switches and whether the app stayed in front.
+# then, and over the next 60 s the CPU, idle wakeups, context switches and whether the app was in front at its start
+# and end.
 idle() { # document
     open -n -a "$app" "$1" --args -ApplePersistenceIgnoreState YES
     for _ in {1..50}; do pid=$(pgrep -n -f "$app/Contents/MacOS/Dewline") && break; sleep 0.1; done
@@ -50,11 +75,12 @@ idle() { # document
     local previous now=
     while previous=$now; sleep 2; now=$(ps -o time= -p "$pid"); [[ $now != "$previous" ]]; do :; done
     sleep 10
+    local before after
+    before=$(lsappinfo info -only pid "$(lsappinfo front)" | grep -o 'pid = [0-9]*')
     top -l 2 -s 60 -c d -pid "$pid" -stats pid,mem,cpu,idlew,csw > "$work/top"
-    local front
-    front=$(lsappinfo info -only pid "$(lsappinfo front)" | grep -o 'pid = [0-9]*')
+    after=$(lsappinfo info -only pid "$(lsappinfo front)" | grep -o 'pid = [0-9]*')
     kill "$pid"
-    awk -v pid="$pid" -v front="$front" '
+    awk -v pid="$pid" -v front="$before, $after" '
         function mb(v, unit) {
             sub(/[+-]$/, "", v)
             unit = substr(v, length(v))
@@ -65,7 +91,7 @@ idle() { # document
         $1 == pid { cpu = $3; wakeups = $4; switches = $5 }
         END {
             printf "{\"footprintMB\": %.1f, \"cpuPercent\": %s, \"idleWakeups\": %s, \"contextSwitches\": %s, \"frontmost\": %s}\n",
-                footprint, cpu, wakeups, switches, (front == "pid = " pid) ? "true" : "false"
+                footprint, cpu, wakeups, switches, (front == "pid = " pid ", pid = " pid) ? "true" : "false"
         }' "$work/top"
     pid=
 }
@@ -73,22 +99,31 @@ idle() { # document
 load=$(sysctl -n vm.loadavg | awk '{ print $2 }')
 xcodegen generate --spec "$root/app/project.yml" --quiet
 TEST_RUNNER_DEWLINE_PERF=1 TEST_RUNNER_DEWLINE_PERF_OUT="$work/tests.json" \
-    xcodebuild test "${xcode[@]}" -only-testing:DewlineTests/PerfTests ENABLE_TESTABILITY=YES
+    infront test "${xcode[@]}" -only-testing:DewlineTests/PerfTests ENABLE_TESTABILITY=YES
 jq -e '.scroll' "$work/tests.json" > /dev/null
+jq -e 'all(.[]; .frontmost)' "$work/tests.json" > /dev/null || refuse "the app was not in front throughout PerfTests"
 
 # KeystrokeLatency's parts in front, three runs pooled. A run whose clock probe reads 1.5 times the fastest run's ran
-# at a slower clock and runs again, for up to three rounds.
+# at a slower clock, and one whose probe ran on an efficiency core for more than 1 in 100 keystrokes (enough to reach
+# the p99) ran on the wrong cores; either runs again, for up to three rounds, and one still slow then refuses the run.
 keystrokes() { # n
     TEST_RUNNER_DEWLINE_LATENCY=1 TEST_RUNNER_DEWLINE_LATENCY_FRONT=1 TEST_RUNNER_DEWLINE_LATENCY_OUT="$work/keystrokes-$1.json" \
-        xcodebuild test-without-building "${xcode[@]}" '-only-testing:DewlineTests/KeystrokeLatency/parts()' ENABLE_TESTABILITY=YES
+        infront test-without-building "${xcode[@]}" '-only-testing:DewlineTests/KeystrokeLatency/parts()' ENABLE_TESTABILITY=YES
+    jq -e '.frontmost' "$work/keystrokes-$1.json" > /dev/null || refuse "the app was not in front throughout keystroke run $1"
+}
+slow() {
+    jq -rs '(map(.clockUs) | min * 1.5) as $limit | to_entries[]
+        | select(.value.clockUs > $limit or .value.efficiencyShare > 0.01) | .key + 1' "$work"/keystrokes-[123].json
 }
 reruns=0
 for n in 1 2 3; do keystrokes "$n"; done
 for _ in 1 2 3; do
-    slow=$(jq -rs 'map(.clockUs) | (min * 1.5) as $limit | to_entries[] | select(.value > $limit) | .key + 1' "$work"/keystrokes-[123].json)
-    [[ -n $slow ]] || break
-    for n in $slow; do keystrokes "$n"; reruns=$((reruns + 1)); done
+    runs=$(slow)
+    [[ -n $runs ]] || break
+    for n in $runs; do keystrokes "$n"; reruns=$((reruns + 1)); done
 done
+runs=$(slow)
+[[ -z $runs ]] || refuse "keystroke runs ${runs//$'\n'/ } were still slow after three rounds: $(jq -cs 'map({clockUs, efficiencyShare})' "$work"/keystrokes-[123].json)"
 jq -s -f "$root/perf/keystroke-parts.jq" "$work"/keystrokes-[123].json > "$work/keystrokes"
 xcodebuild build "${xcode[@]}"
 load="$load $(sysctl -n vm.loadavg | awk '{ print $2 }')"
@@ -100,6 +135,7 @@ launch "$app" "$work/1MB.md" > /dev/null
 for _ in 1 2 3 4 5; do launch "$app" "$work/1MB.md" >> "$work/warm"; done
 idle "$work/1MB.md" > "$work/idle1MB"
 idle "$work/10MB.md" > "$work/idle10MB"
+jq -es 'all(.[]; .frontmost)' "$work/idle1MB" "$work/idle10MB" > /dev/null || refuse "the app was not in front while idle"
 load="$load $(sysctl -n vm.loadavg | awk '{ print $2 }')"
 
 # The app and DMG as they ship: the universal archive from build-release.sh, packed the way sign.sh packs it.
@@ -140,6 +176,7 @@ jq -r '
     row("Keystroke 10 MB p50 / p99, ms"; "\(.keystroke10MB.p50 | f) / \(.keystroke10MB.p99 | f)"),
     row("Keystroke parts, 1 MB p50 / p99, 10 MB p95, ms"; "\(.keystrokeParts."1MB".frame.p50 | f) / \(.keystrokeParts."1MB".frame.p99 | f), \(.keystrokeParts."10MB".frame.p95 | f)"),
     row("Keystroke parts clock probe by run, µs"; .keystrokeParts.clockUs | map(f) | join(" / ")),
+    row("Keystroke parts on efficiency cores by run, %"; .keystrokeParts.efficiencyShare | map(. * 100 | f) | join(" / ")),
     row("Reveal p50 / p99, ms"; "\(.reveal.p50 | f) / \(.reveal.p99 | f)"),
     row("Select all / deselect 1 MB, ms"; "\(.reveal.selectAll1MB | f) / \(.reveal.deselect1MB | f)"),
     row("Scroll step p50 / p99, ms"; "\(.scroll.p50 | f) / \(.scroll.p99 | f)"),
