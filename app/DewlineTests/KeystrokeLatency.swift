@@ -13,8 +13,8 @@ import Testing
 //
 // `counts()` runs on every test run. `parts()` runs only with DEWLINE_LATENCY set (TEST_RUNNER_DEWLINE_LATENCY=1
 // through xcodebuild) and prints each row's p50, p95 and p99 at 1 MB and 10 MB; with DEWLINE_LATENCY_OUT it writes
-// every keystroke's rows there as JSON, and with DEWLINE_LATENCY_FRONT it brings the app and its window to the front,
-// as scripts/perf.sh runs it.
+// every keystroke's rows there as JSON, and with DEWLINE_LATENCY_FRONT it waits for the app to come to the front, where
+// scripts/perf.sh brings it, and orders its windows in.
 
 /// The parts the test stamps; codes continue `LatencyProbe.Part`'s.
 private enum TestPart: UInt16 {
@@ -71,6 +71,27 @@ private func milliseconds(_ ticks: UInt64) -> Double {
 
 private nonisolated(unsafe) var clockSink: UInt64 = 0
 
+/// The logical CPUs numbered first, which on Apple silicon are the efficiency cores.
+private let efficiencyCores: Int = {
+    var count: Int32 = 0
+    var size = MemoryLayout<Int32>.size
+    return sysctlbyname("hw.perflevel1.logicalcpu", &count, &size, nil, 0) == 0 ? Int(count) : 0
+}()
+
+@MainActor private var frontAwaited = false
+
+/// Waits up to 10 s for the app to come to the front, the first time it is called. macOS lets only the app in front
+/// hand the front to another, so a test host behind cannot bring itself there; scripts/perf.sh brings it.
+@MainActor
+func awaitFront() {
+    guard !frontAwaited else { return }
+    frontAwaited = true
+    let deadline = Date(timeIntervalSinceNow: 10)
+    while !NSApp.isActive && Date() < deadline {
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+    }
+}
+
 /// One keystroke from its stamps: each row's milliseconds, the frame from key down to commit, the clock probe, and
 /// what it did.
 private struct Keystroke {
@@ -78,6 +99,8 @@ private struct Keystroke {
     var frame = 0.0
     /// Microseconds of a fixed integer workload run right after the frame, which track the clock the frame ran at.
     var clock = 0.0
+    var efficiencyCore = false
+    var frontmost = false
     /// Text storage `processEditing` passes; `revealWrites` counts those the reveal makes.
     var storageEdits = 0
     var revealWrites = 0
@@ -236,7 +259,7 @@ private final class Editor {
         window.contentView = scrollView
         view = try #require(scrollView.documentView as? EditorTextView)
         if front {
-            NSApp.activate()
+            awaitFront()
             window.makeKeyAndOrderFront(nil)
         }
         window.makeFirstResponder(view)
@@ -304,7 +327,7 @@ private final class Editor {
     }
 
     /// Types "a", or deletes it: the key down, the layout of the caret's paragraph, the window's layout and display
-    /// passes and the commit, stamped, then the clock probe, the key up and the pause.
+    /// passes and the commit, stamped, then the clock probe and the core it ran on, the key up and the pause.
     func keystroke(typing: Bool, pause: TimeInterval) throws -> Keystroke {
         let down = try event(.keyDown, typing ? 0 : 51, typing ? "a" : "\u{7F}")
         let up = try event(.keyUp, typing ? 0 : 51, typing ? "a" : "\u{7F}")
@@ -335,8 +358,12 @@ private final class Editor {
         clockSink = x
         end(.clock)
         LatencyProbe.enabled = false
+        var cpu = 0
+        pthread_cpu_number_np(&cpu)
         var keystroke = Keystroke(LatencyProbe.stamps)
         keystroke.restyles = view.styler.restyles - restyles
+        keystroke.efficiencyCore = cpu < efficiencyCores
+        keystroke.frontmost = NSApp.isActive
         window.sendEvent(up)
         if pause > 0 { RunLoop.main.run(until: Date(timeIntervalSinceNow: pause)) }
         return keystroke
@@ -453,7 +480,7 @@ struct KeystrokeLatency {
         // than any later window's; a throwaway first window keeps the measured ones on the later path.
         try Editor(front: false).close()
         var cells: [String: [String: [Double]]] = [:]
-        var clocks: [Double] = []
+        var measured: [Keystroke] = []
         for megabytes in [1, 10] {
             let text = MarkdownCorpus.text(bytes: megabytes << 20)
             let editor = try Editor(front: front)
@@ -472,11 +499,16 @@ struct KeystrokeLatency {
                 cell[row.rawValue] = keystrokes.map { $0.rows[row] ?? 0 }
             }
             cells["\(megabytes)MB"] = cell.mapValues { $0.map { ($0 * 10000).rounded() / 10000 } }
-            clocks += keystrokes.map(\.clock)
+            measured += keystrokes
             editor.close()
         }
-        let clock = (percentile(clocks, 0.5) * 100).rounded() / 100
-        var report = ["KeystrokeLatency, ms p50 / p95 / p99; clock probe \(clock) µs; \(NSApp.isActive ? "in front" : "not in front")"]
+        let clock = (percentile(measured.map(\.clock), 0.5) * 100).rounded() / 100
+        let efficiencyShare = (Double(measured.count(where: \.efficiencyCore)) / Double(measured.count) * 10000).rounded() / 10000
+        let frontmost = measured.allSatisfy(\.frontmost)
+        var report = [
+            "KeystrokeLatency, ms p50 / p95 / p99; clock probe \(clock) µs, \(efficiencyShare * 100)% on efficiency cores; "
+                + (frontmost ? "in front" : "not in front throughout"),
+        ]
         for key in ["frame"] + Row.allCases.map(\.rawValue) {
             let values = ["1MB", "10MB"].map { cells[$0]?[key] ?? [] }.map { values in
                 [0.5, 0.95, 0.99].map { String(format: "%.2f", percentile(values, $0)) }.joined(separator: " / ")
@@ -485,7 +517,7 @@ struct KeystrokeLatency {
         }
         print(report.joined(separator: "\n"))
         if let out = environment["DEWLINE_LATENCY_OUT"] {
-            let result: [String: Any] = ["clockUs": clock, "frontmost": NSApp.isActive, "cells": cells]
+            let result: [String: Any] = ["clockUs": clock, "efficiencyShare": efficiencyShare, "frontmost": frontmost, "cells": cells]
             try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: out))
         }
     }
