@@ -270,7 +270,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         textView.string = text
         // Front matter stays folded until the caret goes into it.
         if let first = textView.styler.map.blocks(in: NSRange(location: 0, length: 0)).first, first.kind == .frontMatter {
-            textView.setSelectedRange(NSRange(location: min(NSMaxRange(first.range), (textView.string as NSString).length), length: 0))
+            textView.setSelectedRange(NSRange(location: min(NSMaxRange(first.range), textView.textStorage!.length), length: 0))
         }
         document.live?.attach(textView)
         // The editor's undo history is the document's, which counts its unsaved edits.
@@ -385,7 +385,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     /// Scrolls the heading's line to the top of the page and puts the caret on it.
     func jump(to heading: Heading) {
         guard let textView, let scrollView = textView.enclosingScrollView,
-            heading.location < (textView.string as NSString).length,
+            heading.location < textView.textStorage!.length,
             let baseline = textView.baseline(at: heading.location)
         else { return }
         if let url = (document as? NSDocument)?.fileURL { history.visit(url, leaving: place) }
@@ -410,7 +410,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     /// Puts the caret and the page back where `place` left them.
     func restore(_ place: Place) {
         guard let textView else { return }
-        let length = (textView.string as NSString).length
+        let length = textView.textStorage!.length
         textView.setSelectedRange(NSRange(location: min(max(place.caret, 0), length), length: 0))
         let top = min(max(place.top, 0), max(length - 1, 0))
         // Lays the text out to the anchor, so the page is tall enough to scroll there.
@@ -553,7 +553,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         guard let match, let tab = NSDocumentController.shared.document(for: url)?.windowControllers.first as? MainWindowController,
             let textView = tab.textView
         else { return }
-        let text = textView.string as NSString
+        let text = textView.textStorage!.mutableString
         let found = (match.preview as NSString).substring(with: match.previewRange)
         guard NSMaxRange(match.range) <= text.length, text.substring(with: match.range) == found else { return }
         tab.window?.makeFirstResponder(textView)
