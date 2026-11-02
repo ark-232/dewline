@@ -211,7 +211,7 @@ final class EditorTextView: CaretTextView {
         let storage = textStorage!
         guard !styler.showsSource, storage.length > 0, let window else { return }
         let first = characterIndexForInsertion(at: NSPoint(x: rect.minX, y: max(rect.minY, textContainerOrigin.y)))
-        let last = characterIndexForInsertion(at: NSPoint(x: rect.maxX, y: rect.maxY))
+        let last = characterIndexForInsertion(at: NSPoint(x: rect.maxX, y: max(rect.maxY, textContainerOrigin.y)))
         let visible = storage.mutableString.paragraphRange(for: NSRange(location: min(first, last), length: abs(last - first)))
         func line(at index: Int) -> NSRect {
             convert(window.convertFromScreen(firstRect(forCharacterRange: NSRange(location: index, length: 0), actualRange: nil)), from: nil)

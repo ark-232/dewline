@@ -6,9 +6,9 @@ import os
 final class MarkdownDocument: NSDocument {
     private static let bom = Data([0xEF, 0xBB, 0xBF])
 
-    /// The text as opened or last saved; the tab's text view holds the edits.
-    private(set) var text = ""
-    /// The hash of the file's bytes as opened or last saved.
+    /// The text as read, until a tab takes it; the tab's text view holds it from then on.
+    private var text = ""
+    /// The hash of the file's bytes as opened or last saved, when no engine keeps the file.
     private var baseHash = contentHash(Data())
     private var hasBOM = false
     /// `dewline open --wait` connections, answered when this document closes.
@@ -138,10 +138,10 @@ final class MarkdownDocument: NSDocument {
             throw CocoaError(.fileReadInapplicableStringEncoding, userInfo: [NSURLErrorKey: url])
         }
         Self.onMain {
-            self.text = text
             hasBOM = opened.bom
             let live = LiveFile(engine: engine, doc: opened.doc, url: url, gitdir: opened.gitdir, document: self)
-            if let textView { live.attach(textView) }
+            // A tab already showing the document, as after Save As, holds its text.
+            if let textView { live.attach(textView) } else { self.text = text }
             self.live = live
         }
     }
@@ -150,14 +150,20 @@ final class MarkdownDocument: NSDocument {
         (windowControllers.first as? MainWindowController)?.textView
     }
 
-    /// A landing left the buffer equal to the file.
-    func absorbed(_ text: String) {
-        self.text = text
+    /// The text as read, for the tab that shows it, which holds it from then on.
+    func takeText() -> String {
+        defer { text = "" }
+        return text
     }
 
-    /// The engine wrote `text`.
-    func saved(_ text: String, token: Any) {
-        self.text = text
+    /// Whether `buffer` is the file as opened, last saved or last landed.
+    func isUnchanged(_ buffer: String) -> Bool {
+        guard let live else { return contentHash(bytes(of: buffer)) == baseHash }
+        return (try? live.engine.unchanged(live.doc, buffer: buffer)) ?? false
+    }
+
+    /// The engine wrote the buffer.
+    func saved(token: Any) {
         // Typing after a save is a new undo entry, which makes the document edited again.
         textView?.breakUndoCoalescing()
         updateChangeCount(withToken: token, for: .saveOperation)
@@ -242,13 +248,12 @@ final class MarkdownDocument: NSDocument {
             guard saveOperation == .saveOperation || target != nil && target == fileURL.flatMap(Self.identity) else {
                 try super.writeSafely(to: url, ofType: typeName, for: saveOperation)
                 if saveOperation == .saveAsOperation {
-                    (text, baseHash) = (shown, contentHash(bytes))
+                    baseHash = contentHash(bytes)
                 }
                 return
             }
             do throws(SaveFailure) {
                 baseHash = try saveFile(bytes, to: url, base: baseHash)
-                text = shown
                 textView?.breakUndoCoalescing()
             } catch .conflict {
                 throw SaveConflict(document: self, name: url.lastPathComponent)
@@ -289,6 +294,7 @@ final class MarkdownDocument: NSDocument {
 
     override func showWindows() {
         super.showWindows()
+        (NSApp.delegate as? AppDelegate)?.documentDidShow(windowControllers.first?.window)
         if ProcessInfo.processInfo.environment["DEWLINE_CARET_PROBE"] != nil {
             (windowControllers.first as? MainWindowController)?.textView?.probe()
         }

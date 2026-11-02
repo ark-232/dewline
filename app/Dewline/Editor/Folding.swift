@@ -128,7 +128,7 @@ extension EditorTextView {
         let text = textStorage!.mutableString
         guard text.length > 0 else { return }
         let first = characterIndexForInsertion(at: NSPoint(x: rect.minX, y: max(rect.minY, textContainerOrigin.y)))
-        let last = characterIndexForInsertion(at: NSPoint(x: rect.maxX, y: rect.maxY))
+        let last = characterIndexForInsertion(at: NSPoint(x: rect.maxX, y: max(rect.maxY, textContainerOrigin.y)))
         let visible = NSRange(location: min(first, last), length: abs(last - first))
         let column = textContainerOrigin.x + (textContainer?.lineFragmentPadding ?? 0)
         for block in styler.map.blocks(in: visible) {

@@ -8,7 +8,7 @@ struct MarkdownDocumentTests {
     @Test func readsUTF8Text() throws {
         let document = MarkdownDocument()
         try document.read(from: Data("# Notes\r\n- one\n".utf8), ofType: "net.daringfireball.markdown")
-        #expect(document.text == "# Notes\r\n- one\n")
+        #expect(try document.data(ofType: Self.type) == Data("# Notes\r\n- one\n".utf8))
     }
 
     @Test func editsMarkTheDocumentEditedUntilUndone() throws {

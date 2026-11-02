@@ -73,8 +73,9 @@ final class UndoHistory {
     func didEdit(_ range: NSRange, delta: Int) {
         guard !suspended else { return }
         guard let pending else {
-            // An edit no one approved: move the history past it, as past a landing.
-            let text = (textView?.textStorage?.mutableString.substring(with: range)) ?? ""
+            // An edit no one approved: move the history past it, as past a landing. Only entries to move read its
+            // text, which for a new document's text is the whole of it.
+            let text = undoStack.isEmpty ? "" : (textView?.textStorage?.mutableString.substring(with: range)) ?? ""
             landed([ChangeEngine.Edit(range: NSRange(location: range.location, length: range.length - delta), text: text)])
             return
         }

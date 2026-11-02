@@ -14,13 +14,13 @@ struct Excerpt {
 
     @MainActor static var open: Excerpt {
         var excerpt = Excerpt()
-        guard let text = (NSApp.orderedDocuments.first as? MarkdownDocument)?.text else { return excerpt }
+        guard let text = (NSApp.orderedDocuments.first as? MarkdownDocument)?.textView?.textStorage?.mutableString else { return excerpt }
         // The first 200 lines.
-        var end = text.startIndex
-        for _ in 0..<200 where end < text.endIndex {
-            end = text[end...].firstIndex(where: \.isNewline).map(text.index(after:)) ?? text.endIndex
+        var end = 0
+        for _ in 0..<200 where end < text.length {
+            end = NSMaxRange(text.lineRange(for: NSRange(location: end, length: 0)))
         }
-        let top = String(text[..<end])
+        let top = text.substring(to: end)
         guard let parse = try? MarkdownParser().parse(top) else { return excerpt }
         let string = top as NSString
         var heading: String?

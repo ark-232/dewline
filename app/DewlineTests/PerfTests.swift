@@ -3,8 +3,11 @@ import MdCore
 import Testing
 @testable import Dewline
 
-/// An editor in a window ordered front. The test host is not the active app, so the window is not key and
-/// draws no caret.
+/// Whether the app was behind at a display or a record since the last record.
+@MainActor private var leftFront = false
+
+/// An editor in a window ordered front. Unless scripts/perf.sh brought the test host to the front, the window is not
+/// key and draws no caret.
 @MainActor
 private struct Editor {
     let window: NSWindow
@@ -37,6 +40,7 @@ private struct Editor {
             CATransaction.flush()
             RunLoop.main.run(mode: .default, before: .distantPast)
         } while view.frame != frame || window.viewsNeedDisplay
+        leftFront = leftFront || !NSApp.isActive
     }
 
     func open(_ text: String) {
@@ -127,9 +131,10 @@ private func percentiles(_ samples: [Double]) -> [String: Double] {
 }
 
 /// Runs only with `DEWLINE_PERF` set (`TEST_RUNNER_DEWLINE_PERF=1` through xcodebuild) and merges its numbers
-/// into the JSON at `DEWLINE_PERF_OUT`. `scripts/perf.sh` runs it in a Release build. Key presses count to their
-/// first committed display; opening and select all count until the display settles. Opening also records when
-/// the styler has styled the text it left for after the first display.
+/// into the JSON at `DEWLINE_PERF_OUT`. `scripts/perf.sh` runs it in a Release build with the app in front. Key presses
+/// count to their first committed display; opening and select all count until the display settles. Opening also
+/// records when the styler has styled the text it left for after the first display. Each metric records whether the
+/// app stayed in front.
 @MainActor
 @Suite(.serialized, .enabled(if: ProcessInfo.processInfo.environment["DEWLINE_PERF"] != nil))
 struct PerfTests {
@@ -139,10 +144,35 @@ struct PerfTests {
         URL(fileURLWithPath: try #require(ProcessInfo.processInfo.environment["DEWLINE_PERF_OUT"]))
     }
 
+    init() {
+        awaitFront()
+    }
+
+    /// A number a metric records, or whether the app stayed in front.
+    enum Value: Codable {
+        case number(Double)
+        case flag(Bool)
+
+        init(from decoder: Decoder) throws {
+            let value = try decoder.singleValueContainer()
+            self = try (try? value.decode(Double.self)).map(Value.number) ?? .flag(value.decode(Bool.self))
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var value = encoder.singleValueContainer()
+            switch self {
+            case .number(let number): try value.encode(number)
+            case .flag(let flag): try value.encode(flag)
+            }
+        }
+    }
+
     func record(_ metric: String, _ values: [String: Double]) throws {
         let url = try Self.output()
-        var results = (try? JSONDecoder().decode([String: [String: Double]].self, from: Data(contentsOf: url))) ?? [:]
-        results[metric] = values.mapValues { ($0 * 100).rounded() / 100 }
+        var results = (try? JSONDecoder().decode([String: [String: Value]].self, from: Data(contentsOf: url))) ?? [:]
+        results[metric] = values.mapValues { .number(($0 * 100).rounded() / 100) }
+        results[metric]?["frontmost"] = .flag(!leftFront && NSApp.isActive)
+        leftFront = !NSApp.isActive
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(results).write(to: url)

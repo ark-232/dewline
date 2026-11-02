@@ -137,13 +137,14 @@ impl Connection {
 }
 
 /// Starts the app this command ships in, or else the one Launch Services
-/// has for the bundle id. It starts behind the current window, so the launch
-/// window it shows with nothing open stays out of sight until `activate`
-/// brings the file forward.
+/// has for the bundle id, behind the current window until `activate` brings
+/// the file forward. DEWLINE_OPENS_FILE tells it a file is on its way, so it
+/// shows no launch window and draws that file before it reopens the last
+/// session behind it.
 fn launch() -> Result<(), String> {
     let exe = env::current_exe().and_then(fs::canonicalize);
     let mut open = Command::new("/usr/bin/open");
-    open.arg("-g");
+    open.args(["-g", "--env", "DEWLINE_OPENS_FILE=1"]);
     match exe.as_deref().ok().and_then(enclosing_app) {
         Some(app) => open.arg("-a").arg(app),
         None => open.args(["-b", BUNDLE_ID]),

@@ -157,6 +157,59 @@ struct ConstructTests {
         #expect(Constructs.look("unknown").glyph == Constructs.look("note").glyph)
     }
 
+    /// The margin above the first line, where the meta line sits, can redraw alone. TextKit 2 answers a point there with
+    /// an index near the end of the text, so the redraw must stop short of the wells and quote rules below the view.
+    @Test func redrawingTheTopMarginLaysOutNoTextBelowTheView() throws {
+        let text = String(repeating: "```\nlet x = 1\n```\n\n> [!note] Title\n> body\n\n> quote\n\n", count: 2000)
+        let editor = Editor(text, caret: 0)
+        let view = editor.view
+        view.styler.map.reparseNow()
+        view.styler.restyleDocument()
+        editor.window.layoutIfNeeded()
+        let layout = try #require(view.textLayoutManager)
+        let content = try #require(layout.textContentManager)
+        let middle = try #require(content.location(content.documentRange.location, offsetBy: (text as NSString).length / 2))
+        func laidOutMidway() -> Bool {
+            var state = NSTextLayoutFragment.State.none
+            layout.enumerateTextLayoutFragments(from: middle) { fragment in
+                state = fragment.state
+                return false
+            }
+            return state == .layoutAvailable
+        }
+        #expect(!laidOutMidway())
+        let margin = NSRect(x: 0, y: 0, width: view.bounds.width, height: view.textContainerOrigin.y - 1)
+        let picture = try #require(view.bitmapImageRepForCachingDisplay(in: margin))
+        view.cacheDisplay(in: margin, to: picture)
+        #expect(!laidOutMidway())
+    }
+
+    /// Code colors go on at once only on the lines in view; the rest wait for their draw, so a long document's code
+    /// makes no layout fragments below the view.
+    @Test func codeColorsAtOnceOnlyTheLinesInView() async throws {
+        let block = "```swift\nlet x = 1\n```\n\n"
+        let editor = Editor(String(repeating: block, count: 2000), caret: 0)
+        let view = editor.view
+        view.styler.map.reparseNow()
+        view.styler.restyleDocument()
+        editor.window.layoutIfNeeded()
+        let layout = try #require(view.textLayoutManager)
+        let content = try #require(layout.textContentManager)
+        func colored(from offset: Int) -> Bool {
+            var found = false
+            guard let location = content.location(content.documentRange.location, offsetBy: offset) else { return false }
+            layout.enumerateRenderingAttributes(from: location, reverse: false) { _, attributes, _ in
+                found = attributes[.foregroundColor] != nil
+                return !found
+            }
+            return found
+        }
+        let deadline = ContinuousClock.now + .seconds(10)
+        while !colored(from: 0), ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(colored(from: 0))
+        #expect(!colored(from: 1000 * (block as NSString).length))
+    }
+
     @Test func wikilinksShowTheAliasOrTheName() {
         let text = "See [[Note|the alias]] and [[Other#Part]] now\n"
         let editor = Editor(text, caret: 0)
