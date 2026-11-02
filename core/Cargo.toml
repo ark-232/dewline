@@ -15,6 +15,13 @@ lto = "fat"
 codegen-units = 1
 strip = true
 
+# The highlighter gives up on a line that takes over 30 ms, which an unoptimized syntect can reach on a shared CI runner.
+[profile.dev.package.syntect]
+opt-level = 3
+
+[profile.dev.package.onig_sys]
+opt-level = 3
+
 # Dependencies build for size, except the engine's own (dewline-core's normal dependencies), which open, type, save
 # and highlight run through: diagrams, math, collaboration and UniFFI's runtime are off the keystroke path. A new
 # dependency of dewline-core joins this list.
