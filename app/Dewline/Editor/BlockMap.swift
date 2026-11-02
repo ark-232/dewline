@@ -300,14 +300,16 @@ final class BlockMap {
         (front, back, length) = (parse.map { Self.blocks(of: $0, from: 0, at: 0, in: text) } ?? [], [], text.length)
         isProvisional = parse == nil
         unparsed = prefix < text.length ? prefix : nil
-        if unparsed != nil { reparse() } else if isProvisional { reparseSoon() }
+        // Once the call that set the text returns: the string it came in is freed before the parse copies the text,
+        // and freed memory stays in the app's footprint.
+        if unparsed != nil { reparseSoon(after: 0) } else if isProvisional { reparseSoon() }
         return NSRange(location: 0, length: text.length)
     }
 
-    /// Parses the whole text off the main thread 300 ms from now, unless an edit comes first.
-    private func reparseSoon() {
+    /// Parses the whole text off the main thread `delay` seconds from now, unless an edit comes first.
+    private func reparseSoon(after delay: TimeInterval = 0.3) {
         idle?.invalidate()
-        let timer = Timer(timeInterval: 0.3, repeats: false) { [weak self] _ in
+        let timer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated { self?.reparse() }
         }
         RunLoop.main.add(timer, forMode: .common)
