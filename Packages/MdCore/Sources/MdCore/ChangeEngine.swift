@@ -48,6 +48,8 @@ public final class ChangeEngine: Sendable {
         case claude, codex, cursor
         /// The first-run demo in Welcome.md.
         case demo
+        /// An agent in the agent panel; the session names it.
+        case acp
     }
 
     public enum Decision: Sendable {
@@ -336,6 +338,7 @@ extension ChangeEngine.Vendor {
         case .codex: .codex
         case .cursor: .cursor
         case .demo: .demo
+        case .acp: .acp
         }
     }
 
@@ -345,6 +348,7 @@ extension ChangeEngine.Vendor {
         case .codex: .codex
         case .cursor: .cursor
         case .demo: .demo
+        case .acp: .acp
         }
     }
 }

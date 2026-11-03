@@ -89,6 +89,7 @@ enum Review {
         case .codex: .codex
         case .cursor: .cursor
         case .demo: .demo
+        case .acp: .acp
         }
         let origin = ChangeEngine.Origin.agent(vendor, session: session)
         Task {

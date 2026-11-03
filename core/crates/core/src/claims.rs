@@ -44,6 +44,9 @@ pub enum Vendor {
     /// The app's own first-run demo, which writes Welcome.md the way an
     /// agent does.
     Demo,
+    /// An agent the app's agent panel runs over the Agent Client Protocol,
+    /// whose file writes the app makes itself. The session names the agent.
+    Acp,
 }
 
 /// A vendor's session.
@@ -78,6 +81,7 @@ impl Tool {
             (Vendor::Cursor, "Edit") => Some(Tool::Edit),
             (Vendor::Cursor, "Write") => Some(Tool::Write),
             (Vendor::Demo, "Write") => Some(Tool::Write),
+            (Vendor::Acp, "Write") => Some(Tool::Write),
             _ => None,
         }
     }
@@ -161,6 +165,7 @@ impl Claim {
             "codex" => Vendor::Codex,
             "cursor" => Vendor::Cursor,
             "demo" => Vendor::Demo,
+            "acp" => Vendor::Acp,
             _ => return Err(Refused::Invalid("vendor")),
         };
         let session = Id::new(fields.session).ok_or(Refused::Invalid("session id"))?;
@@ -669,6 +674,7 @@ mod tests {
             (Fields { tool: Some("Bash"), ..edit }, invalid("tool")),
             (Fields { vendor: "codex", tool: Some("Bash"), ..edit }, invalid("tool")),
             (Fields { vendor: "codex", tool: Some("Edit"), ..edit }, invalid("tool")),
+            (Fields { vendor: "acp", ..edit }, invalid("tool")),
             (Fields { tool: Some("apply_patch"), ..edit }, invalid("tool")),
             (Fields { event: "PostToolUse", tool: Some("NotebookEdit"), ..edit }, invalid("tool")),
             (Fields { tool: None, ..edit }, invalid("tool")),
@@ -690,6 +696,13 @@ mod tests {
             ..edit
         };
         assert!(Claim::parse(patch).is_ok());
+        let panel = Fields {
+            vendor: "acp",
+            session: "Gemini CLI#1",
+            tool: Some("Write"),
+            ..edit
+        };
+        assert!(Claim::parse(panel).is_ok());
         for event in ["Stop", "StopFailure", "UserPromptSubmit", "SessionEnd"] {
             let fields = Fields {
                 event,

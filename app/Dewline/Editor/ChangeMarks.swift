@@ -14,6 +14,7 @@ struct MarkWriter: Equatable {
         case .agent(.codex, _): ("Codex", .codex)
         case .agent(.cursor, _): ("Cursor", .cursor)
         case .agent(.demo, _): ("Demo", .demo)
+        case .agent(.acp, let session): (AgentWrites.name(session), AgentWrites.writer(session))
         case .collaborator(_, let name): (name, .collaborator)
         case .git: ("git", .git)
         case .external: ("Unknown app", .unknown)
