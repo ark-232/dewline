@@ -111,6 +111,55 @@ import Testing
         #expect(tabs[0].textView?.selectedRange().location == 6)
     }
 
+    /// A long note resumes at its place, measured on styled text, and stays there when the text past the first screen
+    /// is styled after the window is up.
+    @Test @MainActor func resumeKeepsALongNotesPlaceOnceItsTextIsStyled() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString).standardizedFileURL
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appending(path: "long.md")
+        let text = (1...300).map { "## Section \($0)\n\nParagraph \($0) has **bold**, `code` and a [link](x.md), long enough to wrap once in a window this wide.\n\n- one\n- two\n" }.joined(separator: "\n")
+        try Data(text.utf8).write(to: url)
+        let target = (text as NSString).range(of: "Paragraph 200 has").location
+        #expect(target > BlockMap.screen)
+        Offscreen.install()
+        defer { Offscreen.uninstall() }
+        let documents = NSDocumentController.shared
+        func resume(at place: Place) async throws -> MainWindowController {
+            MainWindowController.resume(Session(windows: [Session.Window(folder: nil, tabs: [Session.Tab(path: url.path, place: place)], selected: 0)]))
+            let tab = try #require(documents.document(for: url)?.windowControllers.first as? MainWindowController)
+            let textView = try #require(tab.textView)
+            #expect(textView.styler.hasUnstyledText)
+            for _ in 0..<300 where textView.styler.hasUnstyledText {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            #expect(!textView.styler.hasUnstyledText)
+            return tab
+        }
+        func close(_ tab: MainWindowController) {
+            tab.window?.orderOut(nil)
+            if let document = tab.document as? NSDocument {
+                document.removeWindowController(tab)
+                documents.removeDocument(document)
+            }
+        }
+
+        let first = try await resume(at: Place(caret: 0, top: 0, offset: 0))
+        first.textView?.setSelectedRange(NSRange(location: target + 4, length: 0))
+        first.textView?.scrollRangeToVisible(NSRange(location: target, length: 0))
+        try await Task.sleep(for: .milliseconds(100))
+        let place = try #require(first.place)
+        #expect(place.top > BlockMap.screen && place.top < target)
+        close(first)
+
+        let second = try await resume(at: place)
+        defer { close(second) }
+        let resumed = try #require(second.place)
+        #expect(resumed.caret == target + 4)
+        #expect(resumed.top == place.top)
+        #expect(abs(resumed.offset - place.offset) < 1)
+    }
+
     /// The sidebar's island shows with the window's first frame, and its rows in a later one.
     @Test @MainActor func sidebarListsItsRowsAfterTheWindowsFirstFrame() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString).standardizedFileURL

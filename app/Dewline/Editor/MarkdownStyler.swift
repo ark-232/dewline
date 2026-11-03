@@ -38,6 +38,9 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
     /// Text not styled yet, whole paragraphs, which `styleSome` works through from the top of the view.
     private var unstyled = IndexSet()
     private var scheduled = false
+    /// The line a restored place put at the top of the view, until the text is all styled. The place was measured on
+    /// styled text, so `styleSome` holds this line while it shows.
+    var restored: Int?
     /// The text folded blocks hide, in text order, each from the line after its block's first line. A heading's fold
     /// holds the folds of the blocks under it.
     private(set) var folds: [NSRange] = []
@@ -320,8 +323,8 @@ extension MarkdownStyler {
 
     /// Styles the next chunk of unstyled text in text order and schedules the next. Once the view is past the first
     /// unstyled character, the rest is styled in one pass: each chunk styled above the view would make TextKit 2 place
-    /// the view again. That pass holds the caret's line, or the first visible line, in place, as switching to the
-    /// source does.
+    /// the view again. That pass holds the restored line, the caret's line, or the first visible line in place, as
+    /// switching to the source does.
     private func styleSome() {
         scheduled = false
         // Text past the map's blocks waits for the first whole parse, whose landing schedules this again.
@@ -335,8 +338,9 @@ extension MarkdownStyler {
                 textView.characterIndexForInsertion(at: NSPoint(x: x, y: max(y, textView.textContainerOrigin.y)))
             }
             let top = index(visible.minX, visible.minY)
-            let caret = textView.selectedRange().location
-            let anchor = min(top <= caret && caret <= index(visible.maxX, visible.maxY) ? caret : top, storage.length - 1)
+            let bottom = index(visible.maxX, visible.maxY)
+            let line = [restored, textView.selectedRange().location].compactMap { $0 }.first { top <= $0 && $0 <= bottom }
+            let anchor = min(line ?? top, storage.length - 1)
             held = textView.baseline(at: anchor).map { (anchor, $0 - visible.minY) }
         }
         let length = past ? map.parsed - first : min(unstyled.rangeView.first!.count, Self.pass, map.parsed - first)
@@ -344,7 +348,7 @@ extension MarkdownStyler {
         restyle(NSRange(location: first, length: length), in: storage, selection: textView.selectedRanges.map(\.rangeValue))
         storage.endEditing()
         if let held { textView.hold(held.anchor, at: held.offset) }
-        if !unstyled.isEmpty { schedule() }
+        if unstyled.isEmpty { restored = nil } else { schedule() }
     }
 
     /// Whether the top of the view is past the line holding `index`, found without laying out any text.
