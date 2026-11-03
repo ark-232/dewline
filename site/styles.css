@@ -199,7 +199,7 @@ code, kbd, pre { font-family: var(--mono); font-size: 0.92em; }
   font-variation-settings: "opsz" 60; letter-spacing: -0.01em; color: var(--ink); text-wrap: balance;
 }
 .prose-x { font: 400 1.1875rem/1.7 var(--serif); font-variation-settings: "opsz" 18; color: var(--body); }
-.fig { font: 400 0.92em/1 var(--mono); font-variant-numeric: tabular-nums; color: var(--ink); white-space: nowrap; }
+.chapter .fig { font: 400 0.92em/1 var(--mono); font-variant-numeric: tabular-nums; color: var(--ink); white-space: nowrap; }
 kbd { font-size: 0.8em; color: var(--ink); white-space: nowrap; }
 
 /* The scene. At rest it is the end state: the change has landed, marked, with Revert and Keep. */
@@ -295,6 +295,7 @@ kbd { font-size: 0.8em; color: var(--ink); white-space: nowrap; }
 .compare td:nth-child(2) .st.y::after { border-color: var(--on-dawn); }
 .st.n { border: 1.5px solid var(--slate); opacity: 0.7; }
 .st.n::after { content: ""; position: absolute; left: 0.25rem; right: 0.25rem; top: calc(50% - 0.75px); height: 1.5px; background: var(--slate); }
+.note { margin-top: 1rem; font-size: 0.875rem; color: var(--slate); max-width: 44rem; }
 
 .dev { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 2.5rem 4rem; align-items: center; }
 .dev code { color: var(--ink); }
