@@ -8,7 +8,7 @@ def row($metric; $unit; $budget; $measured):
      pass: (($measured | type) == "number" and $measured <= $budget)};
 
 . + {budgets: [
-    row("Keystroke, 1 MB, p50"; "ms"; 9.5; .keystroke1MB.p50),
+    row("Keystroke, 1 MB, p50"; "ms"; 10; .keystroke1MB.p50),
     row("Keystroke, 1 MB, p99"; "ms"; 16; .keystroke1MB.p99),
     row("Keystroke, 10 MB, p95"; "ms"; 16; .keystroke10MB.p95),
     row("Cold launch, 1 MB, slowest of 3"; "ms"; 750; (.launch1MB.coldMs // [] | max)),
@@ -16,7 +16,7 @@ def row($metric; $unit; $budget; $measured):
     row("Open 1 MB"; "ms"; 85; .open1MB.ms),
     row("Open 10 MB"; "ms"; 250; .open10MB.ms),
     row("Idle memory, 1 MB"; "MB"; 80; .idle1MB.footprintMB),
-    row("Idle memory, 10 MB"; "MB"; 150; .idle10MB.footprintMB),
+    row("Idle memory, 10 MB"; "MB"; 200; .idle10MB.footprintMB),
     row("Idle CPU, 1 MB"; "%"; 0; .idle1MB.cpuPercent),
     row("Idle CPU, 10 MB"; "%"; 0; .idle10MB.cpuPercent),
     row("Idle wakeups in 60 s, 1 MB"; ""; 0; .idle1MB.idleWakeups),

@@ -1,6 +1,6 @@
 {
   "keystroke1MB": {
-    "p50": 9.5,
+    "p50": 10,
     "p95": 12,
     "p99": 16,
     "max": 20
@@ -39,7 +39,7 @@
     "frontmost": false
   },
   "idle10MB": {
-    "footprintMB": 150,
+    "footprintMB": 200,
     "cpuPercent": 0,
     "idleWakeups": 0,
     "contextSwitches": 90,

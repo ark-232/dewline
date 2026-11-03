@@ -21,19 +21,23 @@ macOS 26+ · Free · No account, no telemetry
 
 **Files and saves.** Edits save in place as plain Markdown. When something else changes the open file (git, a sync app, a script or a coding agent), Dewline marks each change and lets you keep or revert it. It snapshots the file before an outside change lands, and File > Snapshots restores any snapshot.
 
-**Finding your way.** A folder sidebar, tabs, Quick Open (⇧⌘O), find in files (⇧⌘F) and a command palette for files, commands and settings (⇧⌘P).
+**Finding your way.** The sidebar starts at your folder, with + for a new note. Tabs, Quick Open (⇧⌘O), find in files (⇧⌘F) and a command palette for files, commands and settings (⇧⌘P). A preview pane shows the rendered note beside its Markdown.
 
 **Looks.** Six themes, a pack of four more (Solarized, Gruvbox, Nord, Tokyo Night), light and dark, and fonts you install from Settings.
 
+**Links.** Links stay quiet in the text. A link on its own line shows a preview card, and hovering a link shows one; Settings turns previews off.
+
+**Your agent, beside the note.** A side panel talks to the coding agent you already use (Claude Code, Codex or Gemini) over the Agent Client Protocol. Its edits land as marked changes you keep or revert. Dewline ships no model and needs no account.
+
 **Sharing.** Export to HTML, PDF or DOCX. Quick Look previews .md files in Finder. Edit a file live with someone by invite link, peer to peer.
 
-Every shortcut is in [docs/keyboard.md](docs/keyboard.md).
+Every shortcut is in [docs/keyboard.md](docs/keyboard.md), and the full guide is at [dewline.arkwerx.com/docs](https://dewline.arkwerx.com/docs/).
 
 ## Coming from Obsidian or Notion
 
 Dewline opens an Obsidian vault as it is, so you can use it instead of Obsidian on your Mac or beside it. For Notion, it suits the notes and docs you want to keep as files; it has no databases, web pages or team workspace.
 
-| | Obsidian | Notion | Dewline 0.1.0 |
+| | Obsidian | Notion | Dewline |
 |---|---|---|---|
 | Markdown with syntax hidden until the caret arrives | Yes | n/a | Yes |
 | Open an existing vault or folder in place, no import | Yes | No | Yes |
@@ -60,8 +64,6 @@ The app carries a `dewline` command in `Dewline.app/Contents/Helpers`; the Homeb
 - `dewline export` writes HTML, PDF or DOCX, `dewline capture` adds a dated line to `~/Documents/Dewline/Inbox.md`, and `dewline changes` lists the agent changes you kept or reverted.
 
 ## Install
-
-0.1.0 is not tagged yet. Once it is:
 
 ```sh
 brew install --cask ark-232/tap/dewline

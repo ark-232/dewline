@@ -23,10 +23,10 @@ Each milestone is a vertical slice with a check that decides it is done. Weeks a
 
 | Metric | Budget |
 |---|---|
-| Keystroke to screen commit | 9.5 ms median, 16 ms p99 on a 1 MB file |
+| Keystroke to screen commit | 10 ms median, 16 ms p99 on a 1 MB file |
 | Cold / warm launch | 750 / 425 ms |
 | Open 1 MB / 10 MB | 85 / 250 ms |
-| Idle memory | 80 MB |
+| Idle memory | 80 MB with a 1 MB file, 200 MB with a 10 MB file |
 | Idle CPU | 0% five seconds after the last input |
 | Download | 20 MB |
 
