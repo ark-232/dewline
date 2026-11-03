@@ -1,0 +1,54 @@
+/* Hero visual A. Plain Markdown is typed onto a sheet, its syntax steps aside, and the same
+   blocks settle into rendered type. The markup is the end state, so no script and Reduce
+   Motion both show the finished page. Only transform, opacity and clip-path animate. */
+.hva { container-type: inline-size; width: 100%; max-width: 35rem; margin-inline: auto 0; }
+.hva-cap { margin: 0 0 0.75rem 0.125rem; font: 400 0.75rem/1 var(--mono); color: var(--slate); }
+.hva-sheet {
+  padding: 2.5rem 2.75rem 2.75rem; border-radius: 0.75rem;
+  background: var(--win); box-shadow: var(--shadow); color: var(--win-text);
+}
+.hva-stage { position: relative; display: grid; }
+.hva-src, .hva-out { grid-area: 1 / 1; min-width: 0; }
+
+.hva-src { visibility: hidden; font: 400 0.8125rem/1.7 var(--mono); }
+.hva.is-live .hva-src { visibility: visible; }
+.hva-ln { display: block; width: max-content; min-height: 1.7em; white-space: pre; }
+.hva-g { display: inline-block; color: var(--win-quiet); }
+.hva-sb { width: max-content; transform-origin: 0 0; }
+
+.hva-out { font: 400 1.125rem/1.55 var(--serif); font-variation-settings: "opsz" 16; }
+.hva-out > * { transform-origin: 0 0; }
+.hva-out h3 { margin-bottom: 0.75rem; font: 500 2.375rem/1.08 var(--serif); font-variation-settings: "opsz" 36; letter-spacing: -0.01em; }
+.hva-out p { margin-bottom: 1.125rem; max-width: 30rem; }
+.hva-wl { text-decoration: underline 1px var(--win-quiet); text-underline-offset: 0.2em; }
+.hva-tb { margin-bottom: 1.25rem; border-collapse: collapse; font: 400 0.8125rem/1.3 var(--sans); font-variant-numeric: tabular-nums; }
+.hva-tb th { font-weight: 600; text-align: left; }
+.hva-tb th, .hva-tb td { padding: 0.45rem 1.75rem 0.45rem 0; border-bottom: 1px solid var(--win-rule); }
+.hva-tb .n { text-align: right; }
+.hva-tb tr > :last-child { padding-right: 0; }
+.hva-tasks { margin-bottom: 1.125rem; }
+.hva-tasks li { display: flex; align-items: baseline; gap: 0.625rem; }
+.hva-box {
+  flex: none; display: grid; place-items: center; width: 0.8125rem; height: 0.8125rem;
+  border: 1.3px solid var(--win-quiet); border-radius: 0.22rem; transform: translateY(1px);
+}
+.hva-box.x { background: var(--slate); border-color: var(--slate); }
+.hva-box svg { width: 0.625rem; height: 0.625rem; }
+.hva-box path { fill: none; stroke: var(--win); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.hva-done { color: var(--win-quiet); text-decoration: line-through var(--win-rule); }
+.hva-out b { font-weight: 600; }
+.hva-mk { font: 400 0.8em/1 var(--mono); color: var(--win-quiet); }
+/* The caret. Static, it is drawn in place after the last word; live, a positioned copy travels. */
+.hva-at { display: inline-block; width: 2px; height: 1.15em; margin-left: 1px; vertical-align: -0.2em; background: var(--dawn); }
+.hva.is-live .hva-at { visibility: hidden; }
+.hva-caret { display: none; position: absolute; top: 0; left: 0; transform-origin: 0 0; }
+.hva.is-live .hva-caret { display: block; }
+.hva-caret i { display: block; width: 2px; height: 1.0625rem; border-radius: 1px; background: var(--dawn); }
+
+@container (max-width: 30rem) {
+  .hva-sheet { min-height: 0; padding: 1.5rem 1.25rem 1.75rem; }
+  .hva-src { font-size: 0.75rem; }
+  .hva-out { font-size: 1rem; }
+  .hva-out h3 { font-size: 1.75rem; }
+  .hva-tb th, .hva-tb td { padding-right: 1.25rem; }
+}
