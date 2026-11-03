@@ -1,5 +1,5 @@
 body.og {
-  --paper: #F7FBF9; --ink: #111D1C; --slate: #687573; --sea: #2F7365;
+  --paper: #F7FBF9; --ink: #111D1C; --slate: #687573; --dawn: #C9482A;
   width: 1200px; height: 630px; overflow: hidden; margin: 0; background: var(--paper);
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 58px;
 }

@@ -216,7 +216,8 @@ final class ThemeStore {
     }
 
     /// Heading levels 1 to 6 (synthesis 2.3), scaled with the body size. Standard follows the site: H1 34 / 620 with
-    /// -0.025 em tracking, H2 22 / 600, H3 17 / 600, on Bricolage's optical size axis when the face is Bricolage.
+    /// -0.025 em tracking, H2 22 / 600, H3 17 / 600; those weights and the optical size axis apply to Bricolage, and
+    /// other faces set semibold.
     /// Editorial sets the title large and section heads in small caps.
     func heading(_ level: Int) -> Heading {
         if let heading = headings[level] { return heading }
@@ -285,7 +286,7 @@ struct Pairing: Identifiable {
 /// Faces by family name, where New York, SF Pro, SF Pro Rounded and SF Mono name the system designs.
 enum Faces {
     static let body = "New York"
-    static let heading = "Bricolage Grotesque"
+    static let heading = "SF Pro"
     static let code = "JetBrains Mono"
     static let system = ["New York", "SF Pro", "SF Pro Rounded", "SF Mono"]
     static let bundled = ["Bricolage Grotesque", "JetBrains Mono"]
