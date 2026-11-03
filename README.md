@@ -3,7 +3,7 @@
   <img src="docs/brand/lockup.svg" alt="Dewline" width="320">
 </picture>
 
-**Notes that stay files.**
+**Notes you can grep.**
 
 Dewline is a native Markdown editor for Mac. It opens the .md files you already keep, in any folder or Obsidian vault, and saves them exactly as you wrote them.
 

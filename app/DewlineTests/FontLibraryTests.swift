@@ -135,6 +135,18 @@ struct FontLibraryTests {
         #expect(store.bodyFace == "JetBrains Mono" && store.headingFace == Faces.heading)
     }
 
+    @Test func headingsDefaultToTheSystemFontAndKeepAChosenFace() throws {
+        let suite = "DewlineFontTests-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let heading = ThemeStore(defaults: defaults).heading(1).font
+        let traits = heading.fontDescriptor.object(forKey: .traits) as? [NSFontDescriptor.TraitKey: Any]
+        #expect(heading.familyName == NSFont.systemFont(ofSize: heading.pointSize).familyName)
+        #expect(traits?[.weight] as? CGFloat == NSFont.Weight.semibold.rawValue)
+        defaults.set("Bricolage Grotesque", forKey: "DewlineHeadingFace")
+        #expect(ThemeStore(defaults: defaults).heading(2).font.familyName == "Bricolage Grotesque")
+    }
+
     @Test func dropInTakesFontsAndRefusesTheRest() throws {
         let folder = try temporaryFolder()
         let drops = try temporaryFolder()
