@@ -280,7 +280,7 @@ struct Theme: Identifiable, Hashable, Sendable {
         accent          \(Brand.accent.light.l) \(Brand.accent.light.c) \(Brand.accent.light.h)   \(Brand.accent.dark.l) \(Brand.accent.dark.c) \(Brand.accent.dark.h)
         """
 
-    static let tidewater = Theme("Tidewater", "Near-white paper, near-black ink, one green accent.", neutral)
+    static let tidewater = Theme("Tidewater", "Near-white paper, near-black ink, one accent color.", neutral)
 
     static let aurora = Theme("Aurora", "Sage paper by day; polar-night navy with green links after dark.", """
         paper           0.988 0.008 160   0.19  0.02  250
@@ -330,7 +330,7 @@ struct Theme: Identifiable, Hashable, Sendable {
         islandSide      -                 0.236 0.043 288
         """)
 
-    static let nightwatch = Theme("Nightwatch", "Near-black paper, light gray ink, one green accent.", neutral)
+    static let nightwatch = Theme("Nightwatch", "Near-black paper, light gray ink, one accent color.", neutral)
 
     static let carbon = Theme("Carbon", "Onionskin and carbon ink, the manuscript.", """
         paper           0.97  0.003 250   0.185 0.003 260
