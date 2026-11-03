@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Performance · Dewline docs</title>
+<meta name="description" content="The performance budgets for Dewline 0.1.0 and the measured run against them: the Mac, the date and how scripts/perf.sh measures.">
+<link rel="canonical" href="https://dewline.arkwerx.com/docs/performance/">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#F7FBF9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#091110" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="/fonts/newsreader-var.v1.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/ibm-plex-sans-var-latin1.v3.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/styles.css">
+<link rel="stylesheet" href="/docs/docs.css">
+<script src="/docs/docs.js" defer></script>
+<script src="/docs/search.js" defer></script>
+</head>
+<body class="docs">
+<a class="skip" href="#main">Skip to content</a>
+<header class="dtop">
+  <div class="dtop-in">
+    <button type="button" class="menu" aria-controls="dnav" aria-expanded="false">Menu</button>
+    <a class="lockup" href="/" aria-label="Dewline home"><svg aria-hidden="true" focusable="false" viewBox="-8 -12 979.9 176">
+  <g transform="matrix(0.27316 0 0 0.27316 -43.71 -77.27)">
+    <path class="bead" d="M348.6 768A192 192 0 1 1 595.4 768Z"/>
+    <path class="ink" d="M640 312.9L768 288V768H640Z"/>
+    <path class="ink" d="M832 768H192A32 32 0 0 0 192 832H832Z"/>
+  </g>
+  <g transform="translate(239.56 0)">
+  <g class="ink">
+    <path d="M 80.7 71.3Q 80.7 62.1 74.7 56.5Q 68.7 50.8 59.4 50.8Q 51.0 50.8 45.0 55.6Q 39.0 60.5 35.8 70.3Q 32.7 80.2 32.7 95.3Q 32.7 109.7 35.7 118.9Q 38.8 128.1 45.1 132.4Q 51.3 136.7 60.8 136.7Q 68.1 136.7 74.4 134.3Q 80.6 131.8 86.2 125.9L 87.3 128.2Q 81.2 135.4 76.1 140.0Q 71.1 144.7 66.6 147.4Q 62.1 150.0 57.9 151.1Q 53.7 152.2 49.5 152.2Q 36.4 152.2 26.9 146.2Q 17.3 140.1 12.1 129.2Q 6.8 118.3 6.8 103.8Q 6.8 89.9 11.0 79.0Q 15.2 68.1 22.7 60.6Q 30.3 53.1 40.6 49.2Q 50.9 45.4 63.2 45.4Q 69.2 45.4 75.3 46.2Q 81.4 47.0 87.3 48.8Q 93.1 50.6 98.2 53.4L 80.7 55.5V 22.1Q 79.5 21.4 76.8 19.7Q 74.0 18.1 70.7 16.1Q 67.4 14.1 64.5 12.4V 10.3L 105.5 1.4H 106.4L 105.4 18.4V 137.9Q 106.3 138.3 108.2 139.2Q 110.1 140.1 112.4 141.1Q 114.7 142.2 116.9 143.2Q 119.2 144.3 120.8 145.0V 147.4L 82.5 153.0H 81.5L 80.7 137.7Z"/>
+    <path d="M 178.6 45.4Q 190.0 45.4 198.2 49.9Q 206.4 54.5 211.1 63.3Q 215.9 72.1 216.8 84.8H 150.0V 78.2H 204.3L 193.4 82.6Q 192.6 71.2 190.4 64.3Q 188.2 57.4 184.5 54.2Q 180.8 51.0 175.5 51.0Q 168.5 51.0 163.5 55.2Q 158.4 59.3 155.8 67.7Q 153.2 76.2 153.2 89.1Q 153.2 105.3 157.2 115.4Q 161.3 125.5 169.2 130.1Q 177.1 134.7 188.5 134.7Q 194.0 134.7 199.1 133.3Q 204.2 131.9 208.7 129.0Q 213.3 126.1 217.1 121.5L 219.0 122.9Q 212.5 133.9 205.9 140.3Q 199.4 146.7 192.2 149.5Q 185.0 152.2 176.4 152.2Q 162.7 152.2 151.9 146.3Q 141.2 140.3 135.1 128.8Q 128.9 117.3 128.9 100.7Q 128.9 85.8 134.7 73.2Q 140.5 60.6 151.6 53.0Q 162.7 45.4 178.6 45.4Z"/>
+    <path d="M 365.7 53.8 351.9 50.9V 47.6H 386.3V 50.9L 374.2 53.8L 346.0 152.0H 336.4L 299.9 70.1L 306.1 69.3L 273.6 152.0H 264.0L 233.6 54.8L 221.6 50.8V 47.6H 273.2V 50.9L 259.6 54.3L 281.3 128.2L 276.0 133.1L 306.1 45.3H 316.2L 352.1 127.0L 346.5 133.1Z"/>
+    <path d="M 425.3 144.0 438.2 147.2V 150.0H 387.8V 147.2L 400.7 144.0V 22.1Q 399.4 21.3 397.0 19.9Q 394.7 18.6 391.5 16.7Q 388.3 14.8 384.4 12.4V 10.3L 424.3 1.4H 425.3V 19.8Z"/>
+    <path d="M 484.0 44.5V 64.6V 144.1L 496.6 147.2V 150.0H 446.5V 147.2L 459.4 144.0V 67.3Q 458.3 66.4 456.3 64.9Q 454.2 63.4 451.6 61.4Q 448.9 59.3 445.8 56.9V 54.8L 483.0 44.5Z"/>
+    <path d="M 542.9 65.8V 144.1L 555.6 147.2V 150.0H 505.4V 147.2L 518.3 144.0V 67.3Q 516.7 66.0 513.7 63.6Q 510.7 61.2 504.8 56.9V 54.8L 542.0 44.5H 542.9ZM 570.8 147.2 583.5 144.1V 81.0Q 583.5 74.8 581.4 70.7Q 579.3 66.7 575.1 64.7Q 570.9 62.8 564.2 62.8Q 557.4 62.8 551.1 64.6Q 544.9 66.5 540.1 68.8L 539.1 66.8Q 546.8 60.0 552.5 55.8Q 558.2 51.6 562.7 49.4Q 567.1 47.2 571.3 46.4Q 575.4 45.6 580.3 45.6Q 594.7 45.6 601.4 53.4Q 608.1 61.2 608.1 77.3V 144.0L 621.0 147.2V 150.0H 570.8Z"/>
+    <path d="M 680.3 45.4Q 691.7 45.4 699.9 49.9Q 708.1 54.5 712.8 63.3Q 717.6 72.1 718.5 84.8H 651.7V 78.2H 706.0L 695.1 82.6Q 694.3 71.2 692.1 64.3Q 689.9 57.4 686.2 54.2Q 682.5 51.0 677.2 51.0Q 670.2 51.0 665.2 55.2Q 660.1 59.3 657.5 67.7Q 654.9 76.2 654.9 89.1Q 654.9 105.3 658.9 115.4Q 663.0 125.5 670.9 130.1Q 678.8 134.7 690.2 134.7Q 695.7 134.7 700.8 133.3Q 705.9 131.9 710.4 129.0Q 715.0 126.1 718.8 121.5L 720.7 122.9Q 714.2 133.9 707.6 140.3Q 701.1 146.7 693.9 149.5Q 686.7 152.2 678.1 152.2Q 664.4 152.2 653.6 146.3Q 642.9 140.3 636.8 128.8Q 630.6 117.3 630.6 100.7Q 630.6 85.8 636.4 73.2Q 642.2 60.6 653.3 53.0Q 664.4 45.4 680.3 45.4Z"/>
+  </g>
+  <circle class="ink" cx="470.1" cy="18.1" r="16.0"/>
+  </g>
+</svg></a>
+    <a class="dtop-label" href="/docs/">Docs</a>
+    <button type="button" class="search-open" aria-keyshortcuts="Meta+K /"><span>Search</span><kbd>⌘K</kbd></button>
+    <nav class="dtop-links" aria-label="Site">
+      <a href="https://github.com/ark-232/dewline/releases/latest">Download</a>
+      <a href="https://github.com/ark-232/dewline">Source</a>
+    </nav>
+  </div>
+</header>
+
+<div class="dshell">
+  <nav class="dnav" id="dnav" aria-label="Docs">
+    <div class="dnav-group">
+      <p class="dnav-title">Start</p>
+      <ul>
+        <li><a href="/docs/">Overview</a></li>
+        <li><a href="/docs/first-steps/">First steps</a></li>
+      </ul>
+    </div>
+    <div class="dnav-group">
+      <p class="dnav-title">Guide</p>
+      <ul>
+        <li><a href="/docs/editing/">Editing</a></li>
+        <li><a href="/docs/markdown/">Markdown</a></li>
+        <li><a href="/docs/files/">Files and saves</a></li>
+        <li><a href="/docs/collaboration/">Collaboration</a></li>
+        <li><a href="/docs/themes-and-fonts/">Themes and fonts</a></li>
+        <li><a href="/docs/keyboard/">Keyboard shortcuts</a></li>
+        <li><a href="/docs/export/">Export</a></li>
+      </ul>
+    </div>
+    <div class="dnav-group">
+      <p class="dnav-title">Reference</p>
+      <ul>
+        <li><a href="/docs/cli/">Command line</a></li>
+        <li><a href="/docs/mcp/">MCP server</a></li>
+        <li><a href="/docs/agents/">Agents and changes</a></li>
+        <li><a href="/docs/url-scheme/">URL scheme</a></li>
+      </ul>
+    </div>
+    <div class="dnav-group">
+      <p class="dnav-title">Technical</p>
+      <ul>
+        <li><a href="/docs/architecture/">Architecture</a></li>
+        <li><a href="/docs/performance/" aria-current="page">Performance</a></li>
+        <li><a href="/docs/security/">Security and privacy</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <main class="dmain" id="main">
+    <article class="prose">
+      <p class="eyebrow">Technical</p>
+      <h1>Performance</h1>
+      <p class="lead">Every number on this page comes from one run of <code>scripts/perf.sh</code> for 0.1.0, kept in <code>perf/0.1.0.json</code>. A release tag ships only when a run like it holds every budget.</p>
+
+      <h2 id="the-run">The run</h2>
+      <dl class="facts">
+        <dt>Date</dt><dd>2 Nov 2026</dd>
+        <dt>Mac</dt><dd>Apple M4 Pro, 24 GB, macOS 27.2</dd>
+        <dt>Build</dt><dd>Release, arm64, unsigned, Xcode 27.2</dd>
+        <dt>Commit</dt><dd><code>rehearse/v0.1.0-7-gc04d711-dirty</code></dd>
+        <dt>Load average</dt><dd>9.96 at the start, 12.45 after the tests, 11.68 at the end (1 minute)</dd>
+        <dt>App in front</dt><dd>Yes, for every test, keystroke run and idle measurement</dd>
+        <dt>Documents</dt><dd>1,048,633 and 10,485,949 bytes of generated Markdown</dd>
+      </dl>
+      <p>The documents come from a fixed generator, the same bytes on every run: headings, paragraphs with inline markup about once a sentence, lists, quotes, fenced code, links, and some CJK text and emoji.</p>
+      <aside class="callout note">
+        <p class="callout-title">Note</p>
+        <p><code>perf.sh</code> does not record whether the Mac ran on battery or on power, so the run does not say.</p>
+      </aside>
+
+      <h2 id="budgets">Budgets</h2>
+      <p>Each budget is a ceiling in <code>perf/budgets.jq</code>. A measurement that is missing misses it. The release workflow's verify job refuses a <code>v*</code> tag whose perf file misses any budget.</p>
+      <div class="table" tabindex="0" role="region" aria-label="Budgets and the 0.1.0 run">
+        <table>
+          <thead><tr><th scope="col">Budget</th><th scope="col" class="n">Ceiling</th><th scope="col" class="n">Measured</th><th scope="col">Result</th></tr></thead>
+          <tbody>
+            <tr><td>Keystroke, 1 MB, p50</td><td class="n">9.5 ms</td><td class="n">8.9 ms</td><td>Holds</td></tr>
+            <tr><td>Keystroke, 1 MB, p99</td><td class="n">16 ms</td><td class="n">12.7 ms</td><td>Holds</td></tr>
+            <tr><td>Keystroke, 10 MB, p95</td><td class="n">16 ms</td><td class="n">11.8 ms</td><td>Holds</td></tr>
+            <tr><td>Cold launch, 1 MB, slowest of 3</td><td class="n">750 ms</td><td class="n">715 ms</td><td>Holds</td></tr>
+            <tr><td>Warm launch, 1 MB, median of 5</td><td class="n">425 ms</td><td class="n">403 ms</td><td>Holds</td></tr>
+            <tr><td>Open 1 MB</td><td class="n">85 ms</td><td class="n">79.7 ms</td><td>Holds</td></tr>
+            <tr><td>Open 10 MB</td><td class="n">250 ms</td><td class="n">29.3 ms</td><td>Holds</td></tr>
+            <tr><td>Idle memory, 1 MB</td><td class="n">80 MB</td><td class="n">60.2 MB</td><td>Holds</td></tr>
+            <tr><td>Idle memory, 10 MB</td><td class="n">150 MB</td><td class="n">132 MB</td><td>Holds</td></tr>
+            <tr><td>Idle CPU, 1 MB</td><td class="n">0%</td><td class="n">0.0%</td><td>Holds</td></tr>
+            <tr><td>Idle CPU, 10 MB</td><td class="n">0%</td><td class="n">0.0%</td><td>Holds</td></tr>
+            <tr><td>Idle wakeups in 60 s, 1 MB</td><td class="n">0</td><td class="n">0</td><td>Holds</td></tr>
+            <tr><td>Idle wakeups in 60 s, 10 MB</td><td class="n">0</td><td class="n">0</td><td>Holds</td></tr>
+            <tr><td>DMG</td><td class="n">20 MB</td><td class="n">17.9 MB</td><td>Holds</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>A megabyte here is 1,048,576 bytes, as <code>budgets.jq</code> counts it. Open 10 MB is faster than Open 1 MB because the 1 MB open is the process's first text draw, which waits while Core Animation sets up Metal.</p>
+      <figure class="fig" id="figure-budgets">
+        <div class="fig-frame" tabindex="0" role="region" aria-label="Figure 1: measured against each ceiling">
+<svg viewBox="0 0 680 480" role="img" aria-labelledby="pf1-t pf1-d">
+<title id="pf1-t">Each measurement as a share of its ceiling</title>
+<desc id="pf1-d">Every bar ends inside its ceiling. Four rows also mark the ceiling that record 0010 replaced; the measured bar runs past each of those.</desc>
+<text class="f-cap" x="196" y="14">0</text>
+<text class="f-cap f-end" x="520" y="14">ceiling</text>
+<line class="f-limit" x1="520" y1="22" x2="520" y2="470"/>
+<text class="f-t" x="0" y="53">Keystroke, 1 MB, p50</text>
+<rect class="f-track" x="196" y="43" width="324" height="12" rx="2"/>
+<rect class="f-bar" x="196" y="43" width="303.5" height="12" rx="2"/>
+<text class="f-v" x="534" y="53">8.9 of 9.5 ms</text>
+<line class="f-tick" x1="468.8" y1="39" x2="468.8" y2="59"/>
+<text class="f-d f-end" x="463.8" y="71">was 8 ms</text>
+<text class="f-t" x="0" y="97">Keystroke, 1 MB, p99</text>
+<rect class="f-track" x="196" y="87" width="324" height="12" rx="2"/>
+<rect class="f-bar" x="196" y="87" width="256.8" height="12" rx="2"/>
+<text class="f-v" x="534" y="97">12.7 of 16 ms</text>
+<text class="f-t" x="0" y="141">Keystroke, 10 MB, p95</text>
+<rect class="f-track" x="196" y="131" width="324" height="12" rx="2"/>
+<rect class="f-bar" x="196" y="131" width="238.5" height="12" rx="2"/>
+<text class="f-v" x="534" y="141">11.8 of 16 ms</text>
+<text class="f-t" x="0" y="185">Cold launch, slowest of 3</text>
+<rect class="f-track" x="196" y="175" width="324" height="12" rx="2"/>
+<rect class="f-bar" x="196" y="175" width="308.7" height="12" rx="2"/>
+<text class="f-v" x="534" y="185">715 of 750 ms</text>
+<line class="f-tick" x1="325.6" y1="171" x2="325.6" y2="191"/>
+<text class="f-d f-end" x="320.6" y="203">was 300 ms</text>
+<text class="f-t" x="0" y="229">Warm launch, median of 5</text>
+<rect class="f-track" x="196" y="219" width="324" height="12" rx="2"/>
+<rect class="f-bar" x="196" y="219" width="307.3" height="12" rx="2"/>
+<text class="f-v" x="534" y="229">403 of 425 ms</text>
+<line class="f-tick" x1="310.4" y1="215" x2="310.4" y2="235"/>
+<text class="f-d f-end" x="305.4" y="247">was 150 ms</text>
+<text class="f-t" x="0" y="273">Open 1 MB</text>
+<rect class="f-track" x="196" y="263" width="324" height="12" rx="2"/>
+<rect class="f-bar" x="196" y="263" width="303.7" height="12" rx="2"/>
+<text class="f-v" x="534" y="273">79.7 of 85 ms</text>
+<line class="f-tick" x1="386.6" y1="259" x2="386.6" y2="279"/>
+<text class="f-d f-end" x="381.6" y="291">was 50 ms</text>
+<text class="f-t" x="0" y="317">Open 10 MB</text>
+<rect class="f-track" x="196" y="307" width="324" height="12" rx="2"/>
+<rect class="f-bar" x="196" y="307" width="37.9" height="12" rx="2"/>
+<text class="f-v" x="534" y="317">29.3 of 250 ms</text>
+<text class="f-t" x="0" y="361">Idle memory, 1 MB</text>
+<rect class="f-track" x="196" y="351" width="324" height="12" rx="2"/>
+<rect class="f-bar" x="196" y="351" width="243.8" height="12" rx="2"/>
+<text class="f-v" x="534" y="361">60.2 of 80 MB</text>
+<text class="f-t" x="0" y="405">Idle memory, 10 MB</text>
+<rect class="f-track" x="196" y="395" width="324" height="12" rx="2"/>
+<rect class="f-bar" x="196" y="395" width="285.1" height="12" rx="2"/>
+<text class="f-v" x="534" y="405">132 of 150 MB</text>
+<text class="f-t" x="0" y="449">DMG</text>
+<rect class="f-track" x="196" y="439" width="324" height="12" rx="2"/>
+<rect class="f-bar" x="196" y="439" width="290.0" height="12" rx="2"/>
+<text class="f-v" x="534" y="449">17.9 of 20 MB</text>
+</svg>
+        </div>
+        <figcaption><b>Figure 1.</b> Each measurement against its ceiling in <code>perf/budgets.jq</code>. A tick marks the ceiling that record 0010 replaced. Idle CPU and idle wakeups have ceilings of zero and are left out; both measured zero.</figcaption>
+      </figure>
+
+      <h2 id="measures">What each budget measures</h2>
+      <dl>
+        <dt>Keystroke</dt>
+        <dd>The editor opens the document, puts the caret inside a styled span in the middle, and types <code>a</code> and then Delete, 150 times each: 300 samples. Each sample runs from the key down through layout, display and the Core Animation commit.</dd>
+        <dt>Cold launch</dt>
+        <dd>A fresh copy of the app and the 1 MB document, both copied past the file cache with <code>ditto --nocache</code>, launched three times. The time runs from process start to the document window's first display.</dd>
+        <dt>Warm launch</dt>
+        <dd>The built app opens the 1 MB document once unrecorded, then five more times. The median counts.</dd>
+        <dt>Open</dt>
+        <dd>Setting the text and drawing the first screen. Styling the rest of the document continues after it.</dd>
+        <dt>Idle</dt>
+        <dd>The app opens the document and waits until its CPU time holds for 2 s, then 10 s more. <code>top</code> then reads the memory footprint, and over the next 60 s the CPU, idle wakeups and context switches.</dd>
+        <dt>DMG</dt>
+        <dd>The universal app from <code>scripts/build-release.sh</code>, packed as a ULMO disk image the way <code>scripts/sign.sh</code> packs it.</dd>
+      </dl>
+
+      <h2 id="how-perf-sh-runs">How perf.sh runs</h2>
+      <p>The plan times a keystroke in the app being typed in, so <code>perf.sh</code> brings the app to the front for the tests, the keystrokes and idle. A run in which the app was not in front refuses to write a result. You start it from a terminal in front and leave the Mac alone until it ends.</p>
+      <p>The keystroke parts run three times. Right after each keystroke a fixed integer workload measures the clock. A run whose clock reads 1.5 times the fastest run's, or whose probe landed on an efficiency core for more than 1 keystroke in 100, runs again, for up to three rounds. This run needed no reruns.</p>
+      <div class="code" data-lang="Shell">
+<pre tabindex="0"><code><span class="c"># measures this Mac; writes perf/&lt;version&gt;.json with each budget's result</span>
+<span class="p">$ </span>scripts/perf.sh</code></pre>
+      </div>
+      <p>To judge a result against the current ceilings without measuring again, run the gate the release workflow runs:</p>
+      <div class="code" data-lang="Shell">
+<pre tabindex="0"><code><span class="p">$ </span>scripts/perf-gate.sh perf/0.1.0.json v0.1.0
+perf-gate.sh: perf/0.1.0.json holds every budget</code></pre>
+      </div>
+      <aside class="callout note">
+        <p class="callout-title">Note</p>
+        <p><code>perf/0.1.0.json</code> still carries the budgets as they stood when the run wrote it, before record 0010, so its own <code>pass</code> field reads <code>false</code>. <code>perf-gate.sh</code> judges the file again against <code>perf/budgets.jq</code>, and that is the verdict a tag gets.</p>
+      </aside>
+
+      <h2 id="reset">The four reset budgets</h2>
+      <p>Four of the plan's budgets were set before anything was measured. Three perf passes brought the other ten under budget. These four sit at what macOS and TextKit allow on this Mac, and the owner reset them after the third pass (<a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0010-perf-budgets.md">0010</a>). Each new ceiling sits slightly above that run, so a regression still fails.</p>
+      <div class="table" tabindex="0" role="region" aria-label="Budgets reset by record 0010">
+        <table>
+          <thead><tr><th scope="col">Budget</th><th scope="col" class="n">Was</th><th scope="col" class="n">Now</th><th scope="col">Why</th></tr></thead>
+          <tbody>
+            <tr><td>Keystroke, 1 MB, p50</td><td class="n">8 ms</td><td class="n">9.5 ms</td><td>Dewline's own code is about 0.5 ms of a keystroke. The rest is TextKit 2 layout, the Core Animation commit and AppKit's software glyph drawing into 64-bit pixels.</td></tr>
+            <tr><td>Cold launch</td><td class="n">300 ms</td><td class="n">750 ms</td><td>A near-empty AppKit app that opens a file takes about 315 ms cold here. A new copy's first launch costs about 10 ms per MB of bundle, and the Rust library is 16.5 MB per architecture.</td></tr>
+            <tr><td>Warm launch</td><td class="n">150 ms</td><td class="n">425 ms</td><td>The same near-empty app takes about 240 ms warm. Dewline adds about 100 ms, in pieces of 3 to 13 ms.</td></tr>
+            <tr><td>Open 1 MB</td><td class="n">50 ms</td><td class="n">85 ms</td><td>The first text draw in a process blocks 10 to 30 ms while Core Animation sets up Metal, and this open is that first draw.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The record reopens if the Rust library loses a large dependency (Mermaid, Loro or the sync stack), if TextKit or AppKit changes the keystroke path, or if a pass finds a piece of launch worth more than 20 ms.</p>
+
+      <h2 id="keystroke">Where a keystroke goes</h2>
+      <p>A second test stamps each part of a keystroke, so each part's own time counts toward one row and the rows add up to the frame. Parse, attributes and reveal are Dewline's code: 0.49 ms together at the median. Everything else belongs to AppKit, TextKit 2 and Core Animation.</p>
+      <figure class="fig" id="figure-parts">
+        <div class="fig-frame" tabindex="0" role="region" aria-label="Figure 2: the parts of a keystroke">
+<svg viewBox="0 0 680 324" role="img" aria-labelledby="pf2-t pf2-d">
+<title id="pf2-t">The median of each part of a keystroke, 1 MB document</title>
+<desc id="pf2-d">Commit, key down and the two layout passes take the most time. Dewline's own parse, attributes and reveal take 0.15, 0.32 and 0.02 milliseconds.</desc>
+<line class="f-rule" x1="150.0" y1="20" x2="150.0" y2="304"/>
+<text class="f-cap f-mid" x="150.0" y="13">0 ms</text>
+<line class="f-rule" x1="240.0" y1="20" x2="240.0" y2="304"/>
+<text class="f-cap f-mid" x="240.0" y="13">0.5 ms</text>
+<line class="f-rule" x1="330.0" y1="20" x2="330.0" y2="304"/>
+<text class="f-cap f-mid" x="330.0" y="13">1 ms</text>
+<line class="f-rule" x1="420.0" y1="20" x2="420.0" y2="304"/>
+<text class="f-cap f-mid" x="420.0" y="13">1.5 ms</text>
+<line class="f-rule" x1="510.0" y1="20" x2="510.0" y2="304"/>
+<text class="f-cap f-mid" x="510.0" y="13">2 ms</text>
+<line class="f-rule" x1="600.0" y1="20" x2="600.0" y2="304"/>
+<text class="f-cap f-mid" x="600.0" y="13">2.5 ms</text>
+<text class="f-v" x="0" y="40">Key down</text>
+<rect class="f-bar-quiet" x="150" y="30" width="304.2" height="12" rx="2"/>
+<text class="f-v" x="462.2" y="40">1.69</text>
+<text class="f-v" x="0" y="68">Storage edit</text>
+<rect class="f-bar-quiet" x="150" y="58" width="16.2" height="12" rx="2"/>
+<text class="f-v" x="174.2" y="68">0.09</text>
+<text class="f-t" x="0" y="96">Parse</text>
+<rect class="f-bar" x="150" y="86" width="27.0" height="12" rx="2"/>
+<text class="f-v" x="185.0" y="96">0.15</text>
+<text class="f-t" x="0" y="124">Attributes</text>
+<rect class="f-bar" x="150" y="114" width="57.6" height="12" rx="2"/>
+<text class="f-v" x="215.6" y="124">0.32</text>
+<text class="f-t" x="0" y="152">Reveal</text>
+<rect class="f-bar" x="150" y="142" width="3.6" height="12" rx="2"/>
+<text class="f-v" x="161.6" y="152">0.02</text>
+<text class="f-v" x="0" y="180">Invalidation</text>
+<rect class="f-bar-quiet" x="150" y="170" width="91.8" height="12" rx="2"/>
+<text class="f-v" x="249.8" y="180">0.51</text>
+<text class="f-v" x="0" y="208">Paragraph layout</text>
+<rect class="f-bar-quiet" x="150" y="198" width="181.8" height="12" rx="2"/>
+<text class="f-v" x="339.8" y="208">1.01</text>
+<text class="f-v" x="0" y="236">Viewport layout</text>
+<rect class="f-bar-quiet" x="150" y="226" width="217.8" height="12" rx="2"/>
+<text class="f-v" x="375.8" y="236">1.21</text>
+<text class="f-v" x="0" y="264">Caret and display</text>
+<rect class="f-bar-quiet" x="150" y="254" width="113.4" height="12" rx="2"/>
+<text class="f-v" x="271.4" y="264">0.63</text>
+<text class="f-v" x="0" y="292">Commit</text>
+<rect class="f-bar-quiet" x="150" y="282" width="390.6" height="12" rx="2"/>
+<text class="f-v" x="548.6" y="292">2.17</text>
+</svg>
+        </div>
+        <figcaption><b>Figure 2.</b> The median of each part of a keystroke in the 1 MB document, three runs pooled. Dewline's own code is the three rows in bold. Medians of parts do not add up to the median frame, 8.65 ms in this test.</figcaption>
+      </figure>
+
+      <h2 id="also-measured">Also measured</h2>
+      <p>These numbers are in the same run and carry no budget.</p>
+      <div class="table" tabindex="0" role="region" aria-label="Other measurements in the 0.1.0 run">
+        <table>
+          <thead><tr><th scope="col">Measurement</th><th scope="col" class="n">Result</th></tr></thead>
+          <tbody>
+            <tr><td>Keystroke, 1 MB, p95 and max</td><td class="n">11.2 ms, 13.6 ms</td></tr>
+            <tr><td>Keystroke, 10 MB, p50 and p99</td><td class="n">8.7 ms, 13.0 ms</td></tr>
+            <tr><td>Parse a whole 1 MB document</td><td class="n">6.8 ms</td></tr>
+            <tr><td>Parse one paragraph's window, through the FFI</td><td class="n">4.3 µs</td></tr>
+            <tr><td>Open and style all of 1 MB, 10 MB</td><td class="n">290 ms, 2,045 ms</td></tr>
+            <tr><td>Reveal syntax by arrow key, p50 and p99</td><td class="n">7.2 ms, 11.8 ms</td></tr>
+            <tr><td>Select all and deselect, 1 MB</td><td class="n">91.2 ms, 76.5 ms</td></tr>
+            <tr><td>Page Down step, 1 MB, p50 and p99</td><td class="n">14.2 ms, 20.5 ms</td></tr>
+            <tr><td>Page Down steps over 8.3 ms, of 200</td><td class="n">197</td></tr>
+            <tr><td>First launch after a build</td><td class="n">865 ms</td></tr>
+            <tr><td>Idle context switches in 60 s, 1 MB and 10 MB</td><td class="n">7, 17</td></tr>
+            <tr><td>Universal app</td><td class="n">48.3 MB</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Styling the rest of the document continues after the first screen shows. A Page Down step takes about 14 ms, which misses a 120 Hz frame. Scrolling has no <code>perf.sh</code> budget: the plan measures it in Instruments, and that number is not in this run.</p>
+    </article>
+
+    <nav class="pager" aria-label="Previous and next page">
+      <a class="prev" href="/docs/architecture/"><span>Previous</span><b>Architecture</b></a>
+      <a class="next" href="/docs/security/"><span>Next</span><b>Security and privacy</b></a>
+    </nav>
+  </main>
+
+  <aside class="dside">
+    <nav class="outline" aria-labelledby="outline-title"><p class="outline-title" id="outline-title">On this page</p></nav>
+  </aside>
+</div>
+
+<footer class="foot">
+  <div class="foot-in wrap">
+    <p>Free, source-available under <a class="text-link" href="https://github.com/ark-232/dewline/blob/main/LICENSE.md">FSL-1.1-ALv2</a>. Published by ArkWerx LLC.</p>
+    <nav aria-label="Project">
+      <a href="/">Home</a>
+      <a href="https://github.com/ark-232/dewline">Source</a>
+      <a href="https://github.com/ark-232/dewline/releases/latest">Releases</a>
+      <a href="https://github.com/ark-232/dewline/issues">Issues</a>
+      <a href="https://github.com/ark-232/dewline/blob/main/SECURITY.md">Security</a>
+    </nav>
+  </div>
+</footer>
+
+<dialog class="search" id="docs-search" aria-label="Search the docs">
+  <div class="search-field" role="search">
+    <input id="search-q" type="search" placeholder="Search pages and headings" autocomplete="off" spellcheck="false"
+      role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="search-results" aria-label="Search the docs">
+    <button type="button" class="search-close" aria-label="Close search"><kbd>esc</kbd></button>
+  </div>
+  <ul class="search-results" id="search-results" role="listbox" aria-label="Results"></ul>
+  <p class="search-hint"><span><kbd>↑</kbd><kbd>↓</kbd> to move</span><span><kbd>↵</kbd> to open</span></p>
+</dialog>
+<p class="vh" aria-live="polite" id="copied"></p>
+</body>
+</html>

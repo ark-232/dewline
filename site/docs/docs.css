@@ -1,0 +1,341 @@
+/* Docs. Tokens, fonts, .lockup, .btn and .foot come from /styles.css. */
+:root {
+  --top-h: 3.75rem;
+  --code-bg: color-mix(in oklab, var(--mist) 55%, var(--paper));
+  --cap: #FFFFFF;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --cap: #0D1816; }
+}
+
+html { scroll-padding-top: calc(var(--top-h) + 1.25rem); }
+.docs { font-size: 1rem; }
+.skip { position: absolute; left: 1rem; top: -3rem; z-index: 30; padding: 0.5rem 0.875rem; border-radius: 0.5rem; background: var(--ink); color: var(--paper); text-decoration: none; }
+.skip:focus { top: 0.75rem; }
+
+/* Top bar. Its bottom hairline is the brand's line. */
+.dtop {
+  position: sticky; top: 0; z-index: 20;
+  background: color-mix(in oklab, var(--paper) 92%, transparent);
+  -webkit-backdrop-filter: saturate(1.4) blur(12px); backdrop-filter: saturate(1.4) blur(12px);
+  border-bottom: 1px solid var(--rule);
+}
+.dtop-in {
+  display: flex; align-items: center; gap: 1rem;
+  max-width: 90rem; height: var(--top-h); margin-inline: auto; padding-inline: var(--gutter);
+}
+.dtop .lockup svg { height: 1.4rem; }
+.dtop-label {
+  padding-left: 1rem; border-left: 1px solid var(--rule);
+  font: 450 1.1875rem/1 var(--serif); font-variation-settings: "opsz" 24; color: var(--ink); text-decoration: none;
+}
+.dtop-links { display: flex; align-items: center; gap: 1.5rem; margin-left: 0.75rem; font-size: 0.9375rem; }
+.dtop-links a { color: var(--slate); text-decoration: none; }
+.dtop-links a:hover { color: var(--ink); }
+.search-open {
+  display: flex; align-items: center; gap: 0.75rem; width: 15rem; height: 2.25rem; margin-left: auto; padding: 0 0.375rem 0 0.75rem;
+  border: 1px solid var(--rule); border-radius: 0.625rem; background: var(--cap);
+  color: var(--slate); font: 400 0.875rem/1 var(--sans); cursor: pointer; text-align: left;
+}
+.search-open:hover { border-color: color-mix(in oklab, var(--slate) 55%, var(--rule)); color: var(--ink); }
+.search-open span { flex: 1; }
+.search-open kbd { font-size: 0.75rem; }
+.menu {
+  display: none; height: 2.25rem; padding: 0 0.75rem; border: 1px solid var(--rule); border-radius: 0.625rem;
+  background: none; color: var(--ink); font: 500 0.875rem/1 var(--sans); cursor: pointer;
+}
+
+/* Shell: navigation, the page, the outline. */
+.dshell {
+  display: grid; grid-template-columns: 15rem minmax(0, 1fr) 13.5rem; gap: 0 clamp(2rem, 4vw, 4.5rem);
+  max-width: 90rem; margin-inline: auto; padding-inline: var(--gutter);
+}
+.dnav, .dside {
+  position: sticky; top: var(--top-h); align-self: start;
+  max-height: calc(100vh - var(--top-h)); overflow-y: auto; overscroll-behavior: contain;
+  padding-block: 2.25rem 3rem;
+}
+.dmain { min-width: 0; padding-block: 2.75rem 4rem; }
+
+/* Navigation. The current page is marked the way the mark is drawn: a bead resting on a line that runs to the edge. */
+.dnav-group + .dnav-group { margin-top: 1.75rem; }
+.dnav-title { margin: 0 0 0.375rem; padding-left: 1.25rem; font: 600 0.8125rem/1.4 var(--sans); color: var(--ink); }
+.dnav ul { margin: 0; padding: 0; list-style: none; }
+.dnav a {
+  position: relative; display: block; padding: 0.3125rem 0 0.4375rem 1.25rem;
+  color: var(--slate); font-size: 0.9375rem; line-height: 1.4; text-decoration: none;
+}
+.dnav a:hover { color: var(--ink); }
+.dnav a[aria-current="page"] { color: var(--ink); font-weight: 500; }
+.dnav a[aria-current="page"]::before,
+.dnav a[aria-current="page"]::after { content: ""; position: absolute; bottom: 0.25rem; }
+.dnav a[aria-current="page"]::before {
+  left: 0.25rem; width: 0.5rem; height: 0.5rem;
+  border-radius: 50%; background: var(--sea);
+}
+.dnav a[aria-current="page"]::after { left: 0.125rem; right: 0; height: 1px; background: var(--ink); }
+
+/* On this page */
+.outline-title { margin: 0 0 0.625rem; font: 600 0.8125rem/1.4 var(--sans); color: var(--ink); }
+.outline ul { margin: 0; padding: 0; list-style: none; border-left: 1px solid var(--rule); }
+.outline a {
+  display: block; margin-left: -1px; padding: 0.25rem 0 0.25rem 0.875rem; border-left: 1px solid transparent;
+  color: var(--slate); font-size: 0.8125rem; line-height: 1.45; text-decoration: none;
+}
+.outline .sub a { padding-left: 1.625rem; }
+.outline a:hover { color: var(--ink); }
+.outline a.on { color: var(--ink); border-left-color: var(--ink); }
+/* The page */
+.prose { max-width: 68ch; color: var(--body); font-size: 1.0625rem; line-height: 1.68; }
+.eyebrow { margin: 0 0 0.75rem; font: 500 0.875rem/1.4 var(--sans); color: var(--slate); }
+.prose h1 {
+  font: 450 clamp(2.25rem, 1.7rem + 1.6vw, 3rem)/1.08 var(--serif);
+  font-variation-settings: "opsz" 72; letter-spacing: -0.012em; color: var(--ink); text-wrap: balance;
+}
+.prose .lead { margin-top: 1rem; font-size: 1.1875rem; line-height: 1.55; color: var(--body); }
+.prose h1 + .lead { margin-bottom: 0.5rem; }
+.prose h2 {
+  margin: 3.25rem 0 0.875rem;
+  font: 470 1.75rem/1.2 var(--serif); font-variation-settings: "opsz" 36; letter-spacing: -0.006em;
+  color: var(--ink); text-wrap: balance;
+}
+.prose h3 { margin: 2.25rem 0 0.5rem; font: 600 1.0625rem/1.45 var(--sans); color: var(--ink); }
+.prose h2 + h3 { margin-top: 1.25rem; }
+.prose h2, .prose h3 { position: relative; }
+.prose p, .prose ul, .prose ol, .prose dl { margin: 0 0 1rem; }
+.prose ul, .prose ol { padding-left: 1.375rem; }
+.prose ul { list-style: disc; }
+.prose li { margin-top: 0.375rem; padding-left: 0.25rem; }
+.prose li::marker { color: var(--slate); }
+.prose strong { font-weight: 600; color: var(--ink); }
+.prose a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--slate); text-decoration-thickness: 1px; text-underline-offset: 0.25em; }
+.prose a:hover { text-decoration-color: var(--ink); }
+.prose a.btn { color: var(--paper); text-decoration: none; }
+.prose :not(pre) > code {
+  padding: 0.125em 0.375em; border-radius: 0.3125rem; background: var(--code-bg);
+  color: var(--ink); font-size: 0.875em; overflow-wrap: anywhere;
+}
+.prose dt { margin-top: 1.25rem; color: var(--ink); font-weight: 500; }
+.prose dt code { font-size: 0.9375rem; }
+.prose dd { margin: 0.25rem 0 0; }
+.anchor {
+  position: absolute; right: 100%; padding-right: 0.5rem; color: var(--slate);
+  font: 400 0.8em/inherit var(--sans); text-decoration: none; opacity: 0;
+}
+h2:hover > .anchor, h3:hover > .anchor, .anchor:focus-visible { opacity: 1; }
+
+/* Code. The label comes from data-lang; docs.js adds the Copy button. */
+.code {
+  position: relative; margin: 1.25rem 0 1.5rem; border: 1px solid var(--rule); border-radius: 0.75rem;
+  background: var(--code-bg); overflow: hidden;
+}
+.code::before {
+  content: attr(data-lang); display: block; padding: 0.625rem 1.125rem 0.5625rem;
+  border-bottom: 1px solid var(--rule); color: var(--slate); font: 500 0.75rem/1.2 var(--sans);
+}
+.code pre {
+  margin: 0; padding: 1rem 1.125rem 1.125rem; overflow-x: auto; tab-size: 4;
+  color: var(--ink); font-size: 0.84375rem; line-height: 1.7;
+}
+.code pre:focus-visible { outline-offset: -3px; }
+.code .copy {
+  position: absolute; top: 0.3125rem; right: 0.375rem; padding: 0.375rem 0.625rem;
+  background: transparent; color: var(--slate); font-size: 0.75rem;
+}
+.code .copy:hover { background: var(--mist); color: var(--ink); }
+.code .c, .code .p, .code .o { color: var(--slate); }
+.code .p { user-select: none; -webkit-user-select: none; }
+.code .s { color: var(--body); }
+.code .k { color: var(--ink); font-weight: 600; }
+
+/* Keys */
+kbd {
+  display: inline-block; min-width: 1.6em; padding: 0.0625em 0.4em; margin-inline: 0.0625em;
+  border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 0.3125rem;
+  background: var(--cap); color: var(--ink); font: 500 0.8125em/1.45 var(--chrome); text-align: center;
+  white-space: nowrap; vertical-align: 0.0625em;
+}
+
+/* A key sequence or ⌘-click in prose stays on one line. */
+.keys { white-space: nowrap; }
+/* The Keyboard page's tables share one Shortcut column. */
+.keys-page .table table { table-layout: fixed; }
+.keys-page .table th:last-child, .keys-page .table td:last-child { width: 11rem; }
+/* Code in a heading takes the heading's size and color, without the chip. */
+.prose h2 > code, .prose h3 > code { padding: 0; background: none; font-size: 0.92em; }
+
+/* Tables scroll inside their own frame. */
+.table { margin: 1.25rem 0 1.75rem; overflow-x: auto; border: 1px solid var(--rule); border-radius: 0.75rem; }
+.table table { width: 100%; border-collapse: collapse; font-size: 0.9375rem; line-height: 1.5; }
+.table th, .table td { padding: 0.625rem 1rem; text-align: left; vertical-align: top; border-bottom: 1px solid var(--rule); }
+.table tr:last-child > * { border-bottom: 0; }
+.table thead th { background: var(--mist); color: var(--ink); font-weight: 600; white-space: nowrap; }
+.table tbody th { color: var(--ink); font-weight: 500; }
+.table td code, .table th code { white-space: nowrap; }
+.table .n { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Callouts */
+.callout { margin: 1.5rem 0; padding: 0.875rem 1.125rem 0.125rem; border-radius: 0.625rem; font-size: 1rem; }
+.callout-title { margin: 0 0 0.25rem !important; color: var(--ink); font: 600 0.875rem/1.5 var(--sans); }
+.callout.note { background: var(--code-bg); }
+.callout.caution { border: 1px solid var(--rule); border-left: 3px solid var(--ink); background: var(--paper); }
+/* Previous and next */
+.pager {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem;
+  max-width: 68ch; margin-top: 4.5rem; font-size: 1.0625rem; padding-top: 1.5rem; border-top: 1px solid var(--rule);
+}
+.pager a {
+  display: block; padding: 0.875rem 1rem; border: 1px solid var(--rule); border-radius: 0.75rem;
+  color: var(--ink); text-decoration: none;
+}
+.pager a:hover { border-color: color-mix(in oklab, var(--slate) 55%, var(--rule)); }
+.pager span { display: block; color: var(--slate); font-size: 0.8125rem; }
+.pager b { display: block; margin-top: 0.125rem; font: 470 1.1875rem/1.3 var(--serif); font-variation-settings: "opsz" 24; }
+.pager .next { grid-column: 2; text-align: right; }
+
+/* Docs home: the install pair and the section grid */
+.install { margin: 1.5rem 0 1.25rem; border: 1px solid var(--rule); border-radius: 0.75rem; }
+.install > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.25rem 1.5rem; align-items: center; padding: 1.125rem 1.25rem; }
+.install > div + div { border-top: 1px solid var(--rule); }
+.install > div > :last-child { grid-column: 2; grid-row: 1 / span 2; }
+.install h3 { margin: 0 0 0.375rem; }
+.install p { margin: 0; font-size: 0.9375rem; color: var(--slate); }
+.install .btn { min-height: 2.75rem; padding: 0 1.25rem; font-size: 0.9375rem; }
+.install .brew { margin: 0; }
+.install .brew code { padding: 0; background: none; font-size: 0.8125rem; }
+.sections { margin-top: 1.25rem; }
+.sections section { display: grid; grid-template-columns: 8rem minmax(0, 1fr); gap: 0 1.5rem; padding-top: 1.25rem; border-top: 1px solid var(--rule); }
+.sections section + section { margin-top: 1.5rem; }
+.sections h3 { margin: 0.6875rem 0 0; font-size: 0.9375rem; }
+.sections ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 1.5rem; margin: 0; padding: 0; list-style: none; }
+.sections li { margin: 0; padding: 0; }
+.sections a { display: block; padding: 0.6875rem 0 0.75rem; text-decoration: none; }
+.sections a b { display: block; color: var(--ink); font-weight: 500; font-size: 1rem; }
+.sections a span { display: block; margin-top: 0.125rem; color: var(--slate); font-size: 0.875rem; line-height: 1.5; }
+.sections a:hover b { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.25em; }
+.links { columns: 2; column-gap: 2.5rem; }
+.links li { margin: 0; padding-block: 0.1875rem; break-inside: avoid; }
+
+/* Search */
+.search {
+  width: min(40rem, calc(100vw - 2rem)); max-height: min(36rem, calc(100vh - 6rem)); margin: 10vh auto auto; padding: 0;
+  border: 1px solid var(--rule); border-radius: 0.875rem; background: var(--paper); color: var(--body);
+  box-shadow: var(--shadow); overflow: hidden;
+}
+.search[open] { display: flex; flex-direction: column; }
+.search::backdrop { background: color-mix(in oklab, var(--ink) 28%, transparent); }
+.search-field { display: flex; align-items: center; gap: 0.75rem; padding: 0 1rem; border-bottom: 1px solid var(--rule); }
+.search-field input {
+  flex: 1; min-width: 0; height: 3.5rem; border: 0; background: none; color: var(--ink);
+  font: 400 1.0625rem/1 var(--sans); outline: none;
+}
+.search-field input::placeholder { color: var(--slate); }
+.search-field input::-webkit-search-cancel-button { display: none; }
+.search-close { border: 0; background: none; padding: 0; cursor: pointer; }
+.search-results { flex: 1; margin: 0; padding: 0.5rem; list-style: none; overflow-y: auto; }
+.search-results li { margin: 0; }
+.search-results a { display: block; padding: 0.5625rem 0.75rem; border-radius: 0.5rem; color: var(--ink); text-decoration: none; }
+.search-results [aria-selected="true"] a { background: var(--mist); }
+.search-results b { display: block; font-weight: 500; font-size: 0.9375rem; }
+.search-results span { display: block; color: var(--slate); font-size: 0.8125rem; }
+.search-results mark { background: none; color: inherit; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.2em; }
+.search-empty { padding: 1.5rem 0.75rem; color: var(--slate); font-size: 0.9375rem; }
+.search-hint { display: flex; gap: 1.25rem; margin: 0; padding: 0.625rem 1rem; border-top: 1px solid var(--rule); color: var(--slate); font-size: 0.75rem; }
+/* Figures, run facts and source notes, used by the Technical pages. */
+.fig { margin: 2rem 0 2.5rem; }
+.fig-frame {
+  overflow-x: auto; padding: 1.25rem; border: 1px solid var(--rule); border-radius: 0.75rem; background: var(--paper);
+}
+.fig-frame:focus-visible { outline-offset: -3px; }
+.fig svg { display: block; width: 100%; min-width: 36rem; height: auto; }
+.fig.narrow svg { min-width: 0; }
+.fig figcaption { margin-top: 0.75rem; color: var(--slate); font-size: 0.875rem; line-height: 1.55; }
+.fig figcaption b { color: var(--ink); font-weight: 600; }
+
+/* SVG parts. Text sizes are in viewBox units. */
+.fig text { font-family: var(--sans); fill: var(--body); }
+.fig .f-cap { font-size: 12px; font-weight: 500; fill: var(--slate); letter-spacing: 0.02em; }
+.fig .f-h { font-family: var(--serif); font-size: 18px; font-weight: 470; fill: var(--ink); }
+.fig .f-t { font-size: 13px; font-weight: 600; fill: var(--ink); }
+.fig .f-d { font-size: 11.5px; fill: var(--slate); }
+.fig .f-m { font-family: var(--mono); font-size: 11.5px; fill: var(--ink); }
+.fig .f-n { font-family: var(--mono); font-size: 11px; fill: var(--slate); }
+.fig .f-v { font-size: 12px; fill: var(--body); font-variant-numeric: tabular-nums; }
+.fig .f-end { text-anchor: end; }
+.fig .f-mid { text-anchor: middle; }
+.fig .f-bundle { fill: none; stroke: var(--rule); stroke-width: 1.25; stroke-dasharray: 5 4; }
+.fig .f-layer { fill: var(--mist); }
+.fig .f-chip { fill: var(--paper); stroke: var(--rule); }
+.fig .f-pill { fill: var(--paper); stroke: var(--ink); }
+.fig .f-own { fill: var(--ink); }
+.fig .f-line { fill: none; stroke: var(--slate); stroke-width: 1.25; }
+.fig .f-arrow { fill: var(--slate); }
+.fig .f-track { fill: var(--mist); }
+.fig .f-bar { fill: var(--ink); }
+.fig .f-bar-quiet { fill: color-mix(in oklab, var(--slate) 45%, var(--mist)); }
+.fig .f-tick { stroke: var(--slate); stroke-width: 1.5; }
+.fig .f-limit { stroke: var(--ink); stroke-width: 1.5; }
+.fig .f-rule { stroke: var(--rule); }
+.fig .f-dash { stroke-dasharray: 3 3; }
+
+/* Where a control lives, after its description in a table cell. */
+.table .src { color: var(--slate); font-size: 0.875rem; }
+
+/* A key and value list for a run's facts. */
+.prose .facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.5rem 1.5rem; margin: 1.25rem 0 1.5rem; padding: 1rem 1.25rem; border: 1px solid var(--rule); border-radius: 0.75rem; font-size: 0.9375rem; }
+.prose .facts dt { margin: 0; color: var(--slate); font-weight: 400; }
+.prose .facts dd { margin: 0; color: var(--ink); }
+
+/* Footer on docs pages */
+.docs .foot-in { max-width: 90rem; }
+
+@media (max-width: 80rem) {
+  .dshell { grid-template-columns: 14rem minmax(0, 1fr); }
+  .dside { display: none; }
+}
+@media (max-width: 56rem) {
+  .dshell { display: block; }
+  .menu { display: inline-flex; align-items: center; }
+  .dtop-links { display: none; }
+  .search-open { width: auto; }
+  .search-open kbd { display: none; }
+  .dnav {
+    position: fixed; inset: var(--top-h) 0 -1rem; z-index: 19; max-height: none;
+    padding: 1.5rem var(--gutter) 4rem; background: var(--paper);
+  }
+  .dnav:not(.open) { display: none; }
+  .dmain { padding-top: 2rem; }
+  .dtop .lockup svg { height: 1.25rem; }
+  .install > div { grid-template-columns: minmax(0, 1fr); padding: 1rem 0.875rem; }
+  .install > div > :last-child { grid-column: 1; grid-row: auto; margin-top: 0.75rem; justify-self: start; }
+  .install .brew { justify-self: stretch; }
+  .sections section { grid-template-columns: minmax(0, 1fr); }
+  .sections h3 { margin: 0 0 0.25rem; }
+  .sections ul { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 30rem) {
+  .dtop-label { display: none; }
+  .pager { grid-template-columns: minmax(0, 1fr); }
+  .pager .next { grid-column: 1; }
+  .links { columns: 1; }
+  .install > div { padding-inline: 0.75rem; }
+  .install .brew code { font-size: 0.75rem; }
+  .fig-frame { padding: 0.875rem; }
+  .prose .facts { grid-template-columns: minmax(0, 1fr); gap: 0.125rem; }
+  .prose .facts dd + dt { margin-top: 0.625rem; }
+}
+
+@media print {
+  :root {
+    --paper: #FFFFFF; --mist: #EEF3F1; --ink: #111D1C; --body: #2B3836; --slate: #5E6A68; --rule: #D3DFDA;
+    --code-bg: #F5F8F7; --cap: #FFFFFF;
+  }
+  .dtop, .dnav, .dside, .pager, .foot, .code .copy, .anchor, .search, .skip { display: none !important; }
+  .dshell { display: block; padding: 0; }
+  .dmain { padding: 0; }
+  .prose { max-width: none; font-size: 10.5pt; }
+  .prose h2, .prose h3 { break-after: avoid; }
+  .code, .table, .callout { break-inside: avoid; }
+  .code pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .prose a[href^="http"]::after { content: " (" attr(href) ")"; color: var(--slate); font-size: 0.85em; }
+}

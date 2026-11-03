@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MCP server · Dewline docs</title>
+<meta name="description" content="Serve a folder of notes to Claude Code, Codex or Cursor over MCP: setup, limits, every tool with its schema, and errors.">
+<link rel="canonical" href="https://dewline.arkwerx.com/docs/mcp/">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#F7FBF9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#091110" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="/fonts/newsreader-var.v1.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/ibm-plex-sans-var-latin1.v3.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/styles.css">
+<link rel="stylesheet" href="/docs/docs.css">
+<script src="/docs/docs.js" defer></script>
+<script src="/docs/search.js" defer></script>
+</head>
+<body class="docs">
+<a class="skip" href="#main">Skip to content</a>
+<header class="dtop">
+  <div class="dtop-in">
+    <button type="button" class="menu" aria-controls="dnav" aria-expanded="false">Menu</button>
+    <a class="lockup" href="/" aria-label="Dewline home"><svg aria-hidden="true" focusable="false" viewBox="-8 -12 979.9 176">
+  <g transform="matrix(0.27316 0 0 0.27316 -43.71 -77.27)">
+    <path class="bead" d="M348.6 768A192 192 0 1 1 595.4 768Z"/>
+    <path class="ink" d="M640 312.9L768 288V768H640Z"/>
+    <path class="ink" d="M832 768H192A32 32 0 0 0 192 832H832Z"/>
+  </g>
+  <g transform="translate(239.56 0)">
+  <g class="ink">
+    <path d="M 80.7 71.3Q 80.7 62.1 74.7 56.5Q 68.7 50.8 59.4 50.8Q 51.0 50.8 45.0 55.6Q 39.0 60.5 35.8 70.3Q 32.7 80.2 32.7 95.3Q 32.7 109.7 35.7 118.9Q 38.8 128.1 45.1 132.4Q 51.3 136.7 60.8 136.7Q 68.1 136.7 74.4 134.3Q 80.6 131.8 86.2 125.9L 87.3 128.2Q 81.2 135.4 76.1 140.0Q 71.1 144.7 66.6 147.4Q 62.1 150.0 57.9 151.1Q 53.7 152.2 49.5 152.2Q 36.4 152.2 26.9 146.2Q 17.3 140.1 12.1 129.2Q 6.8 118.3 6.8 103.8Q 6.8 89.9 11.0 79.0Q 15.2 68.1 22.7 60.6Q 30.3 53.1 40.6 49.2Q 50.9 45.4 63.2 45.4Q 69.2 45.4 75.3 46.2Q 81.4 47.0 87.3 48.8Q 93.1 50.6 98.2 53.4L 80.7 55.5V 22.1Q 79.5 21.4 76.8 19.7Q 74.0 18.1 70.7 16.1Q 67.4 14.1 64.5 12.4V 10.3L 105.5 1.4H 106.4L 105.4 18.4V 137.9Q 106.3 138.3 108.2 139.2Q 110.1 140.1 112.4 141.1Q 114.7 142.2 116.9 143.2Q 119.2 144.3 120.8 145.0V 147.4L 82.5 153.0H 81.5L 80.7 137.7Z"/>
+    <path d="M 178.6 45.4Q 190.0 45.4 198.2 49.9Q 206.4 54.5 211.1 63.3Q 215.9 72.1 216.8 84.8H 150.0V 78.2H 204.3L 193.4 82.6Q 192.6 71.2 190.4 64.3Q 188.2 57.4 184.5 54.2Q 180.8 51.0 175.5 51.0Q 168.5 51.0 163.5 55.2Q 158.4 59.3 155.8 67.7Q 153.2 76.2 153.2 89.1Q 153.2 105.3 157.2 115.4Q 161.3 125.5 169.2 130.1Q 177.1 134.7 188.5 134.7Q 194.0 134.7 199.1 133.3Q 204.2 131.9 208.7 129.0Q 213.3 126.1 217.1 121.5L 219.0 122.9Q 212.5 133.9 205.9 140.3Q 199.4 146.7 192.2 149.5Q 185.0 152.2 176.4 152.2Q 162.7 152.2 151.9 146.3Q 141.2 140.3 135.1 128.8Q 128.9 117.3 128.9 100.7Q 128.9 85.8 134.7 73.2Q 140.5 60.6 151.6 53.0Q 162.7 45.4 178.6 45.4Z"/>
+    <path d="M 365.7 53.8 351.9 50.9V 47.6H 386.3V 50.9L 374.2 53.8L 346.0 152.0H 336.4L 299.9 70.1L 306.1 69.3L 273.6 152.0H 264.0L 233.6 54.8L 221.6 50.8V 47.6H 273.2V 50.9L 259.6 54.3L 281.3 128.2L 276.0 133.1L 306.1 45.3H 316.2L 352.1 127.0L 346.5 133.1Z"/>
+    <path d="M 425.3 144.0 438.2 147.2V 150.0H 387.8V 147.2L 400.7 144.0V 22.1Q 399.4 21.3 397.0 19.9Q 394.7 18.6 391.5 16.7Q 388.3 14.8 384.4 12.4V 10.3L 424.3 1.4H 425.3V 19.8Z"/>
+    <path d="M 484.0 44.5V 64.6V 144.1L 496.6 147.2V 150.0H 446.5V 147.2L 459.4 144.0V 67.3Q 458.3 66.4 456.3 64.9Q 454.2 63.4 451.6 61.4Q 448.9 59.3 445.8 56.9V 54.8L 483.0 44.5Z"/>
+    <path d="M 542.9 65.8V 144.1L 555.6 147.2V 150.0H 505.4V 147.2L 518.3 144.0V 67.3Q 516.7 66.0 513.7 63.6Q 510.7 61.2 504.8 56.9V 54.8L 542.0 44.5H 542.9ZM 570.8 147.2 583.5 144.1V 81.0Q 583.5 74.8 581.4 70.7Q 579.3 66.7 575.1 64.7Q 570.9 62.8 564.2 62.8Q 557.4 62.8 551.1 64.6Q 544.9 66.5 540.1 68.8L 539.1 66.8Q 546.8 60.0 552.5 55.8Q 558.2 51.6 562.7 49.4Q 567.1 47.2 571.3 46.4Q 575.4 45.6 580.3 45.6Q 594.7 45.6 601.4 53.4Q 608.1 61.2 608.1 77.3V 144.0L 621.0 147.2V 150.0H 570.8Z"/>
+    <path d="M 680.3 45.4Q 691.7 45.4 699.9 49.9Q 708.1 54.5 712.8 63.3Q 717.6 72.1 718.5 84.8H 651.7V 78.2H 706.0L 695.1 82.6Q 694.3 71.2 692.1 64.3Q 689.9 57.4 686.2 54.2Q 682.5 51.0 677.2 51.0Q 670.2 51.0 665.2 55.2Q 660.1 59.3 657.5 67.7Q 654.9 76.2 654.9 89.1Q 654.9 105.3 658.9 115.4Q 663.0 125.5 670.9 130.1Q 678.8 134.7 690.2 134.7Q 695.7 134.7 700.8 133.3Q 705.9 131.9 710.4 129.0Q 715.0 126.1 718.8 121.5L 720.7 122.9Q 714.2 133.9 707.6 140.3Q 701.1 146.7 693.9 149.5Q 686.7 152.2 678.1 152.2Q 664.4 152.2 653.6 146.3Q 642.9 140.3 636.8 128.8Q 630.6 117.3 630.6 100.7Q 630.6 85.8 636.4 73.2Q 642.2 60.6 653.3 53.0Q 664.4 45.4 680.3 45.4Z"/>
+  </g>
+  <circle class="ink" cx="470.1" cy="18.1" r="16.0"/>
+  </g>
+</svg></a>
+    <a class="dtop-label" href="/docs/">Docs</a>
+    <button type="button" class="search-open" aria-keyshortcuts="Meta+K /"><span>Search</span><kbd>⌘K</kbd></button>
+    <nav class="dtop-links" aria-label="Site">
+      <a href="https://github.com/ark-232/dewline/releases/latest">Download</a>
+      <a href="https://github.com/ark-232/dewline">Source</a>
+    </nav>
+  </div>
+</header>
+
+<div class="dshell">
+  <nav class="dnav" id="dnav" aria-label="Docs">
+    <div class="dnav-group">
+      <p class="dnav-title">Start</p>
+      <ul>
+        <li><a href="/docs/">Overview</a></li>
+        <li><a href="/docs/first-steps/">First steps</a></li>
+      </ul>
+    </div>
+    <div class="dnav-group">
+      <p class="dnav-title">Guide</p>
+      <ul>
+        <li><a href="/docs/editing/">Editing</a></li>
+        <li><a href="/docs/markdown/">Markdown</a></li>
+        <li><a href="/docs/files/">Files and saves</a></li>
+        <li><a href="/docs/collaboration/">Collaboration</a></li>
+        <li><a href="/docs/themes-and-fonts/">Themes and fonts</a></li>
+        <li><a href="/docs/keyboard/">Keyboard shortcuts</a></li>
+        <li><a href="/docs/export/">Export</a></li>
+      </ul>
+    </div>
+    <div class="dnav-group">
+      <p class="dnav-title">Reference</p>
+      <ul>
+        <li><a href="/docs/cli/">Command line</a></li>
+        <li><a href="/docs/mcp/" aria-current="page">MCP server</a></li>
+        <li><a href="/docs/agents/">Agents and changes</a></li>
+        <li><a href="/docs/url-scheme/">URL scheme</a></li>
+      </ul>
+    </div>
+    <div class="dnav-group">
+      <p class="dnav-title">Technical</p>
+      <ul>
+        <li><a href="/docs/architecture/">Architecture</a></li>
+        <li><a href="/docs/performance/">Performance</a></li>
+        <li><a href="/docs/security/">Security and privacy</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <main class="dmain" id="main">
+    <article class="prose">
+      <p class="eyebrow">Reference</p>
+      <h1>MCP server</h1>
+      <p class="lead"><code>dewline mcp</code> gives an agent one folder of your notes: it can read them, search them, find backlinks, see which of its changes you kept or reverted, and add an entry to your inbox. It can't change any other file.</p>
+
+      <h2 id="setup">Add it to your agent</h2>
+      <p>The agent starts the server itself, with your notes folder as the one argument, and talks to it over stdin and stdout. Use the command inside the app by its full path, and the folder's full path. The examples serve <code>/Users/you/Notes</code>.</p>
+
+      <h3 id="claude-code">Claude Code</h3>
+      <div class="code" data-lang="Shell">
+<pre tabindex="0"><code><span class="p">$ </span>claude mcp add dewline -- /Applications/Dewline.app/Contents/Helpers/dewline mcp /Users/you/Notes</code></pre>
+      </div>
+      <p>That adds it to the current project. Add <code>--scope user</code> after <code>add</code> to make it available in every project.</p>
+
+      <h3 id="codex">Codex</h3>
+      <div class="code" data-lang="~/.codex/config.toml">
+<pre tabindex="0"><code>[mcp_servers.dewline]
+command = "/Applications/Dewline.app/Contents/Helpers/dewline"
+args = ["mcp", "/Users/you/Notes"]</code></pre>
+      </div>
+
+      <h3 id="cursor">Cursor</h3>
+      <div class="code" data-lang="~/.cursor/mcp.json">
+<pre tabindex="0"><code>{
+  "<span class="k">mcpServers</span>": {
+    "<span class="k">dewline</span>": {
+      "<span class="k">command</span>": <span class="s">"/Applications/Dewline.app/Contents/Helpers/dewline"</span>,
+      "<span class="k">args</span>": [<span class="s">"mcp"</span>, <span class="s">"/Users/you/Notes"</span>]
+    }
+  }
+}</code></pre>
+      </div>
+      <aside class="callout note">
+        <p class="callout-title">Note</p>
+        <p>Each agent owns its config format, and these were checked on 2 November 2026 against Claude Code 2.1.317 and the Codex and Cursor configs installed that day. If one has moved, the server command stays the same: <code>dewline mcp &lt;folder&gt;</code>.</p>
+      </aside>
+      <p>To serve a second folder, add a second server with another name. Each server sees only its own folder.</p>
+
+      <h2 id="limits">What the server can reach</h2>
+      <p>Every path goes through the same jail. It resolves the path with every symlink followed, requires the result to lie inside the folder, then opens it from the folder with no symlink allowed on the way, so a link or folder swapped in between the two steps opens nothing.</p>
+      <ul>
+        <li><strong>The folder.</strong> The server won't start on your home folder or any folder that holds it, on a folder inside <code>~/Library</code>, or on a folder that holds <code>.ssh</code> or sits inside one. The checks ignore case.</li>
+        <li><strong>File types.</strong> Only <code>.md</code>, <code>.markdown</code> and <code>.txt</code> files, in any case. Everything else is refused.</li>
+        <li><strong>Dotfiles.</strong> Never a file whose name starts with a dot, and nothing under a dot folder such as <code>.git</code> or <code>.obsidian</code>.</li>
+        <li><strong>Size and text.</strong> A file of at most 8 MB, in UTF-8.</li>
+        <li><strong>Search and backlinks.</strong> They walk the folder in name order, skip symlinks, read at most 20,000 files and return at most 200 lines. Each line is trimmed and cut at 240 characters.</li>
+        <li><strong>Writes.</strong> One: <code>append_to_inbox</code> adds an entry to your inbox. Nothing else on disk changes.</li>
+        <li><strong>Decisions.</strong> Only decisions on files inside the folder, with paths relative to it, so the log can't leak paths from elsewhere.</li>
+      </ul>
+
+      <h2 id="protocol">Protocol</h2>
+      <p>JSON-RPC 2.0 on stdio, one message per line. The server answers <code>initialize</code>, <code>ping</code>, <code>tools/list</code> and <code>tools/call</code>, and sends nothing back for a notification. It speaks MCP <code>2025-11-25</code>, <code>2025-06-18</code>, <code>2025-03-26</code> and <code>2024-11-05</code>. It answers with the version the client asks for when it knows it, and with <code>2025-11-25</code> otherwise. It offers tools and nothing else.</p>
+      <div class="code" data-lang="stdio">
+<pre tabindex="0"><code><span class="c">// request</span>
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"example","version":"1.0"}}}
+<span class="c">// response</span>
+{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18","capabilities":{"tools":{}},"serverInfo":{"name":"dewline","version":"0.1.0"}}}</code></pre>
+      </div>
+      <p>The examples on this page ran against a scratch folder holding <code>projects/launch-plan.md</code>, <code>journal/2026-11-02.md</code>, <code>reading.md</code>, <code>todo.txt</code>, <code>page.html</code> and <code>.obsidian/app.md</code>. Responses are shown indented; the server writes each on one line.</p>
+
+      <h2 id="tools">Tools</h2>
+      <div class="table" tabindex="0" role="region" aria-label="The server's tools">
+        <table>
+          <thead><tr><th scope="col">Tool</th><th scope="col">Input</th><th scope="col">Returns</th></tr></thead>
+          <tbody>
+            <tr><td><a href="#tool-read"><code>read</code></a></td><td><code>path</code></td><td>The note's text.</td></tr>
+            <tr><td><a href="#tool-search"><code>search</code></a></td><td><code>query</code></td><td>Matching lines as <code>path:line: text</code>.</td></tr>
+            <tr><td><a href="#tool-backlinks"><code>backlinks</code></a></td><td><code>note</code></td><td>Lines that link to the note, as <code>path:line: text</code>.</td></tr>
+            <tr><td><a href="#tool-decisions"><code>decisions</code></a></td><td><code>session</code>, <code>since</code>, both optional</td><td>Your Keep and Revert decisions, as a JSON array.</td></tr>
+            <tr><td><a href="#tool-append_to_inbox"><code>append_to_inbox</code></a></td><td><code>text</code></td><td><code>Added to the inbox.</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Every tool answers with one text item and an <code>isError</code> flag. Here is the whole exchange for <code>read</code>; the other tools show the request and the text.</p>
+
+      <h3 id="tool-read"><code>read</code></h3>
+      <p>Reads a note: a <code>.md</code>, <code>.markdown</code> or <code>.txt</code> file in the folder. A symlink works when it resolves inside the folder.</p>
+      <div class="code" data-lang="Input schema">
+<pre tabindex="0"><code>{
+  "<span class="k">type</span>": <span class="s">"object"</span>,
+  "<span class="k">properties</span>": {
+    "<span class="k">path</span>": {"<span class="k">type</span>": <span class="s">"string"</span>, "<span class="k">description</span>": <span class="s">"The note's path, relative to the folder"</span>}
+  },
+  "<span class="k">required</span>": [<span class="s">"path"</span>]
+}</code></pre>
+      </div>
+      <div class="code" data-lang="Request">
+<pre tabindex="0"><code>{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"read","arguments":{"path":"projects/launch-plan.md"}}}</code></pre>
+      </div>
+      <div class="code" data-lang="Response">
+<pre tabindex="0"><code>{
+  "<span class="k">jsonrpc</span>": <span class="s">"2.0"</span>,
+  "<span class="k">id</span>": 3,
+  "<span class="k">result</span>": {
+    "<span class="k">content</span>": [
+      {
+        "<span class="k">type</span>": <span class="s">"text"</span>,
+        "<span class="k">text</span>": <span class="s">"# Launch plan\n\nShip 0.1.0 on Friday when the signed DMG passes notarization.\n\n## Goals\n\n- Open any folder of Markdown files.\n- Save every file exactly as written.\n"</span>
+      }
+    ],
+    "<span class="k">isError</span>": false
+  }
+}</code></pre>
+      </div>
+
+      <h3 id="tool-search"><code>search</code></h3>
+      <p>Finds the lines in the folder's notes that hold the text, ignoring case. The query is a plain substring, not a pattern. An empty query is an error, and no match returns <code>No matches.</code></p>
+      <div class="code" data-lang="Input schema">
+<pre tabindex="0"><code>{
+  "<span class="k">type</span>": <span class="s">"object"</span>,
+  "<span class="k">properties</span>": {
+    "<span class="k">query</span>": {"<span class="k">type</span>": <span class="s">"string"</span>, "<span class="k">description</span>": <span class="s">"The text to find"</span>}
+  },
+  "<span class="k">required</span>": [<span class="s">"query"</span>]
+}</code></pre>
+      </div>
+      <div class="code" data-lang="Request">
+<pre tabindex="0"><code>{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"search","arguments":{"query":"notarization"}}}</code></pre>
+      </div>
+      <div class="code" data-lang="Result text">
+<pre tabindex="0"><code>journal/2026-11-02.md:3: Reviewed the [[launch-plan]] with Sam. Notarization is the last step.
+projects/launch-plan.md:3: Ship 0.1.0 on Friday when the signed DMG passes notarization.</code></pre>
+      </div>
+
+      <h3 id="tool-backlinks"><code>backlinks</code></h3>
+      <p>Finds the lines in the folder's notes that link to a note. A <code>[[wikilink]]</code> counts when it names the note's folder-relative path or its file name, with or without the extension, ignoring case and anything after <code>|</code> or <code>#</code>. A Markdown link counts when its path, relative to the linking note's folder, reaches the note; <code>%20</code> escapes and <code>&lt;angle brackets&gt;</code> work, and URLs and absolute paths don't count.</p>
+      <div class="code" data-lang="Input schema">
+<pre tabindex="0"><code>{
+  "<span class="k">type</span>": <span class="s">"object"</span>,
+  "<span class="k">properties</span>": {
+    "<span class="k">note</span>": {"<span class="k">type</span>": <span class="s">"string"</span>, "<span class="k">description</span>": <span class="s">"The note's path, relative to the folder"</span>}
+  },
+  "<span class="k">required</span>": [<span class="s">"note"</span>]
+}</code></pre>
+      </div>
+      <div class="code" data-lang="Request">
+<pre tabindex="0"><code>{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"backlinks","arguments":{"note":"projects/launch-plan.md"}}}</code></pre>
+      </div>
+      <div class="code" data-lang="Result text">
+<pre tabindex="0"><code>journal/2026-11-02.md:3: Reviewed the [[launch-plan]] with Sam. Notarization is the last step.
+reading.md:3: - See [the plan](projects/launch-plan.md#goals) before the review.</code></pre>
+      </div>
+
+      <h3 id="tool-decisions"><code>decisions</code></h3>
+      <p>Lists the agent changes you kept or reverted in Dewline, oldest first, as a JSON array in the text. It reads the same log as <a href="/docs/cli/#changes"><code>dewline changes</code></a>, keeps only files inside the served folder and makes their paths relative to it. Call it before an edit so the agent doesn't redo a change you reverted.</p>
+      <div class="code" data-lang="Input schema">
+<pre tabindex="0"><code>{
+  "<span class="k">type</span>": <span class="s">"object"</span>,
+  "<span class="k">properties</span>": {
+    "<span class="k">session</span>": {"<span class="k">type</span>": <span class="s">"string"</span>, "<span class="k">description</span>": <span class="s">"Only this agent session's decisions"</span>},
+    "<span class="k">since</span>": {"<span class="k">type</span>": <span class="s">"string"</span>, "<span class="k">description</span>": <span class="s">"Only decisions at or after this UTC time: 2026-10-30, 2026-10-30T18:00:00Z"</span>}
+  }
+}</code></pre>
+      </div>
+      <div class="code" data-lang="Request">
+<pre tabindex="0"><code>{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"decisions","arguments":{}}}</code></pre>
+      </div>
+      <div class="code" data-lang="Result text">
+<pre tabindex="0"><code>[{"vendor":"claude","session":"9f2c51e0-demo","file":"projects/launch-plan.md","time":"2026-11-02T17:42:10Z","decision":"kept","excerpt_hash":"b8bd7e533ca4a32f8950b88300c840eb8b74fd14a30f4c54c916c7224b5e644a"},{"vendor":"codex","session":"019a3b7e-demo","file":"journal/2026-11-02.md","time":"2026-11-02T17:55:31Z","decision":"reverted","excerpt_hash":"06b3ab1fa61729707eae7ac5eb3e57123519c68a07ce26780b602fb796ad7f69"}]</code></pre>
+      </div>
+      <p>The log held a third decision, on a file outside the folder; the tool left it out. With both filters:</p>
+      <div class="code" data-lang="Request">
+<pre tabindex="0"><code>{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"decisions","arguments":{"session":"019a3b7e-demo","since":"2026-11-02"}}}</code></pre>
+      </div>
+      <div class="code" data-lang="Result text">
+<pre tabindex="0"><code>[{"vendor":"codex","session":"019a3b7e-demo","file":"journal/2026-11-02.md","time":"2026-11-02T17:55:31Z","decision":"reverted","excerpt_hash":"06b3ab1fa61729707eae7ac5eb3e57123519c68a07ce26780b602fb796ad7f69"}]</code></pre>
+      </div>
+
+      <h3 id="tool-append_to_inbox"><code>append_to_inbox</code></h3>
+      <p>Adds a dated entry to the end of your inbox note, marked <code>mcp</code>. It is the only change the server can make. The inbox is the same file <a href="/docs/cli/#capture"><code>dewline capture</code></a> writes, and it may sit outside the served folder.</p>
+      <div class="code" data-lang="Input schema">
+<pre tabindex="0"><code>{
+  "<span class="k">type</span>": <span class="s">"object"</span>,
+  "<span class="k">properties</span>": {
+    "<span class="k">text</span>": {"<span class="k">type</span>": <span class="s">"string"</span>, "<span class="k">description</span>": <span class="s">"The entry's markdown"</span>}
+  },
+  "<span class="k">required</span>": [<span class="s">"text"</span>]
+}</code></pre>
+      </div>
+      <div class="code" data-lang="Request">
+<pre tabindex="0"><code>{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"append_to_inbox","arguments":{"text":"Ask Sam to sign off on the launch plan."}}}</code></pre>
+      </div>
+      <div class="code" data-lang="Result text">
+<pre tabindex="0"><code>Added to the inbox.</code></pre>
+      </div>
+      <div class="code" data-lang="~/Documents/Dewline/Inbox.md">
+<pre tabindex="0"><code>2026-11-02 18:22 · mcp
+Ask Sam to sign off on the launch plan.</code></pre>
+      </div>
+
+      <h2 id="errors">Errors</h2>
+      <p>A tool that can't do what it was asked returns its reason as the text, with <code>"isError": true</code>, so the agent sees it and can try again. These came back from the scratch folder:</p>
+      <div class="table" tabindex="0" role="region" aria-label="Tool errors">
+        <table>
+          <thead><tr><th scope="col">Call</th><th scope="col">Text</th></tr></thead>
+          <tbody>
+            <tr><td><code>read</code> <code>../.zshrc</code></td><td><code>../.zshrc: it is outside the folder</code></td></tr>
+            <tr><td><code>read</code> a symlink to a file outside</td><td><code>shortcut.md: it is outside the folder</code></td></tr>
+            <tr><td><code>read</code> <code>.obsidian/app.md</code></td><td><code>.obsidian/app.md: only .md, .markdown and .txt files outside dot folders are served</code></td></tr>
+            <tr><td><code>read</code> <code>page.html</code></td><td><code>page.html: only .md, .markdown and .txt files outside dot folders are served</code></td></tr>
+            <tr><td><code>read</code> <code>missing.md</code></td><td><code>missing.md: No such file or directory (os error 2)</code></td></tr>
+            <tr><td><code>read</code> with <code>file</code> instead of <code>path</code></td><td><code>read needs a string `path`</code></td></tr>
+            <tr><td><code>search</code> <code>"  "</code></td><td><code>search needs a non-empty query</code></td></tr>
+            <tr><td><code>decisions</code> with <code>since</code> as a number</td><td><code>decisions takes `since` as a string</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>A file larger than 8 MB returns <code>it is not a file of at most 8 MB</code>, and one that isn't UTF-8 returns <code>it is not UTF-8 text</code>.</p>
+      <p>A message the server can't act on gets a JSON-RPC error instead:</p>
+      <div class="table" tabindex="0" role="region" aria-label="JSON-RPC errors">
+        <table>
+          <thead><tr><th scope="col">Code</th><th scope="col">Message</th><th scope="col">When</th></tr></thead>
+          <tbody>
+            <tr><td class="n"><code>-32700</code></td><td><code>Parse error</code></td><td>The line isn't JSON. The reply's <code>id</code> is <code>null</code>.</td></tr>
+            <tr><td class="n"><code>-32600</code></td><td><code>Invalid Request</code></td><td>The message has no <code>method</code>.</td></tr>
+            <tr><td class="n"><code>-32601</code></td><td><code>Method not found</code></td><td>Any method but the four above, such as <code>resources/list</code>.</td></tr>
+            <tr><td class="n"><code>-32602</code></td><td><code>Unknown tool: write</code></td><td>A <code>tools/call</code> for a tool the server doesn't have.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="code" data-lang="stdio">
+<pre tabindex="0"><code><span class="c">// request</span>
+{"jsonrpc":"2.0","id":15,"method":"tools/call","params":{"name":"write","arguments":{"path":"reading.md"}}}
+<span class="c">// response</span>
+{"jsonrpc":"2.0","id":15,"error":{"code":-32602,"message":"Unknown tool: write"}}</code></pre>
+      </div>
+    </article>
+
+    <nav class="pager" aria-label="Previous and next page">
+      <a class="prev" href="/docs/cli/"><span>Previous</span><b>Command line</b></a>
+      <a class="next" href="/docs/agents/"><span>Next</span><b>Agents and changes</b></a>
+    </nav>
+  </main>
+
+  <aside class="dside">
+    <nav class="outline" aria-labelledby="outline-title"><p class="outline-title" id="outline-title">On this page</p></nav>
+  </aside>
+</div>
+
+<footer class="foot">
+  <div class="foot-in wrap">
+    <p>Free, source-available under <a class="text-link" href="https://github.com/ark-232/dewline/blob/main/LICENSE.md">FSL-1.1-ALv2</a>. Published by ArkWerx LLC.</p>
+    <nav aria-label="Project">
+      <a href="/">Home</a>
+      <a href="https://github.com/ark-232/dewline">Source</a>
+      <a href="https://github.com/ark-232/dewline/releases/latest">Releases</a>
+      <a href="https://github.com/ark-232/dewline/issues">Issues</a>
+      <a href="https://github.com/ark-232/dewline/blob/main/SECURITY.md">Security</a>
+    </nav>
+  </div>
+</footer>
+
+<dialog class="search" id="docs-search" aria-label="Search the docs">
+  <div class="search-field" role="search">
+    <input id="search-q" type="search" placeholder="Search pages and headings" autocomplete="off" spellcheck="false"
+      role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="search-results" aria-label="Search the docs">
+    <button type="button" class="search-close" aria-label="Close search"><kbd>esc</kbd></button>
+  </div>
+  <ul class="search-results" id="search-results" role="listbox" aria-label="Results"></ul>
+  <p class="search-hint"><span><kbd>↑</kbd><kbd>↓</kbd> to move</span><span><kbd>↵</kbd> to open</span></p>
+</dialog>
+<p class="vh" aria-live="polite" id="copied"></p>
+</body>
+</html>

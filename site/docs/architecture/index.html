@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Architecture · Dewline docs</title>
+<meta name="description" content="How Dewline splits work between a Swift and AppKit app and a Rust engine, and how an outside change reaches the screen.">
+<link rel="canonical" href="https://dewline.arkwerx.com/docs/architecture/">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#F7FBF9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#091110" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="/fonts/newsreader-var.v1.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/ibm-plex-sans-var-latin1.v3.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/styles.css">
+<link rel="stylesheet" href="/docs/docs.css">
+<script src="/docs/docs.js" defer></script>
+<script src="/docs/search.js" defer></script>
+</head>
+<body class="docs">
+<a class="skip" href="#main">Skip to content</a>
+<header class="dtop">
+  <div class="dtop-in">
+    <button type="button" class="menu" aria-controls="dnav" aria-expanded="false">Menu</button>
+    <a class="lockup" href="/" aria-label="Dewline home"><svg aria-hidden="true" focusable="false" viewBox="-8 -12 979.9 176">
+  <g transform="matrix(0.27316 0 0 0.27316 -43.71 -77.27)">
+    <path class="bead" d="M348.6 768A192 192 0 1 1 595.4 768Z"/>
+    <path class="ink" d="M640 312.9L768 288V768H640Z"/>
+    <path class="ink" d="M832 768H192A32 32 0 0 0 192 832H832Z"/>
+  </g>
+  <g transform="translate(239.56 0)">
+  <g class="ink">
+    <path d="M 80.7 71.3Q 80.7 62.1 74.7 56.5Q 68.7 50.8 59.4 50.8Q 51.0 50.8 45.0 55.6Q 39.0 60.5 35.8 70.3Q 32.7 80.2 32.7 95.3Q 32.7 109.7 35.7 118.9Q 38.8 128.1 45.1 132.4Q 51.3 136.7 60.8 136.7Q 68.1 136.7 74.4 134.3Q 80.6 131.8 86.2 125.9L 87.3 128.2Q 81.2 135.4 76.1 140.0Q 71.1 144.7 66.6 147.4Q 62.1 150.0 57.9 151.1Q 53.7 152.2 49.5 152.2Q 36.4 152.2 26.9 146.2Q 17.3 140.1 12.1 129.2Q 6.8 118.3 6.8 103.8Q 6.8 89.9 11.0 79.0Q 15.2 68.1 22.7 60.6Q 30.3 53.1 40.6 49.2Q 50.9 45.4 63.2 45.4Q 69.2 45.4 75.3 46.2Q 81.4 47.0 87.3 48.8Q 93.1 50.6 98.2 53.4L 80.7 55.5V 22.1Q 79.5 21.4 76.8 19.7Q 74.0 18.1 70.7 16.1Q 67.4 14.1 64.5 12.4V 10.3L 105.5 1.4H 106.4L 105.4 18.4V 137.9Q 106.3 138.3 108.2 139.2Q 110.1 140.1 112.4 141.1Q 114.7 142.2 116.9 143.2Q 119.2 144.3 120.8 145.0V 147.4L 82.5 153.0H 81.5L 80.7 137.7Z"/>
+    <path d="M 178.6 45.4Q 190.0 45.4 198.2 49.9Q 206.4 54.5 211.1 63.3Q 215.9 72.1 216.8 84.8H 150.0V 78.2H 204.3L 193.4 82.6Q 192.6 71.2 190.4 64.3Q 188.2 57.4 184.5 54.2Q 180.8 51.0 175.5 51.0Q 168.5 51.0 163.5 55.2Q 158.4 59.3 155.8 67.7Q 153.2 76.2 153.2 89.1Q 153.2 105.3 157.2 115.4Q 161.3 125.5 169.2 130.1Q 177.1 134.7 188.5 134.7Q 194.0 134.7 199.1 133.3Q 204.2 131.9 208.7 129.0Q 213.3 126.1 217.1 121.5L 219.0 122.9Q 212.5 133.9 205.9 140.3Q 199.4 146.7 192.2 149.5Q 185.0 152.2 176.4 152.2Q 162.7 152.2 151.9 146.3Q 141.2 140.3 135.1 128.8Q 128.9 117.3 128.9 100.7Q 128.9 85.8 134.7 73.2Q 140.5 60.6 151.6 53.0Q 162.7 45.4 178.6 45.4Z"/>
+    <path d="M 365.7 53.8 351.9 50.9V 47.6H 386.3V 50.9L 374.2 53.8L 346.0 152.0H 336.4L 299.9 70.1L 306.1 69.3L 273.6 152.0H 264.0L 233.6 54.8L 221.6 50.8V 47.6H 273.2V 50.9L 259.6 54.3L 281.3 128.2L 276.0 133.1L 306.1 45.3H 316.2L 352.1 127.0L 346.5 133.1Z"/>
+    <path d="M 425.3 144.0 438.2 147.2V 150.0H 387.8V 147.2L 400.7 144.0V 22.1Q 399.4 21.3 397.0 19.9Q 394.7 18.6 391.5 16.7Q 388.3 14.8 384.4 12.4V 10.3L 424.3 1.4H 425.3V 19.8Z"/>
+    <path d="M 484.0 44.5V 64.6V 144.1L 496.6 147.2V 150.0H 446.5V 147.2L 459.4 144.0V 67.3Q 458.3 66.4 456.3 64.9Q 454.2 63.4 451.6 61.4Q 448.9 59.3 445.8 56.9V 54.8L 483.0 44.5Z"/>
+    <path d="M 542.9 65.8V 144.1L 555.6 147.2V 150.0H 505.4V 147.2L 518.3 144.0V 67.3Q 516.7 66.0 513.7 63.6Q 510.7 61.2 504.8 56.9V 54.8L 542.0 44.5H 542.9ZM 570.8 147.2 583.5 144.1V 81.0Q 583.5 74.8 581.4 70.7Q 579.3 66.7 575.1 64.7Q 570.9 62.8 564.2 62.8Q 557.4 62.8 551.1 64.6Q 544.9 66.5 540.1 68.8L 539.1 66.8Q 546.8 60.0 552.5 55.8Q 558.2 51.6 562.7 49.4Q 567.1 47.2 571.3 46.4Q 575.4 45.6 580.3 45.6Q 594.7 45.6 601.4 53.4Q 608.1 61.2 608.1 77.3V 144.0L 621.0 147.2V 150.0H 570.8Z"/>
+    <path d="M 680.3 45.4Q 691.7 45.4 699.9 49.9Q 708.1 54.5 712.8 63.3Q 717.6 72.1 718.5 84.8H 651.7V 78.2H 706.0L 695.1 82.6Q 694.3 71.2 692.1 64.3Q 689.9 57.4 686.2 54.2Q 682.5 51.0 677.2 51.0Q 670.2 51.0 665.2 55.2Q 660.1 59.3 657.5 67.7Q 654.9 76.2 654.9 89.1Q 654.9 105.3 658.9 115.4Q 663.0 125.5 670.9 130.1Q 678.8 134.7 690.2 134.7Q 695.7 134.7 700.8 133.3Q 705.9 131.9 710.4 129.0Q 715.0 126.1 718.8 121.5L 720.7 122.9Q 714.2 133.9 707.6 140.3Q 701.1 146.7 693.9 149.5Q 686.7 152.2 678.1 152.2Q 664.4 152.2 653.6 146.3Q 642.9 140.3 636.8 128.8Q 630.6 117.3 630.6 100.7Q 630.6 85.8 636.4 73.2Q 642.2 60.6 653.3 53.0Q 664.4 45.4 680.3 45.4Z"/>
+  </g>
+  <circle class="ink" cx="470.1" cy="18.1" r="16.0"/>
+  </g>
+</svg></a>
+    <a class="dtop-label" href="/docs/">Docs</a>
+    <button type="button" class="search-open" aria-keyshortcuts="Meta+K /"><span>Search</span><kbd>⌘K</kbd></button>
+    <nav class="dtop-links" aria-label="Site">
+      <a href="https://github.com/ark-232/dewline/releases/latest">Download</a>
+      <a href="https://github.com/ark-232/dewline">Source</a>
+    </nav>
+  </div>
+</header>
+
+<div class="dshell">
+  <nav class="dnav" id="dnav" aria-label="Docs">
+    <div class="dnav-group">
+      <p class="dnav-title">Start</p>
+      <ul>
+        <li><a href="/docs/">Overview</a></li>
+        <li><a href="/docs/first-steps/">First steps</a></li>
+      </ul>
+    </div>
+    <div class="dnav-group">
+      <p class="dnav-title">Guide</p>
+      <ul>
+        <li><a href="/docs/editing/">Editing</a></li>
+        <li><a href="/docs/markdown/">Markdown</a></li>
+        <li><a href="/docs/files/">Files and saves</a></li>
+        <li><a href="/docs/collaboration/">Collaboration</a></li>
+        <li><a href="/docs/themes-and-fonts/">Themes and fonts</a></li>
+        <li><a href="/docs/keyboard/">Keyboard shortcuts</a></li>
+        <li><a href="/docs/export/">Export</a></li>
+      </ul>
+    </div>
+    <div class="dnav-group">
+      <p class="dnav-title">Reference</p>
+      <ul>
+        <li><a href="/docs/cli/">Command line</a></li>
+        <li><a href="/docs/mcp/">MCP server</a></li>
+        <li><a href="/docs/agents/">Agents and changes</a></li>
+        <li><a href="/docs/url-scheme/">URL scheme</a></li>
+      </ul>
+    </div>
+    <div class="dnav-group">
+      <p class="dnav-title">Technical</p>
+      <ul>
+        <li><a href="/docs/architecture/" aria-current="page">Architecture</a></li>
+        <li><a href="/docs/performance/">Performance</a></li>
+        <li><a href="/docs/security/">Security and privacy</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <main class="dmain" id="main">
+    <article class="prose">
+      <p class="eyebrow">Technical</p>
+      <h1>Architecture</h1>
+      <p class="lead">Swift owns the pixels. Rust owns the bytes. This page shows how the two halves split the work, how an outside change reaches your screen, and which decision records chose each piece.</p>
+
+      <h2 id="the-split">The split</h2>
+      <p>The Mac app is Swift 6 and AppKit. It owns every pixel and the keystroke path: the text view and its layout, drawing, the system text services (spell check, Writing Tools, dictation, the find bar), documents, windows and menus.</p>
+      <p>The engine is Rust. It owns the bytes: decoding, parsing, the change engine, snapshots, the path jail, diagram and math rendering, collaboration, export, and the <code>dewline</code> command with its MCP server. One engine serves the app, the Quick Look preview and the command.</p>
+      <p>On the keystroke path the engine does one thing. It parses the edited window, at most 4 KB, with no locks held and no I/O (<a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0006-editor-architecture.md">0006</a>).</p>
+      <p>Two other designs were ruled out. A pure Rust UI has no VoiceOver for text, no Writing Tools, no find bar, no Services and no spell check, and rebuilding them was estimated at 28 weeks of solo work. A web view editor breaks the single-process memory budget and limits Writing Tools to a panel. Record <a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0001-foundations.md">0001</a> chose the stack, and <a href="https://github.com/ark-232/dewline/blob/main/docs/architecture.md">docs/architecture.md</a> keeps the reasoning.</p>
+
+      <figure class="fig" id="figure-pieces">
+        <div class="fig-frame" tabindex="0" role="region" aria-label="Figure 1: the pieces">
+<svg viewBox="0 0 680 548" role="img" aria-labelledby="fig1-t fig1-d">
+<title id="fig1-t">The pieces of Dewline</title>
+<desc id="fig1-d">Dewline.app holds a Swift and AppKit layer that owns the pixels, a UniFFI bridge, and a Rust engine that owns the bytes. The Quick Look preview shares the engine framework. The dewline command links the engine core crate directly.</desc>
+<defs><marker id="a1" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="f-arrow" d="M0 0L8 4L0 8Z"/></marker></defs>
+<text class="f-cap" x="2" y="14">Dewline.app</text>
+<rect class="f-bundle" x="0.75" y="24.75" width="678.5" height="522" rx="14"/>
+<rect class="f-layer" x="16" y="40" width="648" height="140" rx="10"/>
+<text class="f-h" x="32" y="67">Swift 6 · AppKit</text>
+<text class="f-d f-end" x="648" y="66">owns every pixel and the keystroke path</text>
+<rect class="f-chip" x="32" y="80" width="196" height="42" rx="7"/><text class="f-t" x="44" y="98">Editor</text><text class="f-d" x="44" y="113">NSTextView on TextKit 2</text>
+<rect class="f-chip" x="242" y="80" width="196" height="42" rx="7"/><text class="f-t" x="254" y="98">Styler</text><text class="f-d" x="254" y="113">attributes, never characters</text>
+<rect class="f-chip" x="452" y="80" width="196" height="42" rx="7"/><text class="f-t" x="464" y="98">Documents</text><text class="f-d" x="464" y="113">NSDocument, autosave</text>
+<rect class="f-chip" x="32" y="128" width="196" height="42" rx="7"/><text class="f-t" x="44" y="146">Text services</text><text class="f-d" x="44" y="161">Writing Tools, spell check</text>
+<rect class="f-chip" x="242" y="128" width="196" height="42" rx="7"/><text class="f-t" x="254" y="146">Updates</text><text class="f-d" x="254" y="161">Sparkle 2, EdDSA-signed</text>
+<rect class="f-chip" x="452" y="128" width="196" height="42" rx="7"/><text class="f-t" x="464" y="146">Collaboration</text><text class="f-d" x="464" y="161">share, approve, carets</text>
+<line class="f-line" x1="320" y1="181" x2="320" y2="192" marker-start="url(#a1)"/>
+<line class="f-line" x1="360" y1="181" x2="360" y2="192" marker-start="url(#a1)"/>
+<line class="f-line" x1="320" y1="224" x2="320" y2="235" marker-end="url(#a1)"/>
+<line class="f-line" x1="360" y1="224" x2="360" y2="235" marker-end="url(#a1)"/>
+<rect class="f-pill" x="206" y="193" width="268" height="30" rx="15"/>
+<text class="f-m f-mid" x="340" y="212">UniFFI · DewlineFFI.xcframework</text>
+<text class="f-d" x="32" y="212">flat records, UTF-16 ranges</text>
+<text class="f-d f-end" x="648" y="212">a panic returns as a Swift error</text>
+<rect class="f-layer" x="16" y="236" width="648" height="196" rx="10"/>
+<text class="f-h" x="32" y="263">Rust engine</text>
+<text class="f-d f-end" x="648" y="262">owns every byte on disk</text>
+<rect class="f-chip" x="32" y="276" width="148" height="42" rx="7"/><rect class="f-own" x="32" y="288" width="2.5" height="18" rx="1"/><text class="f-t" x="44" y="294">Parser</text><text class="f-d" x="44" y="309">pulldown-cmark + pass</text>
+<rect class="f-chip" x="188" y="276" width="148" height="42" rx="7"/><rect class="f-own" x="188" y="288" width="2.5" height="18" rx="1"/><text class="f-t" x="200" y="294">Change engine</text><text class="f-d" x="200" y="309">observe, land, commit</text>
+<rect class="f-chip" x="344" y="276" width="148" height="42" rx="7"/><rect class="f-own" x="344" y="288" width="2.5" height="18" rx="1"/><text class="f-t" x="356" y="294">Merge</text><text class="f-d" x="356" y="309">three-way, imara-diff</text>
+<rect class="f-chip" x="500" y="276" width="148" height="42" rx="7"/><rect class="f-own" x="500" y="288" width="2.5" height="18" rx="1"/><text class="f-t" x="512" y="294">Saves</text><text class="f-d" x="512" y="309">compare-and-swap</text>
+<rect class="f-chip" x="32" y="326" width="148" height="42" rx="7"/><rect class="f-own" x="32" y="338" width="2.5" height="18" rx="1"/><text class="f-t" x="44" y="344">Snapshots</text><text class="f-d" x="44" y="359">BLAKE3, zstd</text>
+<rect class="f-chip" x="188" y="326" width="148" height="42" rx="7"/><rect class="f-own" x="188" y="338" width="2.5" height="18" rx="1"/><text class="f-t" x="200" y="344">Path jail</text><text class="f-d" x="200" y="359">realpath, openat</text>
+<rect class="f-chip" x="344" y="326" width="148" height="42" rx="7"/><rect class="f-own" x="344" y="338" width="2.5" height="18" rx="1"/><text class="f-t" x="356" y="344">Search</text><text class="f-d" x="356" y="359">find in files</text>
+<rect class="f-chip" x="500" y="326" width="148" height="42" rx="7"/><rect class="f-own" x="500" y="338" width="2.5" height="18" rx="1"/><text class="f-t" x="512" y="344">Export</text><text class="f-d" x="512" y="359">HTML, DOCX</text>
+<rect class="f-chip" x="32" y="376" width="148" height="42" rx="7"/><rect class="f-own" x="32" y="388" width="2.5" height="18" rx="1"/><text class="f-t" x="44" y="394">Highlighting</text><text class="f-d" x="44" y="409">syntect</text>
+<rect class="f-chip" x="188" y="376" width="148" height="42" rx="7"/><text class="f-t" x="200" y="394">Math</text><text class="f-d" x="200" y="409">RaTeX</text>
+<rect class="f-chip" x="344" y="376" width="148" height="42" rx="7"/><text class="f-t" x="356" y="394">Mermaid</text><text class="f-d" x="356" y="409">mermaid-rs-renderer</text>
+<rect class="f-chip" x="500" y="376" width="148" height="42" rx="7"/><text class="f-t" x="512" y="394">Collaboration</text><text class="f-d" x="512" y="409">Loro, iroh</text>
+<line class="f-line" x1="174" y1="460" x2="174" y2="433" marker-end="url(#a1)"/>
+<line class="f-line" x1="506" y1="460" x2="506" y2="433" marker-end="url(#a1)"/>
+<rect class="f-chip" x="16" y="460" width="316" height="62" rx="10"/>
+<text class="f-m" x="32" y="484">Contents/Helpers/dewline</text>
+<text class="f-d" x="32" y="502">the CLI and MCP server; links the marked</text>
+<text class="f-d" x="32" y="516">core crate directly, without UniFFI</text>
+<rect class="f-chip" x="348" y="460" width="316" height="62" rx="10"/>
+<text class="f-t" x="364" y="484">Quick Look preview</text>
+<text class="f-d" x="364" y="502">a sandboxed extension that loads the</text>
+<text class="f-d" x="364" y="516">same framework as the app</text>
+<rect class="f-own" x="570" y="444" width="2.5" height="10" rx="1"/>
+<text class="f-d f-end" x="648" y="453">dewline-core</text>
+</svg>
+        </div>
+        <figcaption><b>Figure 1.</b> One bundle, two languages. The app calls the engine through UniFFI. The Quick Look preview loads the same framework. The <code>dewline</code> command links the engine's core crate (marked) on its own, and reaches the running app only through a private socket.</figcaption>
+      </figure>
+
+      <h2 id="rules">Rules the code keeps</h2>
+      <ul>
+        <li>The raw Markdown text is the only model. Rendering changes attributes, never characters.</li>
+        <li>Opening a file never writes it and never normalizes it. Bytes you did not edit never change, the byte-order mark and line endings included.</li>
+        <li>Every write, from any writer, takes one path: detect the change, compare it with the last known contents, snapshot, merge three ways, apply, and save only if the disk still matches.</li>
+        <li>Conflicts never enter the file. The other version shows as a card until you choose.</li>
+        <li>Nothing restyles the text or applies an outside change while an input method is composing.</li>
+        <li>Nothing touches the text view's <code>layoutManager</code>, which would switch it to TextKit 1.</li>
+        <li>After five seconds without input, nothing runs: no timers, no animation, no blinking caret.</li>
+      </ul>
+
+      <h2 id="app">The app</h2>
+      <h3 id="editor">The editor</h3>
+      <p>The editor is an <code>NSTextView</code> on TextKit 2. TextKit 1 and the switch between the two are deleted, so each feature is built once (<a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0004-textkit.md">0004</a>). Inline Writing Tools needs TextKit 2; on TextKit 1 it shows its results in a panel.</p>
+      <p>The styler sets attributes only. Syntax hides by turning its color clear, so the characters on screen are always the characters in the file.</p>
+      <p>A keystroke reparses one window: the top-level block or list item that holds the edit, plus the neighbors that can continue into it. A window that does not hold keeps its neighbors' styling until the whole document reparses off the main thread after 300 ms idle (<a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0006-editor-architecture.md">0006</a>).</p>
+
+      <h3 id="documents">Documents and saves</h3>
+      <p>Each file is an <code>NSDocument</code>. AppKit's autosave in place is off, which also turns off the Versions browser. Dewline keeps its own history in snapshots instead.</p>
+      <ul>
+        <li>The app autosaves 2 s after your last edit, through the engine.</li>
+        <li><kbd>⌘</kbd><kbd>S</kbd> first lands whatever the file holds now, then saves.</li>
+        <li>Documents read off the main thread, since the engine reads, hashes and snapshots the file as it opens.</li>
+        <li>A save that the engine refuses writes nothing to your file. Your text goes to the file's draft snapshot instead.</li>
+      </ul>
+
+      <h2 id="engine">The engine</h2>
+      <p>The engine is a Cargo workspace of four crates. <code>dewline-core</code> holds everything that touches files. <code>dewline-ffi</code> adds diagrams, math and the UniFFI surface. <code>dewline-sync</code> holds collaboration. <code>dewline-cli</code> is the command.</p>
+
+      <h3 id="parser">Parser</h3>
+      <p>pulldown-cmark 0.13.6 and one extension pass in <code>core::md</code> are the only Markdown parser. The extension pass adds the Obsidian syntax: wikilinks, embeds, tags, callouts. Every consumer reads the same blocks and tokens, so each construct is written once (<a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0006-editor-architecture.md">0006</a>).</p>
+      <p>The parser passes the 652 CommonMark 0.31.2 examples and the GFM table, strikethrough and task list examples. The parser and the merge each have a fuzz target in <code>core/fuzz</code>.</p>
+
+      <h3 id="change-engine">Change engine and merge</h3>
+      <p>The change engine lands outside writes into an open document without losing a byte. Rust keeps each document's base (the disk bytes the buffer last absorbed), the disk as last seen, the landing that waits for its commit, and the pending changes and conflicts. Swift keeps the buffer.</p>
+      <p>The merge is three-way: the file's new version (theirs) lands on the open buffer (yours) against the base. It diffs lines first, then the words inside each changed region, both with imara-diff's Myers algorithm. Offsets are UTF-16 code units, as the Swift buffer counts them, and never fall inside a <code>\r\n</code>.</p>
+
+      <h3 id="saves">Compare-and-swap saves</h3>
+      <p>A save writes only if the file still holds the bytes the save was based on, checked by BLAKE3 hash. Bytes that hash to the base write nothing.</p>
+      <p>The new bytes go to a hidden sibling that takes the file's mode, owner, group, flags and extended attributes, and the sibling is renamed over the file. A symlink, a file with other hard links or an access control list is written in place instead, through the descriptor that was hashed. A failed write in place puts the original bytes back.</p>
+
+      <h3 id="snapshots">Snapshots</h3>
+      <p>Snapshots live in <code>~/Library/Application Support/dev.arkwerx.dewline/snapshots/</code>, never beside your files. The store is content-addressed:</p>
+      <ul>
+        <li><code>blobs/</code> holds each version once, zstd-compressed and named by the BLAKE3 hash of its bytes.</li>
+        <li><code>files/</code> holds one index per file, named by the hash of its path.</li>
+        <li><code>tmp/</code> holds writes in progress. Each write is synced, renamed into place and its folder synced, so a crash leaves the old file or the new one whole.</li>
+      </ul>
+      <p><a href="/docs/files/#snapshots">Files and saves</a> says when a snapshot is taken and how long it is kept. <a href="/docs/security/#on-disk">Security and privacy</a> covers permissions and what is never snapshotted.</p>
+
+      <h3 id="jail">Path jail</h3>
+      <p>The MCP server, <code>dewline://</code> links and the images an export inlines all reach files through one jail in <code>core::jail</code>. A path is resolved with <code>realpath</code> and must lie inside the root. It is then opened from the root's descriptor with no symlink allowed anywhere on the way (<code>O_NOFOLLOW_ANY</code>), and the opened file's own path must still lie inside the root. A link or folder swapped in between the two steps opens nothing. A property test throws mixes of names, dots, links and loops at it.</p>
+
+      <h3 id="rendering">Highlighting, math and diagrams</h3>
+      <div class="table" tabindex="0" role="region" aria-label="Renderers in the engine">
+        <table>
+          <thead><tr><th scope="col">Renders</th><th scope="col">With</th><th scope="col">How</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Code</th><td>syntect 5.3.0</td><td>One worker thread owns 16 syntaxes and each block's parse states, so an edit reparses from its first changed line. A line over 16 KB or with over 2,000 scope changes stays plain (<a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0008-code-highlighting.md">0008</a>).</td></tr>
+            <tr><th scope="row">Math</th><td>RaTeX 0.1.15</td><td>TeX typeset natively, off the main thread and cached. It renders all 50 formulas in <code>corpus/math</code> (<a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0005-math-engine.md">0005</a>).</td></tr>
+            <tr><th scope="row">Mermaid</th><td>mermaid-rs-renderer 0.3.1</td><td>SVG drawn in Rust and rasterized with resvg, off the main thread and cached (<a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0002-1.0-scope.md">0002</a>).</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>No JavaScript runs on your notes anywhere. Math and diagrams each stop at 50 KB of source and a 250 ms render, and a diagram's picture stops at 16 megapixels (16,777,216 pixels). A block that fails or runs over shows its source, with a dim line naming the error.</p>
+
+      <h3 id="export">Export</h3>
+      <p>The engine writes HTML and DOCX. The app adds PDF: it lays out the engine's HTML in a web view that runs no page script, keeps no data and follows no link, then cuts it into pages between top-level blocks. The <code>dewline</code> command hands a PDF export to the app through a <code>dewline://export</code> link, a hand-off that fails in 0.1.0 (<a href="/docs/cli/#export">Command line</a>).</p>
+
+      <h2 id="boundary">Across the boundary</h2>
+      <p>The app reaches the engine through UniFFI 0.32.2. <code>scripts/build-xcframework.sh</code> builds the engine as a dynamic framework, <code>DewlineFFI.xcframework</code>, so the app and its Quick Look preview share one copy in <code>Dewline.app/Contents/Frameworks</code>. The Swift package <code>MdCore</code> wraps the generated bindings.</p>
+      <ul>
+        <li>A parse returns flat records: block and token kinds with UTF-16 ranges, the way <code>NSString</code> counts.</li>
+        <li>Release builds unwind, so a panic in Rust returns as a Swift error, not a crash.</li>
+        <li>Engine calls that read or write files run off the main thread, one at a time per document. <code>commit</code> never waits behind them.</li>
+      </ul>
+
+      <h2 id="outside-change">An outside change, disk to screen</h2>
+      <p>When git, a sync app, a script or a coding agent writes the file you have open, the change takes the same eight steps every time.</p>
+      <figure class="fig" id="figure-landing">
+        <div class="fig-frame" tabindex="0" role="region" aria-label="Figure 2: an outside change">
+<svg viewBox="0 0 680 650" role="img" aria-labelledby="fig2-t fig2-d">
+<title id="fig2-t">An outside change, from disk to the screen</title>
+<desc id="fig2-d">Eight steps across three lanes. A writer saves the file. The app's file watch fires and waits 150 milliseconds. The engine observes and snapshots, waits if git or an agent holds the file, then lands a three-way merge. The main thread commits only if nothing changed meanwhile, applies the edit outside undo, and you keep or revert each change.</desc>
+<defs><marker id="a2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="f-arrow" d="M0 0L8 4L0 8Z"/></marker></defs>
+<rect class="f-layer" x="0" y="0" width="216" height="650" rx="10"/>
+<text class="f-t" x="14" y="24">Disk</text>
+<text class="f-d" x="14" y="40">your folder</text>
+<rect class="f-layer" x="232" y="0" width="216" height="650" rx="10"/>
+<text class="f-t" x="246" y="24">App · Swift</text>
+<text class="f-d" x="246" y="40">main thread</text>
+<rect class="f-layer" x="464" y="0" width="216" height="650" rx="10"/>
+<text class="f-t" x="478" y="24">Engine · Rust</text>
+<text class="f-d" x="478" y="40">one call at a time per file</text>
+<rect class="f-chip" x="12" y="60" width="192" height="62" rx="8"/>
+<text class="f-n" x="24" y="80">1</text>
+<text class="f-t" x="40" y="80">A writer saves</text>
+<text class="f-d" x="24" y="98">git, a sync app, a script</text>
+<text class="f-d" x="24" y="112">or a coding agent</text>
+<rect class="f-chip" x="244" y="134" width="192" height="62" rx="8"/>
+<text class="f-n" x="256" y="154">2</text>
+<text class="f-t" x="272" y="154">The watch fires</text>
+<text class="f-d" x="256" y="172">vnode sources on the file and</text>
+<text class="f-d" x="256" y="186">its folder; waits 150 ms</text>
+<rect class="f-chip" x="476" y="208" width="192" height="62" rx="8"/>
+<text class="f-n" x="488" y="228">3</text>
+<text class="f-t" x="504" y="228">observe</text>
+<text class="f-d" x="488" y="246">reads and hashes the file,</text>
+<text class="f-d" x="488" y="260">snapshots both versions</text>
+<rect class="f-chip" x="476" y="282" width="192" height="62" rx="8"/>
+<text class="f-n" x="488" y="302">4</text>
+<text class="f-t" x="504" y="302">wait, if held</text>
+<text class="f-d" x="488" y="320">git&#x27;s index.lock or an open</text>
+<text class="f-d" x="488" y="334">agent call, up to 10 s</text>
+<rect class="f-chip" x="476" y="356" width="192" height="62" rx="8"/>
+<text class="f-n" x="488" y="376">5</text>
+<text class="f-t" x="504" y="376">land</text>
+<text class="f-d" x="488" y="394">snapshots unsaved typing,</text>
+<text class="f-d" x="488" y="408">merges base, yours, theirs</text>
+<rect class="f-chip" x="244" y="430" width="192" height="62" rx="8"/>
+<text class="f-n" x="256" y="450">6</text>
+<text class="f-t" x="272" y="450">commit</text>
+<text class="f-d" x="256" y="468">only if you have not typed</text>
+<text class="f-d" x="256" y="482">and nothing is composing</text>
+<rect class="f-chip" x="244" y="504" width="192" height="62" rx="8"/>
+<text class="f-n" x="256" y="524">7</text>
+<text class="f-t" x="272" y="524">apply</text>
+<text class="f-d" x="256" y="542">one edit outside undo; the</text>
+<text class="f-d" x="256" y="556">caret stays; changes marked</text>
+<rect class="f-chip" x="244" y="578" width="192" height="62" rx="8"/>
+<text class="f-n" x="256" y="598">8</text>
+<text class="f-t" x="272" y="598">you decide</text>
+<text class="f-d" x="256" y="616">Keep or Revert each one,</text>
+<text class="f-d" x="256" y="630">or all; each is logged</text>
+<path class="f-line" d="M204 91H224.0V165H243" marker-end="url(#a2)"/>
+<path class="f-line" d="M436 165H456.0V239H475" marker-end="url(#a2)"/>
+<line class="f-line" x1="572" y1="270" x2="572" y2="281" marker-end="url(#a2)"/>
+<line class="f-line" x1="572" y1="344" x2="572" y2="355" marker-end="url(#a2)"/>
+<path class="f-line" d="M476 387H456.0V461H437" marker-end="url(#a2)"/>
+<line class="f-line" x1="340" y1="492" x2="340" y2="503" marker-end="url(#a2)"/>
+<line class="f-line" x1="340" y1="566" x2="340" y2="577" marker-end="url(#a2)"/>
+<rect class="f-chip" x="12" y="208" width="192" height="62" rx="8"/>
+<text class="f-t" x="24" y="228">Snapshot store</text>
+<text class="f-d" x="24" y="246">Application Support, outside</text>
+<text class="f-d" x="24" y="260">your folder</text>
+<path class="f-line f-dash" d="M476 230H205" marker-end="url(#a2)"/>
+<path class="f-line f-dash" d="M476 372H108V271" marker-end="url(#a2)"/>
+<rect class="f-chip" x="12" y="578" width="192" height="62" rx="8"/>
+<text class="f-m" x="24" y="598">decisions.jsonl</text>
+<text class="f-d" x="24" y="616">one line per Keep or Revert,</text>
+<text class="f-d" x="24" y="630">in the same store</text>
+<path class="f-line f-dash" d="M244 609H205" marker-end="url(#a2)"/>
+</svg>
+        </div>
+        <figcaption><b>Figure 2.</b> An outside change, disk to screen. The engine does the file work off the main thread. The main thread only commits and applies. If you type or the file changes again before step 6, the landing starts over.</figcaption>
+      </figure>
+      <p>Three rules hold along the way.</p>
+      <ul>
+        <li>The file is snapshotted before anything lands, and your unsaved typing is snapshotted before the merge. Any step can be undone from <strong>File &gt; Snapshots</strong>.</li>
+        <li>While git holds <code>index.lock</code>, or an agent's hooked tool call on the file is open, the landing waits, 10 s at most. A checkout or a patch lands after the writer finishes, not halfway through.</li>
+        <li>A change gets a writer's name only when that writer's hooks report it through <code>dewline notify</code>, which sends paths and BLAKE3 hashes, never content. Anything else shows as Unknown (<a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0007-agent-attribution.md">0007</a>).</li>
+      </ul>
+
+      <h2 id="front-ends">Other front ends</h2>
+      <h3 id="quick-look">Quick Look</h3>
+      <p>The Quick Look preview is a sandboxed app extension. It returns the page that HTML export writes, as data, in the app's stylesheet. The page runs no script and loads nothing from the network. Diagrams and math show as their source, and no image is inlined.</p>
+
+      <h3 id="command">The <code>dewline</code> command</h3>
+      <p>The command ships inside the app at <code>Dewline.app/Contents/Helpers/dewline</code>. It links <code>dewline-core</code> directly, with no UniFFI, no Mermaid, no math and no collaboration stack, so it is one small binary with no framework beside it. On a release build for arm64, it links only system libraries:</p>
+      <div class="code" data-lang="Shell">
+<pre tabindex="0"><code><span class="p">$ </span>otool -L dewline
+dewline:
+	/usr/lib/libiconv.2.dylib (compatibility version 7.0.0, current version 7.0.0)
+	/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1359.40.3)</code></pre>
+      </div>
+      <p>The command reaches the running app through one Unix socket, <code>~/Library/Application Support/dev.arkwerx.dewline/run/control.sock</code>. A connection carries one JSON line, such as an open request or a hook's claim. <a href="/docs/cli/">Command line</a> and <a href="/docs/mcp/">MCP server</a> cover what it does.</p>
+
+      <h2 id="updates">Updates</h2>
+      <p>Sparkle 2.10.0 updates the app. The appcast at <code>dewline.arkwerx.com/appcast.xml</code> is signed, and so is each update archive, with an EdDSA key whose public half is in the app's <code>Info.plist</code>. Sparkle checks the archive before it extracts it. The updater starts only in builds signed with the ArkWerx Developer ID, so debug and unsigned builds never contact the feed. An update downloads in the background and installs when you quit. The app never restarts on its own.</p>
+
+      <h2 id="collaboration">Collaboration</h2>
+      <p>Live collaboration runs on the same change engine (<a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0009-collaboration.md">0009</a>).</p>
+      <ul>
+        <li><strong>Mirror.</strong> <code>dewline-sync</code> keeps one Loro document per shared file, with one text container. The <code>.md</code> on each Mac stays the source of truth. Loro carries edits between Macs and nothing reads it back from disk. The host seeds it from the file as it is when Share is first pressed, so earlier history never leaves the Mac.</li>
+        <li><strong>Transport.</strong> iroh 1.3.0, peer to peer, with a relay when no direct path opens. The invite link carries the host's address, so nothing is published to an address lookup service. A direct stream carries joins, keys and removals. An iroh-gossip topic carries edits and cursors.</li>
+        <li><strong>Invites.</strong> A link holds a random 256-bit capability that the host spends the first time anyone presents it. The host approves each join by name.</li>
+        <li><strong>Keys.</strong> Each gossip message is sealed with XChaCha20-Poly1305 under the document key and signed with the sender's ed25519 node key. Each approval or removal makes a new document key, so a removed Mac can read nothing new.</li>
+        <li><strong>The seam.</strong> A collaborator's edit reaches the engine as one replace from that collaborator. The engine snapshots your buffer first, at most every 30 s. The app holds the edit while an input method composes and applies it outside your undo history, with the caret kept in place.</li>
+      </ul>
+      <p>Not built yet: rejoining after a dropped connection or a restart (a guest needs a new link today), and edits larger than iroh-gossip's 1 MiB message.</p>
+
+      <h2 id="decisions">Decision records</h2>
+      <p>Each record in <code>docs/decisions/</code> names what it decided and what would reopen it.</p>
+      <div class="table" tabindex="0" role="region" aria-label="Decision records">
+        <table>
+          <thead><tr><th scope="col">Record</th><th scope="col">Decided</th></tr></thead>
+          <tbody>
+            <tr><td><a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0001-foundations.md">0001</a></td><td>Mac only, macOS 26, a Swift and AppKit app over a Rust engine through UniFFI, the FSL-1.1-ALv2 license.</td></tr>
+            <tr><td><a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0002-1.0-scope.md">0002</a></td><td>The 1.0 scope, and diagrams and math rendered natively with no JavaScript.</td></tr>
+            <tr><td><a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0003-full-app.md">0003</a></td><td>The full app shell, themes, fonts installed from a hash-checked catalog, one inbox file.</td></tr>
+            <tr><td><a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0004-textkit.md">0004</a></td><td>TextKit 2 only, by measurement against TextKit 1.</td></tr>
+            <tr><td><a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0005-math-engine.md">0005</a></td><td>RaTeX for math, over SwiftMath.</td></tr>
+            <tr><td><a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0006-editor-architecture.md">0006</a></td><td>One parser, and what Rust may do on the keystroke path.</td></tr>
+            <tr><td><a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0007-agent-attribution.md">0007</a></td><td>When a change gets an agent's name, per agent.</td></tr>
+            <tr><td><a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0008-code-highlighting.md">0008</a></td><td>syntect, its 16 syntaxes and its limits.</td></tr>
+            <tr><td><a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0009-collaboration.md">0009</a></td><td>Live collaboration: Loro, iroh, invites, keys and removal.</td></tr>
+            <tr><td><a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0010-perf-budgets.md">0010</a></td><td>Four performance budgets reset after the third perf pass.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </article>
+
+    <nav class="pager" aria-label="Previous and next page">
+      <a class="prev" href="/docs/url-scheme/"><span>Previous</span><b>URL scheme</b></a>
+      <a class="next" href="/docs/performance/"><span>Next</span><b>Performance</b></a>
+    </nav>
+  </main>
+
+  <aside class="dside">
+    <nav class="outline" aria-labelledby="outline-title"><p class="outline-title" id="outline-title">On this page</p></nav>
+  </aside>
+</div>
+
+<footer class="foot">
+  <div class="foot-in wrap">
+    <p>Free, source-available under <a class="text-link" href="https://github.com/ark-232/dewline/blob/main/LICENSE.md">FSL-1.1-ALv2</a>. Published by ArkWerx LLC.</p>
+    <nav aria-label="Project">
+      <a href="/">Home</a>
+      <a href="https://github.com/ark-232/dewline">Source</a>
+      <a href="https://github.com/ark-232/dewline/releases/latest">Releases</a>
+      <a href="https://github.com/ark-232/dewline/issues">Issues</a>
+      <a href="https://github.com/ark-232/dewline/blob/main/SECURITY.md">Security</a>
+    </nav>
+  </div>
+</footer>
+
+<dialog class="search" id="docs-search" aria-label="Search the docs">
+  <div class="search-field" role="search">
+    <input id="search-q" type="search" placeholder="Search pages and headings" autocomplete="off" spellcheck="false"
+      role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="search-results" aria-label="Search the docs">
+    <button type="button" class="search-close" aria-label="Close search"><kbd>esc</kbd></button>
+  </div>
+  <ul class="search-results" id="search-results" role="listbox" aria-label="Results"></ul>
+  <p class="search-hint"><span><kbd>↑</kbd><kbd>↓</kbd> to move</span><span><kbd>↵</kbd> to open</span></p>
+</dialog>
+<p class="vh" aria-live="polite" id="copied"></p>
+</body>
+</html>
