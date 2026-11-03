@@ -67,7 +67,7 @@ final class AgentPanelController: NSViewController {
     /// Where the agents come from: the login shell's supported ones and Settings' added ones.
     var lookUp: @MainActor (UserDefaults, _ again: Bool) async -> [AgentSpec] = { await AgentDiscovery.look(again: $1, defaults: $0) }
     /// Set Up in a note about unmarked edits.
-    var setUpHooks: () -> Void = { SettingsWindowController.showSettings(nil) }
+    var setUpHooks: () -> Void = { NSApp.sendAction(#selector(AppDelegate.setUpHooks(_:)), to: nil, from: nil) }
     private(set) var agents: [AgentSpec] = []
     /// One chat per agent and folder; each ends with the window.
     private var chats: [String: AgentChat] = [:]

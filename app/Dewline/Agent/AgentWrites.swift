@@ -84,15 +84,22 @@ final class AgentWrites {
         written.insert(path)
         let after = Data(content.utf8)
         let engine: ChangeEngine?
+        let isOpen: Bool
         if let live = open(path)?.live {
             await live.autosave()
             engine = live.engine
+            isOpen = true
         } else {
-            // A closed note: its engine is the app's. ClosedChanges (B5) records it once that lands.
+            // A closed note: its engine is the app's, and ClosedChanges keeps what it held so the write lands marked
+            // when it opens.
             engine = MarkdownDocument.sharedEngine
+            isOpen = false
         }
         let before = FileManager.default.contents(atPath: path)
         guard before != after else { return [:] }
+        if !isOpen, let before {
+            ClosedChanges.record(path: URL(fileURLWithPath: path), writer: .agent(.acp, session: session), before: before)
+        }
         let id = UUID().uuidString
         if let engine {
             claim(.preToolUse(.init(id: id, tool: .write, path: path, hash: before.map(Self.hex), declared: Self.hex(after))), engine)
