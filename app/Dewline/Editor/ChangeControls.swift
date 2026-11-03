@@ -7,24 +7,6 @@ protocol Hanging: NSView {
     func height(for width: CGFloat) -> CGFloat
 }
 
-/// The opaque fill of Dewline's floating controls: paper mixed 92% with the sidebar tint, a 0.5 pt edge at ink 12%.
-@MainActor
-private func paint(_ layer: CALayer?, in view: NSView, radius: CGFloat) {
-    guard let layer else { return }
-    let store = ThemeStore.shared
-    let appearance = view.effectiveAppearance
-    let paper = store.color(.paper).resolved(for: appearance)
-    let tint = store.color(.sidebarTint).resolved(for: appearance)
-    layer.backgroundColor = (paper.blended(withFraction: 0.08, of: tint) ?? paper).cgColor
-    layer.borderColor = store.color(.ink).resolved(for: appearance).withAlphaComponent(0.12).cgColor
-    layer.borderWidth = 0.5
-    layer.cornerRadius = radius
-    layer.shadowColor = NSColor.black.cgColor
-    layer.shadowOpacity = appearance.isDark ? 0.35 : 0.10
-    layer.shadowRadius = 6
-    layer.shadowOffset = CGSize(width: 0, height: -2)
-}
-
 @MainActor
 private func label(_ text: String, size: CGFloat, weight: NSFont.Weight = .regular, color: Token) -> NSTextField {
     let label = NSTextField(labelWithString: text)
@@ -33,8 +15,8 @@ private func label(_ text: String, size: CGFloat, weight: NSFont.Weight = .regul
     return label
 }
 
-/// A button that calls `action` when clicked, drawn as Station's chrome: the prominent one filled with ink and set in
-/// the island's color, the others bare text in `ink2`. Signal never fills it.
+/// A button that calls `action` when clicked: the prominent one filled with ink and set in paper, the others bare text
+/// in `ink2`.
 @MainActor
 private final class ActionButton: NSButton {
     private var handler: () -> Void = {}
@@ -74,8 +56,8 @@ private final class ActionButton: NSButton {
 
     @objc private func paint() {
         attributedTitle = NSAttributedString(string: title, attributes: [
-            .font: prominent ? Chrome.labelActive : Chrome.label,
-            .foregroundColor: ThemeStore.shared.color(prominent ? .islandEditor : .ink2),
+            .font: NSFont.systemFont(ofSize: 13, weight: prominent ? .medium : .regular),
+            .foregroundColor: ThemeStore.shared.color(prominent ? .paper : .ink2),
         ])
         needsDisplay = true
     }
@@ -147,8 +129,8 @@ final class Ghost: NSView, Hanging {
     }
 }
 
-/// "Two versions of this paragraph": your text stays editable above it; the other version shows here as a ghost
-/// block, with Keep Yours, Use Claude's and Keep Both, the default.
+/// "Two versions of this paragraph": your text stays editable above it; the other version shows here under "From
+/// git" or "From another app", with Keep Yours (the default, ⌥⌘⌫), Use git’s (⌘↩) and Keep Both.
 @MainActor
 final class ConflictCard: NSView, Hanging {
     private let stack = NSStackView()
@@ -165,11 +147,9 @@ final class ConflictCard: NSView, Hanging {
         theirs.textColor = ThemeStore.shared.color(.ink2)
         theirs.isSelectable = true
         theirs.setAccessibilityLabel("\(writer.name)'s version: \(shown)")
-        keepYours = ActionButton("Keep Yours", shortcut: "⌥⌘⌫", label: "Keep your version") { decide(.keep) }
-        useTheirs = ActionButton("Use \(writer.dashed ? "Other" : writer.possessive)", label: "Use \(writer.possessive) version") {
-            decide(.other)
-        }
-        keepBoth = ActionButton("Keep Both", prominent: true, shortcut: "⌘↩", label: "Keep both versions") { decide(.both) }
+        keepYours = ActionButton("Keep Yours", prominent: true, shortcut: "\u{2325}\u{2318}\u{232B}", label: "Keep your version") { decide(.keep) }
+        useTheirs = ActionButton(Self.useTheirs(writer), shortcut: "\u{2318}\u{21A9}", label: Self.useTheirs(writer)) { decide(.other) }
+        keepBoth = ActionButton("Keep Both", label: "Keep both versions") { decide(.both) }
         super.init(frame: .zero)
         wantsLayer = true
         setAccessibilityElement(true)
@@ -177,7 +157,7 @@ final class ConflictCard: NSView, Hanging {
         setAccessibilityLabel("Two versions of this paragraph")
 
         let title = label("Two versions of this paragraph", size: 13, weight: .semibold, color: .ink)
-        let stamp = NSTextField(labelWithAttributedString: writer.stamp)
+        let stamp = label(Self.from(writer), size: 13, color: .ink2)
         let buttons = NSStackView(views: [keepYours, useTheirs, keepBoth])
         buttons.spacing = 8
         let waits = label("Saving waits until you choose.", size: 11, color: .ink2)
@@ -203,8 +183,24 @@ final class ConflictCard: NSView, Hanging {
     override var isFlipped: Bool { true }
     override var wantsUpdateLayer: Bool { true }
 
+    /// A 1 pt rule around paper, no shadow.
     override func updateLayer() {
-        paint(layer, in: self, radius: 8)
+        guard let layer else { return }
+        let store = ThemeStore.shared
+        layer.backgroundColor = store.color(.paper).resolved(for: effectiveAppearance).cgColor
+        layer.borderColor = store.color(.ink).resolved(for: effectiveAppearance).withAlphaComponent(effectiveAppearance.isDark ? 0.16 : 0.10).cgColor
+        layer.borderWidth = 1
+        layer.cornerRadius = 8
+    }
+
+    /// "From git", "From another app", "From Claude".
+    static func from(_ writer: MarkWriter) -> String {
+        writer.dashed ? "From another app" : "From \(writer.name)"
+    }
+
+    /// "Use git\u{2019}s", "Use the other version".
+    static func useTheirs(_ writer: MarkWriter) -> String {
+        writer.dashed ? "Use the other version" : "Use \(writer.name)\u{2019}s"
     }
 
     /// The other version's text, as the card shows it.

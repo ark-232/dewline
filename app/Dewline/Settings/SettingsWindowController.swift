@@ -1,113 +1,80 @@
 import AppKit
 import SwiftUI
 
-/// Dewline > Settings, built like the main window: a band of `frame` under the traffic lights, then two islands, the
-/// pane list and the pane. The window takes the pane's name and opens on the pane last shown.
+/// Dewline > Settings: a standard preferences window, 640 by 480, with one toolbar button per pane. It opens on the
+/// pane last shown.
 final class SettingsWindowController: NSWindowController {
     private static var shared: SettingsWindowController?
     static let paneKey = "DewlineSettingsPane"
+    static let size = NSSize(width: 640, height: 480)
 
     @objc static func showSettings(_ sender: Any?) {
-        let opening = shared == nil
         let controller = shared ?? SettingsWindowController()
         shared = controller
         controller.showWindow(sender)
-        // The window opens with nothing focused; Tab moves into the pane list.
-        if opening {
-            Task { @MainActor in controller.window?.makeFirstResponder(nil) }
-        }
     }
 
     private convenience init() {
         let last = UserDefaults.standard.string(forKey: Self.paneKey).flatMap(SettingsPane.init) ?? .general
-        // No miniaturize or resize: the minimize and zoom buttons show dimmed.
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 980, height: 680),
-            styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: true)
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
-        window.isRestorable = false
+        let tabs = SettingsTabs()
+        tabs.tabStyle = .toolbar
+        for pane in SettingsPane.allCases {
+            let host = NSHostingController(rootView: SettingsPaneView(pane: pane))
+            host.sizingOptions = []
+            host.view.frame.size = Self.size
+            let item = NSTabViewItem(viewController: host)
+            item.label = pane.rawValue
+            item.image = NSImage(systemSymbolName: pane.symbol, accessibilityDescription: pane.rawValue)
+            item.identifier = pane.rawValue
+            tabs.addTabViewItem(item)
+        }
+        tabs.selectedTabViewItemIndex = SettingsPane.allCases.firstIndex(of: last) ?? 0
+        let window = NSWindow(contentViewController: tabs)
+        window.styleMask = [.titled, .closable]
         window.title = last.rawValue
-        let frame = FrameView()
-        let root = NSHostingView(rootView: SettingsRoot(pane: last) { [weak window] pane in
-            window?.title = pane.rawValue
-            UserDefaults.standard.set(pane.rawValue, forKey: Self.paneKey)
-        })
-        root.sizingOptions = []
-        root.translatesAutoresizingMaskIntoConstraints = false
-        frame.addSubview(root)
-        NSLayoutConstraint.activate([
-            root.topAnchor.constraint(equalTo: frame.topAnchor, constant: TitleBand.height),
-            root.leadingAnchor.constraint(equalTo: frame.leadingAnchor, constant: 6),
-            root.trailingAnchor.constraint(equalTo: frame.trailingAnchor, constant: -6),
-            root.bottomAnchor.constraint(equalTo: frame.bottomAnchor, constant: -6),
-        ])
-        window.contentView = frame
+        window.isRestorable = false
+        window.setContentSize(Self.size)
         window.center()
         self.init(window: window)
-        paintFrame()
-        NotificationCenter.default.addObserver(self, selector: #selector(paintFrame), name: ThemeStore.didChange, object: nil)
     }
+}
 
-    /// The window's own background matches the frame, so nothing lighter shows at its rounded corners.
-    @objc private func paintFrame() {
-        window?.backgroundColor = Chrome.color(.frame)
+/// Remembers the pane each time one is picked.
+private final class SettingsTabs: NSTabViewController {
+    override func tabView(_ tabView: NSTabView, didSelect tabViewItem: NSTabViewItem?) {
+        super.tabView(tabView, didSelect: tabViewItem)
+        if let name = tabViewItem?.identifier as? String {
+            UserDefaults.standard.set(name, forKey: SettingsWindowController.paneKey)
+            view.window?.title = name
+        }
     }
 }
 
 enum SettingsPane: String, CaseIterable, Identifiable {
-    case general = "General", appearance = "Appearance", editor = "Editor", files = "Files", agents = "Agents"
-    case collaboration = "Collaboration"
+    case general = "General", editor = "Editor", appearance = "Appearance", files = "Files", agents = "Agents"
+    case sharing = "Sharing"
 
     var id: Self { self }
 
-    /// The line under the pane's title.
-    var summary: String {
+    var symbol: String {
         switch self {
-        case .general: "What opens at launch, where new files go, and updates."
-        case .appearance: "Themes, faces and the page. Changes apply as you pick."
-        case .editor: "How the page renders, moves and checks what you type."
-        case .files: "What the sidebar lists, where pasted images go, and the inbox."
-        case .agents: "The hooks that name who wrote a change, and each writer's color."
-        case .collaboration: "Your name, where shared copies go, and a collaborator's color."
+        case .general: "gearshape"
+        case .editor: "character.cursor.ibeam"
+        case .appearance: "paintpalette"
+        case .files: "folder"
+        case .agents: "terminal"
+        case .sharing: "person.2"
         }
     }
 }
 
-/// The pane list island and the pane island.
-private struct SettingsRoot: View {
-    @State var pane: SettingsPane
-    let changed: (SettingsPane) -> Void
+/// One pane's settings on the window's background.
+private struct SettingsPaneView: View {
+    let pane: SettingsPane
 
     var body: some View {
-        HStack(spacing: 5) {
-            PaneList(selection: $pane)
-                .frame(width: 200)
-                .frame(maxHeight: .infinity, alignment: .top)
-                .background(Island(fill: .islandSide))
-            VStack(alignment: .leading, spacing: 0) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(pane.rawValue)
-                        .font(Font(Chrome.paneTitle))
-                        .kerning(-0.22)
-                        .foregroundStyle(Station.color(.ink))
-                        .accessibilityAddTraits(.isHeader)
-                    Text(pane.summary)
-                        .font(Station.label)
-                        .foregroundStyle(Station.color(.ink3))
-                }
-                .padding(.horizontal, 28)
-                .padding(.top, 22)
-                .padding(.bottom, 16)
-                PaneHorizon()
-                content
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Island(fill: .islandEditor))
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        }
-        .onChange(of: pane) { changed(pane) }
+        content
+            .frame(width: SettingsWindowController.size.width, height: SettingsWindowController.size.height, alignment: .top)
     }
 
     @ViewBuilder
@@ -119,74 +86,7 @@ private struct SettingsRoot: View {
         case .editor: EditorPane(store: store)
         case .files: FilesPane(preferences: .shared)
         case .agents: AgentsPane(store: store)
-        case .collaboration: CollaborationPane(preferences: .shared, store: store)
+        case .sharing: CollaborationPane(preferences: .shared, store: store)
         }
-    }
-}
-
-/// The panes as rows: Bricolage 13 in `ink2`, the open pane in `ink` on the signal wash with the tick, which widens
-/// to 3 pt while the list has focus. The up and down arrows move through them.
-private struct PaneList: View {
-    @Binding var selection: SettingsPane
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            ForEach(SettingsPane.allCases) { pane in
-                Button(pane.rawValue) { selection = pane }
-                    .buttonStyle(PaneRowStyle(selected: selection == pane))
-                    .accessibilityAddTraits(selection == pane ? .isSelected : [])
-            }
-        }
-        .padding(.horizontal, 6)
-        .padding(.top, 14)
-        .focusable()
-        .focusEffectDisabled()
-        .onKeyPress(.upArrow) { move(-1) }
-        .onKeyPress(.downArrow) { move(1) }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Settings panes")
-    }
-
-    private func move(_ step: Int) -> KeyPress.Result {
-        let panes = SettingsPane.allCases
-        guard let index = panes.firstIndex(of: selection) else { return .ignored }
-        selection = panes[min(max(index + step, 0), panes.count - 1)]
-        return .handled
-    }
-}
-
-private struct PaneRowStyle: ButtonStyle {
-    let selected: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        PaneRow(configuration: configuration, selected: selected)
-    }
-}
-
-private struct PaneRow: View {
-    let configuration: ButtonStyleConfiguration
-    let selected: Bool
-    @Environment(\.isFocused) private var focused
-    @Environment(\.colorSchemeContrast) private var contrast
-
-    var body: some View {
-        configuration.label
-            .font(selected ? Station.labelActive : Station.label)
-            .foregroundStyle(Station.color(selected || configuration.isPressed ? .ink : .ink2))
-            .padding(.leading, 14)
-            .frame(maxWidth: .infinity, minHeight: 26, alignment: .leading)
-            .background {
-                if selected {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Station.wash)
-                        .overlay(alignment: .leading) {
-                            RoundedRectangle(cornerRadius: 1)
-                                .fill(Station.color(.signal))
-                                .frame(width: contrast == .increased || focused ? 3 : 2, height: 14)
-                                .padding(.leading, 4)
-                        }
-                }
-            }
-            .contentShape(.rect)
-            .focusEffectDisabled()
     }
 }

@@ -1,38 +1,20 @@
 import AppKit
 
-/// The Station chrome's faces. Bricolage Grotesque sets every label Dewline draws; JetBrains Mono sets paths, counts,
-/// times, keys and code only. Both ship in the app's Fonts folder, which `ATSApplicationFontsPath` registers for the
-/// process at launch, so they resolve by family name like any installed face.
+/// The chrome's faces: SF Pro for every label Dewline draws (11 in the status bar, 13 in the sidebar, tabs and panels,
+/// 15 semibold for empty-state titles), and JetBrains Mono, which ships in the app's Fonts folder, for code only.
 @MainActor
 enum Chrome {
-    static let brandFamily = "Bricolage Grotesque"
     static let monoFamily = "JetBrains Mono"
 
-    /// The wordmark's tracking, -0.01 em at 14 pt.
-    static let wordmarkKern: CGFloat = -0.14
-    /// Section labels' tracking, +0.01 em at 11.5 pt.
-    static let sectionKern: CGFloat = 0.115
+    /// Section labels' tracking.
+    static let sectionKern: CGFloat = 0
 
     private static var cache: [String: NSFont] = [:]
 
-    /// Bricolage at `size` and `weight` (200 to 800) on its optical size axis, which follows the size unless given. The
-    /// variable font's default instance is 96 pt ExtraBold, so every axis is set. Falls back to the system face when
-    /// the font is missing.
-    static func brand(_ size: CGFloat, weight: CGFloat = 450, opticalSize: CGFloat? = nil) -> NSFont {
-        let opsz = min(max(opticalSize ?? size, 12), 96)
-        let key = "b \(size) \(weight) \(opsz)"
-        if let font = cache[key] { return font }
-        func axis(_ tag: String) -> NSNumber {
-            NSNumber(value: tag.utf8.reduce(0) { $0 << 8 | Int($1) })
-        }
-        let descriptor = NSFontDescriptor(fontAttributes: [
-            .family: brandFamily,
-            .variation: [axis("wght"): weight, axis("opsz"): opsz, axis("wdth"): 100],
-        ])
-        let font = NSFont(descriptor: descriptor, size: size).flatMap { $0.familyName == brandFamily ? $0 : nil }
-            ?? .systemFont(ofSize: size, weight: weight >= 600 ? .semibold : weight >= 520 ? .medium : .regular)
-        cache[key] = font
-        return font
+    /// The system face at `size`, at the nearest of its weights to `weight` on the 100 to 900 scale. `opticalSize` is
+    /// kept for callers that name one; SF Pro picks its own.
+    static func brand(_ size: CGFloat, weight: CGFloat = 400, opticalSize: CGFloat? = nil) -> NSFont {
+        .systemFont(ofSize: size, weight: weight >= 590 ? .semibold : weight >= 500 ? .medium : .regular)
     }
 
     /// JetBrains Mono at `size`, with the system's monospaced face when it is missing.
@@ -46,22 +28,24 @@ enum Chrome {
         return font
     }
 
-    /// Sidebar rows, file names, tabs, Settings rows, command titles, the Keep/Revert bar: 13 / 450.
-    static var label: NSFont { brand(13, weight: 450, opticalSize: 14) }
-    /// The open file, the active row: 13 / 560.
-    static var labelActive: NSFont { brand(13, weight: 560, opticalSize: 14) }
-    /// A writer's name in the Keep/Revert bar: 13 / 600.
-    static var labelStrong: NSFont { brand(13, weight: 600, opticalSize: 14) }
-    /// Section labels in the sidebar, the palette and Settings, sentence case: 11.5 / 600.
-    static var section: NSFont { brand(11.5, weight: 600, opticalSize: 12) }
-    /// Outline headings under the open file: 12 / 450.
-    static var small: NSFont { brand(12, weight: 450, opticalSize: 12) }
-    /// The `dewline` wordmark in the title band: 14 / 640.
-    static var wordmark: NSFont { brand(14, weight: 640, opticalSize: 14) }
-    /// The palette input: 20 / 500.
-    static var title: NSFont { brand(20, weight: 500, opticalSize: 24) }
-    /// Settings pane titles: 22 / 580.
-    static var paneTitle: NSFont { brand(22, weight: 580, opticalSize: 24) }
+    /// Sidebar rows, tabs, panels and Settings rows: 13 regular.
+    static var label: NSFont { .systemFont(ofSize: 13) }
+    /// The selected tab and other emphasis in a row: 13 medium.
+    static var labelActive: NSFont { .systemFont(ofSize: 13, weight: .medium) }
+    /// The folder's name over its tree: 13 semibold.
+    static var labelStrong: NSFont { .systemFont(ofSize: 13, weight: .semibold) }
+    /// Section labels in the palette and Settings: 11 medium.
+    static var section: NSFont { .systemFont(ofSize: 11, weight: .medium) }
+    /// Outline headings and secondary rows: 12 regular.
+    static var small: NSFont { .systemFont(ofSize: 12) }
+    /// The status bar: 11 regular, with tabular digits.
+    static var status: NSFont { .monospacedDigitSystemFont(ofSize: 11, weight: .regular) }
+    /// Empty-state titles: 15 semibold.
+    static var emptyTitle: NSFont { .systemFont(ofSize: 15, weight: .semibold) }
+    /// The palette input: 18 regular.
+    static var title: NSFont { .systemFont(ofSize: 18) }
+    /// Settings pane titles: 15 semibold.
+    static var paneTitle: NSFont { .systemFont(ofSize: 15, weight: .semibold) }
 
     /// Section label text with its tracking.
     static func sectionTitle(_ text: String, color: NSColor) -> NSAttributedString {
@@ -74,21 +58,21 @@ enum Chrome {
         ThemeStore.shared.color(token)
     }
 
-    /// Signal at 8% in light and 10% in dark: selected rows and the scope chip, the only fill signal makes.
+    /// Ink at 8% in light and 10% in dark: the selected row's fill.
     static var wash: NSColor {
-        let signal = color(.signal)
-        return NSColor(name: nil) { signal.resolved(for: $0).withAlphaComponent($0.isDark ? 0.10 : 0.08) }
+        let ink = color(.ink)
+        return NSColor(name: nil) { ink.resolved(for: $0).withAlphaComponent($0.isDark ? 0.10 : 0.08) }
+    }
+
+    /// Nothing glows any more; the horizon reads this until it goes.
+    static func glowOpacity(dark: Bool) -> Float {
+        0
     }
 
     /// The outer edge of islands and the palette: ink at 8% in light, ink2 at 10% in dark.
     static var strokeSubtle: NSColor {
         let (ink, ink2) = (color(.ink), color(.ink2))
         return NSColor(name: nil) { $0.isDark ? ink2.resolved(for: $0).withAlphaComponent(0.10) : ink.resolved(for: $0).withAlphaComponent(0.08) }
-    }
-
-    /// The glow's opacity around the horizon's lit segment and the mark's bead.
-    static func glowOpacity(dark: Bool) -> Float {
-        dark ? 0.55 : 0.45
     }
 }
 
@@ -301,7 +285,7 @@ final class ChromeButton: NSControl {
             Chrome.color(.ink).withAlphaComponent(pressed ? 0.82 : 1).setFill()
             NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6).fill()
         }
-        let color: NSColor = filled ? Chrome.color(.islandEditor) : Chrome.color(hovering || pressed ? .ink : .ink2)
+        let color: NSColor = filled ? Chrome.color(.paper) : Chrome.color(hovering || pressed ? .ink : .ink2)
         let attributes: [NSAttributedString.Key: Any] = [.font: titleFont, .foregroundColor: color]
         let size = (title as NSString).size(withAttributes: attributes)
         let x: CGFloat = filled ? 14 : 6
@@ -310,7 +294,7 @@ final class ChromeButton: NSControl {
             Keycap.draw(keys, x: x + ceil(size.width) + 8, midY: bounds.midY, onFill: filled, alpha: isEnabled ? 1 : 0.6)
         }
         if window?.firstResponder === self {
-            Chrome.color(.signal).setStroke()
+            Chrome.color(.accent).setStroke()
             let ring = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 6, yRadius: 6)
             ring.lineWidth = 1.5
             ring.stroke()
@@ -401,8 +385,8 @@ final class DewMark: NSView {
     }
 }
 
-/// A selected row as Station draws it: a `signal` wash at 6 pt radius and a 2 x 14 pt signal tick 4 pt from the left
-/// edge. No hover, no system highlight. Cells that conform to `ChromeSelectable` hear about selection.
+/// A selected row: an ink wash at 6 pt radius. No hover, no system highlight. Cells that conform to `ChromeSelectable`
+/// hear about selection.
 final class StationRowView: NSTableRowView {
     override var isSelected: Bool {
         didSet {
@@ -421,13 +405,9 @@ final class StationRowView: NSTableRowView {
     override func drawBackground(in dirtyRect: NSRect) {}
 
     override func drawSelection(in dirtyRect: NSRect) {
-        let rect = bounds.insetBy(dx: 6, dy: 1)
+        let rect = bounds.insetBy(dx: 6, dy: 0)
         Chrome.wash.setFill()
         NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6).fill()
-        let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
-        let tick = NSRect(x: rect.minX + 4, y: rect.midY - 7, width: contrast ? 3 : 2, height: 14)
-        Chrome.color(.signal).setFill()
-        NSBezierPath(roundedRect: tick, xRadius: 1, yRadius: 1).fill()
     }
 
     override func didAddSubview(_ subview: NSView) {

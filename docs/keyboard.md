@@ -8,14 +8,17 @@ The shortcuts `app/Dewline/MainMenu.swift` puts in the menu bar, written here by
 | Hide Dewline | Dewline | ⌘H |
 | Hide Others | Dewline | ⌥⌘H |
 | Quit Dewline | Dewline | ⌘Q |
-| New | File | ⌘N |
-| New Tab | File | ⌘T |
+| New Note | File | ⌘N |
+| New Folder | File | ⇧⌘N |
+| New Window | File | ⌥⌘N |
 | Open… | File | ⌘O |
 | Open Folder… | File | ⌥⌘O |
 | Quick Open… | File | ⇧⌘O |
+| Reopen Closed Tab | File | ⇧⌘T |
 | Close | File | ⌘W |
 | Save | File | ⌘S |
-| Export as PDF… | File | ⇧⌘E |
+| Export… | File | ⇧⌘E |
+| Print… | File | ⌘P |
 | Undo | Edit | ⌘Z |
 | Redo | Edit | ⇧⌘Z |
 | Cut | Edit | ⌘X |
@@ -50,18 +53,19 @@ The shortcuts `app/Dewline/MainMenu.swift` puts in the menu bar, written here by
 | Bulleted List | Format | ⇧⌘8 |
 | Numbered List | Format | ⇧⌘7 |
 | Task | Format | ⇧⌘9 |
-| Command Palette… | View | ⇧⌘P |
-| Review Changes | View | ⇧⌘R |
+| Preview | View | ⌥⌘P |
+| Agent | View | ⌥⌘A |
+| Changes | View | ⇧⌘R |
 | Show Sidebar | View | ⌃⌘S |
-| Show Previous Tab | View | ⌘{ |
-| Show Next Tab | View | ⌘} |
+| Command Palette… | View | ⇧⌘P |
 | Show Source | View | ⌥⌘U |
 | Focus | View | ⇧⌘D |
-| Typewriter | View | ⇧⌘T |
-| Fold | View | ⌥⌘← |
-| Unfold | View | ⌥⌘→ |
-| Fold All | View | ⌥⇧⌘← |
-| Unfold All | View | ⌥⇧⌘→ |
+| Show Previous Tab | View | ⌘{ |
+| Show Next Tab | View | ⌘} |
+| Fold | View › Folding | ⌥⌘← |
+| Unfold | View › Folding | ⌥⌘→ |
+| Fold All | View › Folding | ⌥⇧⌘← |
+| Unfold All | View › Folding | ⌥⇧⌘→ |
 | Back | Go | ⌘[ |
 | Forward | Go | ⌘] |
 | Next Change | Go | ⌃⌘↓ |
