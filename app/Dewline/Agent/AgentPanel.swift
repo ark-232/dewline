@@ -102,7 +102,8 @@ final class AgentPanelController: NSViewController {
         observers.append(NotificationCenter.default.addObserver(forName: NSTextView.didChangeSelectionNotification, object: nil, queue: .main) { [weak self] note in
             let sender = note.object.map { ObjectIdentifier($0 as AnyObject) }
             MainActor.assumeIsolated {
-                guard let self, sender != ObjectIdentifier(self.input) else { return }
+                // A hidden panel draws its chips when it shows, so typing in the note does no work here.
+                guard let self, sender != ObjectIdentifier(self.input), self.isShown else { return }
                 self.updateChips()
             }
         })
@@ -130,6 +131,15 @@ final class AgentPanelController: NSViewController {
 
 extension AgentPanelController {
     // MARK: Layout
+
+    private var isShown: Bool {
+        isViewLoaded && view.window != nil && !view.isHiddenOrHasHiddenAncestor
+    }
+
+    override func viewWillAppear() {
+        super.viewWillAppear()
+        updateChips()
+    }
 
     override func loadView() {
         paper.ruleY = 36
