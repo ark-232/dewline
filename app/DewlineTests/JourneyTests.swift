@@ -215,17 +215,20 @@ struct JourneyTests {
 
     /// Claude Code rewrites the open file and two closed ones. The open file's four changes land marked with Claude's
     /// name, the finished line counts them, and Keep, Revert and Keep All decide them: the file's bytes follow each
-    /// decision, the decisions log holds one line per decision without the text, and nothing is left to review.
+    /// decision, the decisions log holds one line per decision without the text, and nothing is left to review. The
+    /// closed files are listed as changed while closed, and one opens with Claude's write marked.
     @Test func j3AnAgentsChangesAreReviewedKeptAndReverted() async throws {
         let vault = try Vault(["plan.md": Self.plan, "a.md": "# A\n\nOld a.\n", "b.md": "# B\n\nOld b.\n"])
         defer { vault.remove() }
         let tab = try Tab(vault.url("plan.md"), engine: vault.engine)
         defer { tab.close() }
         let claude = ChangeEngine.Origin.agent(.claude, session: "s1")
+        ClosedChanges.engine = vault.engine
+        defer { ClosedChanges.engine = MarkdownDocument.sharedEngine }
 
-        try Self.agentWrite(Self.agentPlan, to: vault.url("plan.md"), id: "toolu_1", engine: vault.engine)
-        try Self.agentWrite("# A\n\nNew a.\n", to: vault.url("a.md"), id: "toolu_2", engine: vault.engine)
-        try Self.agentWrite("# B\n\nNew b.\n", to: vault.url("b.md"), id: "toolu_3", engine: vault.engine)
+        try await Self.agentWrite(Self.agentPlan, to: vault.url("plan.md"), id: "toolu_1", engine: vault.engine)
+        try await Self.agentWrite("# A\n\nNew a.\n", to: vault.url("a.md"), id: "toolu_2", engine: vault.engine)
+        try await Self.agentWrite("# B\n\nNew b.\n", to: vault.url("b.md"), id: "toolu_3", engine: vault.engine)
         try await Self.until { tab.marked.count == 4 && tab.marked.allSatisfy { $0.change.origin == claude } }
         #expect(tab.textView.string == Self.agentPlan)
         #expect(!tab.document.isDocumentEdited)
@@ -268,12 +271,21 @@ struct JourneyTests {
         #expect(lines.allSatisfy { ($0["excerpt_hash"] as? String)?.count == 64 })
         #expect(!log.contains("revised"))
 
-        // The closed files hold the agent's bytes and open with nothing to review: the engine sees only open files.
+        // The closed files hold the agent's bytes and are listed; one opens with the write marked against the bytes it
+        // replaced, and leaves the list.
         #expect(vault.text("a.md") == "# A\n\nNew a.\n")
+        #expect(ClosedChanges.all.map { Self.realpath($0.url) } == ["a.md", "b.md"].map { Self.realpath(vault.url($0)) })
+        #expect(ClosedChanges.all.allSatisfy { $0.origin == claude })
         let closed = try Tab(vault.url("a.md"), engine: vault.engine)
         defer { closed.close() }
+        try await Self.until { closed.marked.count == 1 }
         #expect(closed.textView.string == "# A\n\nNew a.\n")
-        #expect(closed.live.changes.isEmpty)
+        #expect(closed.marked.first?.change.origin == claude)
+        #expect(closed.marked.first.map { closed.live.excerpt($0.id) } == "New")
+        #expect(!closed.document.isDocumentEdited)
+        #expect(ClosedChanges.all.map { Self.realpath($0.url) } == [Self.realpath(vault.url("b.md"))])
+        closed.textView.revertChange(nil)
+        #expect(closed.textView.string == "# A\n\nOld a.\n")
         #expect(tab.window.isVisible == false)
     }
 
@@ -566,7 +578,7 @@ struct JourneyTests {
         #expect(menu.items.map(\.title) == ["No Snapshots"] && !menu.items[0].isEnabled)
 
         let after = "# Plan\n\nShip on Friday.\n\nAgent note.\n"
-        try Self.agentWrite(after, to: vault.url("plan.md"), id: "toolu_1", engine: vault.engine)
+        try await Self.agentWrite(after, to: vault.url("plan.md"), id: "toolu_1", engine: vault.engine)
         try await Self.until { tab.marked.count == 1 }
         tab.textView.setSelectedRange(NSRange(location: tab.marked[0].change.range.location + 1, length: 0))
         for action in changeCommands {
@@ -588,7 +600,7 @@ struct JourneyTests {
         defer { vault.remove() }
         let tab = try Tab(vault.url("plan.md"), engine: vault.engine)
         defer { tab.close() }
-        try Self.agentWrite(Self.agentPlan, to: vault.url("plan.md"), id: "toolu_1", engine: vault.engine)
+        try await Self.agentWrite(Self.agentPlan, to: vault.url("plan.md"), id: "toolu_1", engine: vault.engine)
         try await Self.until { tab.marked.count == 4 }
         let changes = tab.marked
         tab.textView.setSelectedRange(NSRange(location: 0, length: 0))
@@ -740,10 +752,12 @@ struct JourneyTests {
 
     /// Claude Code's Write: PreToolUse with the hash it read and the one it declares, the new bytes to a temporary file
     /// beside the original renamed over it, then PostToolUse with the hash it wrote.
-    private static func agentWrite(_ text: String, to url: URL, id: String, engine: ChangeEngine) throws {
+    private static func agentWrite(_ text: String, to url: URL, id: String, engine: ChangeEngine) async throws {
         let before = try String(contentsOf: url, encoding: .utf8)
         let path = realpath(url)
         claim(.preToolUse(.init(id: id, tool: .write, path: path, hash: hex(before), declared: hex(text))), engine)
+        // The tool runs once its PreToolUse hook has returned.
+        try await Task.sleep(for: .milliseconds(100))
         let temporary = url.deletingLastPathComponent().appending(path: "\(url.lastPathComponent).tmp.\(getpid()).\(UInt64(Date().timeIntervalSince1970 * 1000))")
         try Data(text.utf8).write(to: temporary)
         #expect(Darwin.rename(temporary.path, url.path) == 0)
