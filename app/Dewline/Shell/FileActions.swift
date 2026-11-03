@@ -198,3 +198,61 @@ enum FileActions {
         return String(clean.prefix(60)).trimmingCharacters(in: .whitespaces)
     }
 }
+
+/// The sidebar's file commands (`FileCommand`), answered by the window that shows the sidebar. Each menu item's
+/// represented object is the folder or file, or a request.
+extension MainWindowController {
+    @objc func newNoteInFolder(_ sender: Any?) {
+        guard let folder = (sender as? NSMenuItem)?.representedObject as? URL else { return }
+        perform { try self.openNew(FileActions.newNote(in: folder, undo: self.window?.undoManager)) }
+    }
+
+    @objc func newNoteNamed(_ sender: Any?) {
+        guard let request = (sender as? NSMenuItem)?.representedObject as? NewNoteRequest else { return }
+        perform {
+            let url = FileActions.free((request.name as NSString).deletingPathExtension, extension: "md", in: request.folder)
+            try Data().write(to: url, options: .withoutOverwriting)
+            self.open(url, newTab: false)
+        }
+    }
+
+    @objc func newFolderInFolder(_ sender: Any?) {
+        guard let folder = (sender as? NSMenuItem)?.representedObject as? URL else { return }
+        perform { try FileActions.newFolder(in: folder, undo: self.window?.undoManager) }
+    }
+
+    @objc func renameItem(_ sender: Any?) {
+        guard let request = (sender as? NSMenuItem)?.representedObject as? RenameRequest else { return }
+        perform { try FileActions.rename(request.url, to: request.name, undo: self.window?.undoManager) }
+    }
+
+    @objc func duplicateItem(_ sender: Any?) {
+        guard let url = (sender as? NSMenuItem)?.representedObject as? URL else { return }
+        perform { _ = try FileActions.duplicate(url, undo: self.window?.undoManager) }
+    }
+
+    @objc func trashItem(_ sender: Any?) {
+        guard let url = (sender as? NSMenuItem)?.representedObject as? URL else { return }
+        perform { _ = try FileActions.trash(url, undo: self.window?.undoManager) }
+    }
+
+    @objc func moveItems(_ sender: Any?) {
+        guard let request = (sender as? NSMenuItem)?.representedObject as? MoveRequest else { return }
+        perform { for url in request.urls { _ = try FileActions.move(url, to: request.folder, undo: self.window?.undoManager) } }
+    }
+
+    private func openNew(_ url: URL) {
+        open(url, newTab: true)
+        if let document = NSDocumentController.shared.document(for: url) as? MarkdownDocument {
+            FileActions.nameFromFirstLine(document)
+        }
+    }
+
+    private func perform(_ action: () throws -> Void) {
+        do {
+            try action()
+        } catch {
+            if let window { presentError(error, modalFor: window, delegate: nil, didPresent: nil, contextInfo: nil) }
+        }
+    }
+}

@@ -41,20 +41,20 @@ final class SidebarNode {
 }
 
 /// The file commands the sidebar sends up the responder chain, each from a menu item whose represented object is the
-/// row's URL: the folder to make a note or folder in, or the file to rename, duplicate or trash. FileActions answers
-/// them; until something does, their menu items show disabled.
+/// row's URL: the folder to make a note or folder in, or the file to rename, duplicate or trash. The window answers
+/// them through FileActions.
 @MainActor
 enum FileCommand {
-    static let newNote = Selector(("newNoteInFolder:"))
-    static let newFolder = Selector(("newFolderInFolder:"))
+    static let newNote = #selector(MainWindowController.newNoteInFolder(_:))
+    static let newFolder = #selector(MainWindowController.newFolderInFolder(_:))
     /// The represented object is a `NewNoteRequest`.
-    static let newNamedNote = Selector(("newNoteNamed:"))
+    static let newNamedNote = #selector(MainWindowController.newNoteNamed(_:))
     /// The represented object is a `RenameRequest`.
-    static let rename = Selector(("renameItem:"))
-    static let duplicate = Selector(("duplicateItem:"))
-    static let trash = Selector(("trashItem:"))
+    static let rename = #selector(MainWindowController.renameItem(_:))
+    static let duplicate = #selector(MainWindowController.duplicateItem(_:))
+    static let trash = #selector(MainWindowController.trashItem(_:))
     /// The represented object is a `MoveRequest`.
-    static let move = Selector(("moveItems:"))
+    static let move = #selector(MainWindowController.moveItems(_:))
 
     /// Sends `command` for `object` from `view`'s window, as a menu item would.
     @discardableResult
