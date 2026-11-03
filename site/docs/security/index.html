@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Security and privacy · Dewline docs</title>
 <meta name="description" content="What Dewline sends over the network, what it keeps on disk, the controls against hostile files and processes, and how to report a vulnerability.">
+<meta name="doc-type" content="reference">
 <link rel="canonical" href="https://dewline.arkwerx.com/docs/security/">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#F7FBF9" media="(prefers-color-scheme: light)">
@@ -60,47 +61,51 @@
       </ul>
     </div>
     <div class="dnav-group">
-      <p class="dnav-title">Guide</p>
+      <p class="dnav-title">Write</p>
       <ul>
         <li><a href="/docs/editing/">Editing</a></li>
         <li><a href="/docs/markdown/">Markdown</a></li>
-        <li><a href="/docs/files/">Files and saves</a></li>
-        <li><a href="/docs/collaboration/">Collaboration</a></li>
+        <li><a href="/docs/keyboard/">Keyboard</a></li>
         <li><a href="/docs/themes-and-fonts/">Themes and fonts</a></li>
-        <li><a href="/docs/keyboard/">Keyboard shortcuts</a></li>
         <li><a href="/docs/export/">Export</a></li>
       </ul>
     </div>
     <div class="dnav-group">
-      <p class="dnav-title">Reference</p>
+      <p class="dnav-title">Files and changes</p>
       <ul>
-        <li><a href="/docs/cli/">Command line</a></li>
-        <li><a href="/docs/mcp/">MCP server</a></li>
-        <li><a href="/docs/agents/">Agents and changes</a></li>
+        <li><a href="/docs/files/">Files</a></li>
+        <li><a href="/docs/agents/">Agents</a></li>
+        <li><a href="/docs/collaboration/">Collaboration</a></li>
+      </ul>
+    </div>
+    <div class="dnav-group">
+      <p class="dnav-title">Developers</p>
+      <ul>
+        <li><a href="/docs/cli/">CLI</a></li>
+        <li><a href="/docs/mcp/">MCP</a></li>
         <li><a href="/docs/url-scheme/">URL scheme</a></li>
       </ul>
     </div>
     <div class="dnav-group">
-      <p class="dnav-title">Technical</p>
+      <p class="dnav-title">About</p>
       <ul>
-        <li><a href="/docs/architecture/">Architecture</a></li>
-        <li><a href="/docs/performance/">Performance</a></li>
         <li><a href="/docs/security/" aria-current="page">Security and privacy</a></li>
+        <li><a href="/docs/performance/">Performance</a></li>
+        <li><a href="/docs/architecture/">Architecture</a></li>
       </ul>
     </div>
   </nav>
 
   <main class="dmain" id="main">
     <article class="prose">
-      <p class="eyebrow">Technical</p>
       <h1>Security and privacy</h1>
-      <p class="lead">Dewline needs no account and sends no telemetry. This page lists every request the app makes over the network, what it keeps on disk, and the controls between your notes and a hostile file, process or peer.</p>
+      <p class="lead">Dewline needs no account, sends no telemetry, and goes on the network only for a feature you can see.</p>
 
       <h2 id="no-account">No account, no telemetry</h2>
       <p>You never sign up or sign in. The code has no analytics, no usage reporting and no crash reporter. The app's logs go to the macOS unified log on your Mac and nowhere else. Sparkle's system profile is off, so an update check sends no hardware details.</p>
 
       <h2 id="network">What goes over the network</h2>
-      <p>The app makes three kinds of request, each for a feature you can see. Nothing else in the code opens a connection.</p>
+      <p>The app makes four kinds of request. Nothing else in the code opens a connection.</p>
       <dl>
         <dt>Updates</dt>
         <dd>Once a day, once the first-run line about updates has shown, and whenever you choose Check Now. The app asks <code>dewline.arkwerx.com/appcast.xml</code> for the feed and downloads an update from GitHub. Each request carries the user agent <code>Dewline</code>. Turn off the daily check in Settings &gt; General &gt; Updates. Debug and unsigned builds never contact the feed.</dd>
@@ -108,8 +113,13 @@
         <dd>Only when you install a font from the catalog in Settings &gt; Fonts. Each file comes from <code>raw.githubusercontent.com</code>, google/fonts at one pinned commit, in an ephemeral session with no cookies and no cache. The file is pinned by URL, byte size and SHA-256, and a download that does not match is refused before it touches the disk.</dd>
         <dt>Collaboration</dt>
         <dd>Only while you share a file or join one. Edits and cursors go to the other Mac directly, or through n0's relay, <code>use1-1.relay.n0.iroh.link</code>, when no direct path opens. The relay sees node ids, addresses and timing. The content is encrypted end to end.</dd>
+        <dt>Link previews</dt>
+        <dd>When a note shows a web link, Dewline asks that site for the page's title, icon and picture, as Messages does. It asks only for links on screen, only for http and https addresses, and never for addresses on your own network. The site sees your IP address and a request like a browser's. Previews are kept for 7 days in <code>~/Library/Caches/dev.arkwerx.dewline/LinkPreviews</code>. Turn them off in Settings &gt; Editor &gt; Link previews, which also deletes the saved ones.</dd>
       </dl>
       <p>Images in a note load from relative paths on disk only; an image given as a URL is never fetched. Links you click open in your browser.</p>
+
+      <h2 id="agent-panel">The agent panel</h2>
+      <p>The panel starts the agent program you chose, on your Mac. Dewline sends it what you type and the note you attach, and lets it read and write files only inside the open folder. Where the agent sends your text is up to that agent.</p>
 
       <h2 id="on-disk">What stays on disk</h2>
       <dl>
@@ -120,13 +130,13 @@
         <dt>Control socket</dt>
         <dd><code>~/Library/Application Support/dev.arkwerx.dewline/run/control.sock</code>, in a <code>0700</code> folder, itself <code>0600</code>. The app removes it when it quits.</dd>
         <dt>Collaboration keys</dt>
-        <dd>Your login Keychain, service <code>dev.arkwerx.dewline.sync</code>: this Mac's node key and each share's document key, readable only while the Mac is unlocked and never synced to another device.</dd>
+        <dd>Your login Keychain, service <code>dev.arkwerx.dewline.sync</code>: this Mac's node key and each share's document key. They are readable only while the Mac is unlocked and never sync to another device.</dd>
         <dt>Inbox</dt>
         <dd><code>~/Documents/Dewline/Inbox.md</code>, unless you choose another file. Every capture appends to it.</dd>
         <dt>Shared copies</dt>
         <dd><code>~/Documents/Dewline Shared/</code>, unless you choose another folder. A guest's copy of a shared file goes here, and a file already there is never overwritten.</dd>
       </dl>
-      <p>Files that may hold secrets are never snapshotted: any <code>.jsonl</code> file (agent transcripts), <code>.claude.json</code>, anything in a <code>file-history</code> folder, and <code>.json</code> or <code>.toml</code> files in a <code>.claude</code> or <code>.codex</code> folder.</p>
+      <p>Files that may hold secrets are never snapshotted: any <code>.jsonl</code> file (agent transcripts), <code>.claude.json</code>, and anything in a <code>file-history</code> folder. Neither are <code>.json</code> or <code>.toml</code> files in a <code>.claude</code> or <code>.codex</code> folder.</p>
       <aside class="callout caution">
         <p class="callout-title">Caution</p>
         <p>The collaboration keys sit in the login Keychain, so any app you allow to read them can (<a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0009-collaboration.md">0009</a>). The data-protection Keychain needs an entitlement and a provisioning profile that this build does not have yet.</p>
@@ -138,11 +148,12 @@
         <table>
           <thead><tr><th scope="col">Threat</th><th scope="col">Control</th></tr></thead>
           <tbody>
-            <tr><th scope="row">Hostile Markdown in the editor</th><td>No JavaScript runs on a note anywhere. Mermaid and math render natively, off the main thread, capped at 50 KB of source, a 250 ms render and a 16 megapixel picture; a failed render shows the source. The parser and the merge are fuzzed. Highlighting skips lines over 16 KB or with over 2,000 scope changes. <span class="src">(<code>core/crates/ffi</code>, <code>core/fuzz</code>)</span></td></tr>
+            <tr><th scope="row">Hostile Markdown in the editor</th><td>No JavaScript in a note runs anywhere. Mermaid and math render natively, off the main thread, capped at 50 KB of source, a 250 ms render and a 16 megapixel picture. A failed render shows the source. The parser and the merge are fuzzed. Highlighting skips lines over 16 KB or with over 2,000 scope changes. <span class="src">(<code>core/crates/ffi</code>, <code>core/fuzz</code>)</span></td></tr>
             <tr><th scope="row">Hostile Markdown in an export</th><td>Raw HTML in the source is written as text. A <code>javascript:</code> link loses its target. The page carries a Content Security Policy that allows no script. PDF layout runs in a web view with page scripts off, no stored data and no navigation past the first page. <span class="src">(<code>core::export</code>, <code>Export.swift</code>)</span></td></tr>
             <tr><th scope="row">Images that reach outside the folder</th><td>An export inlines an image only from inside the document's folder, through the path jail, up to 20 MB, and only when its bytes are PNG, JPEG, GIF, WebP or SVG. <span class="src">(<code>core::export</code>)</span></td></tr>
+            <tr><th scope="row">A hostile page behind a link</th><td>Previews ask only http and https addresses with a public host. They never ask <code>localhost</code>, <code>.local</code> names, or loopback, private or link-local addresses. The page loads in a LinkPresentation system process, not in the app, and its title and pictures are drawn as one image. LinkPresentation follows a site's redirects, which Dewline does not check. <span class="src">(<code>LinkPreviews.swift</code>)</span></td></tr>
             <tr><th scope="row">A Finder preview of a hostile file</th><td>Quick Look runs as a sandboxed extension and returns static HTML with no script and no network access. Diagrams and math show as source, and no image is inlined. <span class="src">(<code>app/QuickLook</code>)</span></td></tr>
-            <tr><th scope="row">Path traversal and symlink swaps</th><td>One jail resolves a path with <code>realpath</code>, opens it from the root's descriptor with <code>O_NOFOLLOW_ANY</code>, and checks the opened file is still inside. A property test covers mixes of dots, links and loops. <span class="src">(<code>core::jail</code>)</span></td></tr>
+            <tr><th scope="row">Path traversal and symlink swaps</th><td>One jail resolves a path with <code>realpath</code>, opens it from the root's descriptor with <code>O_NOFOLLOW_ANY</code>, and checks the opened file is still inside. A property test checks mixes of dots, links and loops. <span class="src">(<code>core::jail</code>)</span></td></tr>
             <tr><th scope="row">An agent over MCP</th><td>stdio only, no network listener. The server refuses a root that is your home folder or above it, inside <code>~/Library</code>, or holding <code>.ssh</code>. It serves only <code>.md</code>, <code>.markdown</code> and <code>.txt</code> files outside dot folders, within the size and count limits on the <a href="/docs/mcp/#limits">MCP server</a> page. Its one write appends to the inbox. <span class="src">(<code>cli/src/mcp.rs</code>)</span></td></tr>
             <tr><th scope="row">Another process on the control socket</th><td>The socket sits in a folder only you can enter, and both ends check that the peer runs as your user. A request is one line of at most 16 KB, sent within 2 s, with at most 16 connections. An open request must name an absolute path to an existing regular file. Nothing that arrives writes a file: a hook's claim carries ids, a path and BLAKE3 hashes, never content, and can only label a change. <span class="src">(<code>ControlSocket.swift</code>, <code>cli/src/control.rs</code>)</span></td></tr>
             <tr><th scope="row">A crafted <code>dewline://</code> link</th><td>Every path goes through the jail: inside your home folder, never in <code>~/Library</code> or a <code>.ssh</code> folder. An export link writes only a file named for its format. <span class="src">(<code>SchemeLinks.swift</code>)</span></td></tr>
@@ -211,7 +222,7 @@ Text &lt;img src=x onerror=alert(2)&gt; here.
     </article>
 
     <nav class="pager" aria-label="Previous and next page">
-      <a class="prev" href="/docs/performance/"><span>Previous</span><b>Performance</b></a>
+      <a class="prev" href="/docs/performance/">Previous: Performance</a>
     </nav>
   </main>
 
