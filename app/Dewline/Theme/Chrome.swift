@@ -333,16 +333,16 @@ final class ChromeButton: NSControl {
     }
 }
 
-/// The d-bead mark: a stem and a line in the theme's ink and a round bead in sea, fitted to the view and resting on
-/// its bottom edge. Drawn on the icon's 1024 grid, where the mark spans x 160 to 832 and y 288 to 832.
+/// The mark: the icon's monospace d in the theme's ink and its text cursor in the site's dawn, fitted to the view and
+/// resting on its bottom edge. Drawn on the icon's 1024 grid, where the mark spans x 265 to 760 and y 257 to 767.
 final class DewMark: NSView {
-    /// The brand's sea, the bead's color in every theme.
-    private static let sea = NSColor(name: nil) {
-        $0.isDark ? NSColor(srgbRed: 0x7F / 255, green: 0xC4 / 255, blue: 0xB2 / 255, alpha: 1)
-            : NSColor(srgbRed: 0x2F / 255, green: 0x73 / 255, blue: 0x65 / 255, alpha: 1)
+    /// The brand's accent, the cursor's color in every theme.
+    private static let dawn = NSColor(name: nil) {
+        $0.isDark ? NSColor(srgbRed: 0xFF / 255, green: 0x8A / 255, blue: 0x5C / 255, alpha: 1)
+            : NSColor(srgbRed: 0xC9 / 255, green: 0x48 / 255, blue: 0x2A / 255, alpha: 1)
     }
 
-    init(size: NSSize = NSSize(width: 18, height: 12)) {
+    init(size: NSSize = NSSize(width: 12, height: 12)) {
         super.init(frame: NSRect(origin: .zero, size: size))
         setAccessibilityElement(false)
         translatesAutoresizingMaskIntoConstraints = false
@@ -361,23 +361,38 @@ final class DewMark: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
-        let scale = min(bounds.width / 672, bounds.height / 544)
-        context.translateBy(x: (bounds.width - 672 * scale) / 2, y: bounds.height - 544 * scale)
+        let scale = min(bounds.width / 495, bounds.height / 510)
+        context.translateBy(x: (bounds.width - 495 * scale) / 2, y: bounds.height - 510 * scale)
         context.scaleBy(x: scale, y: scale)
-        context.translateBy(x: -160, y: -288)
-        // The whole bead draws first: the line covers its lower part, so no seam shows where it rests.
-        Self.sea.resolved(for: effectiveAppearance).setFill()
-        NSBezierPath(ovalIn: NSRect(x: 280, y: 428.9, width: 384, height: 384)).fill()
+        context.translateBy(x: -265, y: -257)
         Chrome.color(.ink).resolved(for: effectiveAppearance).setFill()
-        let stem = NSBezierPath()
-        stem.move(to: NSPoint(x: 640, y: 312.9))
-        stem.line(to: NSPoint(x: 768, y: 288))
-        stem.line(to: NSPoint(x: 768, y: 832))
-        stem.line(to: NSPoint(x: 640, y: 832))
-        stem.close()
-        stem.fill()
-        NSBezierPath(ovalIn: NSRect(x: 160, y: 768, width: 64, height: 64)).fill()
-        NSBezierPath(rect: NSRect(x: 192, y: 768, width: 640, height: 64)).fill()
+        // The d's outer contour and its counter, wound against each other.
+        let d = NSBezierPath()
+        d.move(to: NSPoint(x: 430, y: 257))
+        d.line(to: NSPoint(x: 595, y: 257))
+        d.line(to: NSPoint(x: 595, y: 767))
+        d.line(to: NSPoint(x: 415, y: 767))
+        d.curve(to: NSPoint(x: 265, y: 617), controlPoint1: NSPoint(x: 322, y: 767), controlPoint2: NSPoint(x: 265, y: 710))
+        d.line(to: NSPoint(x: 265, y: 572))
+        d.curve(to: NSPoint(x: 415, y: 422), controlPoint1: NSPoint(x: 265, y: 479), controlPoint2: NSPoint(x: 322, y: 422))
+        d.line(to: NSPoint(x: 490, y: 422))
+        d.line(to: NSPoint(x: 490, y: 347))
+        d.line(to: NSPoint(x: 430, y: 347))
+        d.close()
+        d.move(to: NSPoint(x: 415, y: 512))
+        d.line(to: NSPoint(x: 445, y: 512))
+        d.curve(to: NSPoint(x: 490, y: 557), controlPoint1: NSPoint(x: 472.9, y: 512), controlPoint2: NSPoint(x: 490, y: 529.1))
+        d.line(to: NSPoint(x: 490, y: 632))
+        d.curve(to: NSPoint(x: 445, y: 677), controlPoint1: NSPoint(x: 490, y: 659.9), controlPoint2: NSPoint(x: 472.9, y: 677))
+        d.line(to: NSPoint(x: 415, y: 677))
+        d.curve(to: NSPoint(x: 355, y: 617), controlPoint1: NSPoint(x: 377.8, y: 677), controlPoint2: NSPoint(x: 355, y: 654.2))
+        d.line(to: NSPoint(x: 355, y: 572))
+        d.curve(to: NSPoint(x: 415, y: 512), controlPoint1: NSPoint(x: 355, y: 534.8), controlPoint2: NSPoint(x: 377.8, y: 512))
+        d.close()
+        d.windingRule = .evenOdd
+        d.fill()
+        Self.dawn.resolved(for: effectiveAppearance).setFill()
+        NSBezierPath(roundedRect: NSRect(x: 655, y: 257, width: 105, height: 510), xRadius: 8, yRadius: 8).fill()
     }
 
     @objc private func themeDidChange() {

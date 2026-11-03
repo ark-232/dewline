@@ -3,7 +3,7 @@
 /* Until styles.css carries --surface, --quiet and --accent, alias the old names. styles.css is unlayered, so its own
    values win over this layer as soon as it defines them; delete this block then. */
 @layer token-bridge {
-  :root { --surface: var(--mist); --quiet: var(--slate); --accent: var(--sea); }
+  :root { --surface: var(--mist); --quiet: var(--slate); --accent: var(--dawn); }
 }
 
 :root { --top-h: 3.5rem; }
@@ -116,7 +116,7 @@ h2:hover > .anchor, h3:hover > .anchor, .anchor:focus-visible { opacity: 1; }
 
 /* Steps: numbered, each title a verb */
 .prose ol.steps { padding-left: 0; list-style: none; counter-reset: step; }
-.prose ol.steps > li { position: relative; margin-top: 1.25rem; padding-left: 2.25rem; counter-increment: step; }
+.prose ol.steps > li { display: block; position: relative; margin-top: 1.25rem; padding: 0 0 0 2.25rem; border: 0; counter-increment: step; }
 .prose ol.steps > li::before {
   content: counter(step); position: absolute; left: 0; top: 0;
   color: var(--quiet); font: 400 1.0625rem/1.65 var(--sans); font-variant-numeric: tabular-nums;

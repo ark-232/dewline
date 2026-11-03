@@ -1,7 +1,7 @@
 import AppKit
 
-/// The window shown when nothing is open, 560 by 400: the mark and name, one list of recent folders then notes, and
-/// New Note, Open and Open Folder along the bottom.
+/// The window shown when nothing is open, 560 by 400: the mark and name with the tagline across from them, one list
+/// of recent folders then notes, and New Note, Open and Open Folder along the bottom.
 final class LaunchWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate {
     static var showsWhenNothingIsOpen: Bool {
         // The test host stays windowless.
@@ -21,6 +21,7 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
     private let filter = NSSearchField()
     private let empty = NSTextField(labelWithString: "Notes and folders you open show up here.")
     private let name = NSTextField(labelWithString: "Dewline")
+    private let tagline = NSTextField(labelWithString: "Notes you can grep.")
     private var rows: [Row] = []
     private var filterHeight: NSLayoutConstraint!
 
@@ -56,6 +57,7 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
 
     @objc private func applyTheme() {
         name.textColor = Chrome.color(.ink)
+        tagline.textColor = Chrome.color(.ink2)
         empty.textColor = Chrome.color(.ink2)
         list.reloadData()
     }
@@ -67,13 +69,14 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
 
     private func content() -> NSView {
         let root = PaperView()
-        let mark = DewMark(size: NSSize(width: 36, height: 28))
+        let mark = DewMark(size: NSSize(width: 16.5, height: 17))
         name.font = .systemFont(ofSize: 20, weight: .semibold)
         let lockup = NSStackView(views: [mark, name])
         lockup.spacing = 8
         lockup.alignment = .lastBaseline
         lockup.setAccessibilityElement(true)
         lockup.setAccessibilityLabel("Dewline")
+        tagline.font = Chrome.label
         filter.placeholderString = "Filter"
         filter.delegate = self
         let column = NSTableColumn(identifier: .init("file"))
@@ -104,7 +107,7 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
         let folder = NSButton(title: "Open Folder…", target: nil, action: #selector(AppDelegate.openFolder(_:)))
         let buttons = NSStackView(views: [folder, open, new])
         buttons.spacing = 8
-        for view in [lockup, filter, scroll, empty, buttons] as [NSView] {
+        for view in [lockup, tagline, filter, scroll, empty, buttons] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             root.addSubview(view)
         }
@@ -114,6 +117,8 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
             root.heightAnchor.constraint(equalToConstant: Self.size.height),
             lockup.topAnchor.constraint(equalTo: root.topAnchor, constant: 40),
             lockup.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 24),
+            tagline.firstBaselineAnchor.constraint(equalTo: name.firstBaselineAnchor),
+            tagline.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -24),
             filter.topAnchor.constraint(equalTo: lockup.bottomAnchor, constant: 20),
             filter.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 24),
             filter.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -24),
