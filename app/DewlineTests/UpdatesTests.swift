@@ -106,7 +106,8 @@ struct UpdatesTests {
         try updates.updater(updater, mayPerform: .updatesInBackground)
     }
 
-    @Test func theLineShowsOnceOnTheFirstWindowAndDontCheckTurnsChecksOff() throws {
+    /// The first launch is about notes, so the question waits for the second.
+    @Test func theQuestionShowsOnceFromTheSecondLaunchAndDontCheckTurnsChecksOff() throws {
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let fixture = try Fixture(publicKey: "")
@@ -117,12 +118,16 @@ struct UpdatesTests {
         #expect(first.titlebarAccessoryViewControllers.isEmpty, "no line without a running updater")
 
         updates.updater = fixture.updater()
+        defaults.set(1, forKey: Updates.launchesKey)
+        updates.windowDidShow(first)
+        #expect(first.titlebarAccessoryViewControllers.isEmpty, "no question on the first launch")
+        defaults.set(2, forKey: Updates.launchesKey)
         updates.windowDidShow(first)
         let line = try #require(first.titlebarAccessoryViewControllers.first as? UpdateLine)
         #expect(defaults.bool(forKey: Updates.lineShownKey))
         let texts = line.view.subviews.flatMap(\.subviews).compactMap { ($0 as? NSTextField)?.stringValue }
-        #expect(texts == ["Dewline checks dewline.arkwerx.com for updates once a day and downloads them from GitHub."])
-        #expect(line.buttons.map(\.title) == ["Check daily", "Don\u{2019}t check"])
+        #expect(texts == ["Check for updates once a day?"])
+        #expect(line.buttons.map(\.title) == ["Check Daily", "Don\u{2019}t Check"])
 
         let second = window()
         updates.windowDidShow(second)
@@ -138,7 +143,7 @@ struct UpdatesTests {
         let relaunched = Updates(defaults: defaults)
         relaunched.updater = fixture.updater()
         relaunched.windowDidShow(second)
-        #expect(second.titlebarAccessoryViewControllers.isEmpty, "the line shows on first run only")
+        #expect(second.titlebarAccessoryViewControllers.isEmpty, "the question shows once")
     }
 
     @Test func aStagedUpdateRenamesTheMenuItemAndKeepsTheDateItFirstStaged() throws {

@@ -31,9 +31,7 @@ enum Constructs {
                 styled.addAttributes([.font: small, .baselineOffset: (font.pointSize * 0.35).rounded()], range: run)
             }
         case .wikiLink, .embed:
-            styled.addAttributes([
-                .underlineStyle: NSUnderlineStyle.single.rawValue, .foregroundColor: store.color(.link), .backgroundColor: store.color(.codeBackground),
-            ], range: span.content)
+            styled.addAttributes(Links.style, range: span.content)
         default:
             break
         }

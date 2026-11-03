@@ -99,6 +99,8 @@ struct Shared {
 
 struct State {
     status: Status,
+    /// The host's name, from the link until the host's welcome names it.
+    host_name: String,
     topic: [u8; 32],
     file_name: String,
     /// The current document key last, the one before it first: ops sealed
@@ -216,20 +218,45 @@ fn runtime() -> Result<Runtime, String> {
         .map_err(|error| error.to_string())
 }
 
-async fn bind(secret: SecretKey) -> Result<Endpoint, String> {
-    let relay: RelayUrl = RELAY.parse().map_err(|_| "bad relay URL".to_owned())?;
-    Endpoint::builder(presets::Minimal)
-        .secret_key(secret)
-        .relay_mode(RelayMode::custom([relay]))
-        .bind()
-        .await
-        .map_err(|error| error.to_string())
+/// Where an endpoint listens: every interface with the relay, or only
+/// loopback with no relay, which tests use.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Net {
+    Internet,
+    Loopback,
+}
+
+async fn bind(secret: SecretKey, net: Net) -> Result<Endpoint, String> {
+    let builder = Endpoint::builder(presets::Minimal).secret_key(secret);
+    let builder = match net {
+        Net::Internet => {
+            let relay: RelayUrl = RELAY.parse().map_err(|_| "bad relay URL".to_owned())?;
+            builder.relay_mode(RelayMode::custom([relay]))
+        }
+        Net::Loopback => builder
+            .relay_mode(RelayMode::Disabled)
+            .clear_ip_transports()
+            .bind_addr("127.0.0.1:0")
+            .map_err(|error| error.to_string())?,
+    };
+    builder.bind().await.map_err(|error| error.to_string())
 }
 
 impl Session {
     /// Shares `text`, the file's current text and nothing older, as
     /// `file_name`. `node_key` is this Mac's node key from the Keychain.
     pub fn host(
+        node_key: [u8; 32],
+        name: &str,
+        file_name: &str,
+        text: &str,
+        listener: Box<dyn Listener>,
+    ) -> Result<Session, String> {
+        Self::host_on(Net::Internet, node_key, name, file_name, text, listener)
+    }
+
+    pub fn host_on(
+        net: Net,
         node_key: [u8; 32],
         name: &str,
         file_name: &str,
@@ -243,7 +270,7 @@ impl Session {
             .insert(0, text)
             .map_err(|error| error.to_string())?;
         doc.commit();
-        let endpoint = runtime.block_on(bind(secret.clone()))?;
+        let endpoint = runtime.block_on(bind(secret.clone(), net))?;
         let (outbox, outbox_rx) = mpsc::unbounded_channel();
         let topic = random();
         let shared = Arc::new(Shared {
@@ -252,6 +279,7 @@ impl Session {
             listener,
             state: Mutex::new(State {
                 status: Status::Live,
+                host_name: clean_name(name),
                 topic,
                 file_name: jail_file_name(file_name),
                 keys: vec![(0, random())],
@@ -296,10 +324,20 @@ impl Session {
         link: &str,
         listener: Box<dyn Listener>,
     ) -> Result<Session, String> {
+        Self::join_on(Net::Internet, node_key, name, link, listener)
+    }
+
+    pub fn join_on(
+        net: Net,
+        node_key: [u8; 32],
+        name: &str,
+        link: &str,
+        listener: Box<dyn Listener>,
+    ) -> Result<Session, String> {
         let invite = Invite::parse(link).ok_or("not a Dewline join link")?;
         let runtime = runtime()?;
         let secret = SecretKey::from_bytes(&node_key);
-        let endpoint = runtime.block_on(bind(secret.clone()))?;
+        let endpoint = runtime.block_on(bind(secret.clone(), net))?;
         let (outbox, outbox_rx) = mpsc::unbounded_channel();
         let doc = LoroDoc::new();
         let shared = Arc::new(Shared {
@@ -308,6 +346,12 @@ impl Session {
             listener,
             state: Mutex::new(State {
                 status: Status::Connecting,
+                host_name: invite
+                    .name
+                    .chars()
+                    .filter(|c| !c.is_control())
+                    .take(NAME_MAX)
+                    .collect(),
                 topic: [0; 32],
                 file_name: String::new(),
                 keys: Vec::new(),
@@ -350,6 +394,7 @@ impl Session {
             Invite {
                 host: addr,
                 capability,
+                name: self.shared.name.clone(),
             }
             .format(),
         )
@@ -357,6 +402,11 @@ impl Session {
 
     pub fn status(&self) -> Status {
         lock(&self.shared.state).status.clone()
+    }
+
+    /// The host's name; empty when a guest's link didn't carry one.
+    pub fn host_name(&self) -> String {
+        lock(&self.shared.state).host_name.clone()
     }
 
     pub fn is_host(&self) -> bool {
@@ -766,6 +816,12 @@ impl Shared {
                 return Ok::<_, String>(Some(Status::Denied));
             }
             self.welcome(&frame[1..])?;
+            {
+                let mut state = lock(&self.state);
+                if let Some(name) = state.members.get(&host).cloned() {
+                    state.host_name = name;
+                }
+            }
             let (to_host, mut frames) = mpsc::unbounded_channel::<Vec<u8>>();
             lock(&self.state).to_host = Some(to_host);
             tokio::spawn(async move {
@@ -962,3 +1018,6 @@ impl ProtocolHandler for Joins {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests;

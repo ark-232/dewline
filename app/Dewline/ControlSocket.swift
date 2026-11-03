@@ -41,6 +41,8 @@ final class ControlSocket: @unchecked Sendable {
             case claude, codex, cursor
             /// The first-run demo in Welcome.md.
             case demo
+            /// An agent in the agent panel; the session names it (`AgentWrites.session`).
+            case acp
         }
 
         enum Tool: String, Sendable {
@@ -374,7 +376,8 @@ extension ControlSocket.Claim {
         event: String?, vendor: String?, session: String?, toolUseId: String?, tool: String?, path: String?,
         hash: String?, declared: String?
     ) {
-        guard let vendor = vendor.flatMap(Vendor.init(rawValue:)), let session, Self.isId(session) else { return nil }
+        // Only the agent panel claims as acp, and it never goes through the socket.
+        guard let vendor = vendor.flatMap(Vendor.init(rawValue:)), vendor != .acp, let session, Self.isId(session) else { return nil }
         let realpath = path.flatMap { $0.hasPrefix("/") && $0.utf8.count <= Self.maxPath && !$0.utf8.contains(0) ? $0 : nil }
         func toolUse() -> ToolUse? {
             guard let toolUseId, Self.isId(toolUseId), let tool = tool.flatMap(Tool.init(rawValue:)),

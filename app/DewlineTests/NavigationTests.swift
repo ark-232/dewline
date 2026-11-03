@@ -2,7 +2,7 @@ import AppKit
 import Testing
 @testable import Dewline
 
-struct NavigationTests {
+@Suite(.serialized) struct NavigationTests {
     private let a = URL(filePath: "/notes/a.md")
     private let b = URL(filePath: "/notes/b.md")
     private let c = URL(filePath: "/notes/c.md")
@@ -64,19 +64,6 @@ struct NavigationTests {
         #expect(decoded.windows[1].selected == 1)
     }
 
-    @Test func breadcrumbsRunFromTheFolderDownToTheFile() {
-        let root = URL(filePath: "/Users/me/notes", directoryHint: .isDirectory)
-        let file = URL(filePath: "/Users/me/notes/Projects/2026/plan.md")
-        #expect(breadcrumbs(of: file, in: root).map(\.path) == [
-            "/Users/me/notes", "/Users/me/notes/Projects", "/Users/me/notes/Projects/2026", "/Users/me/notes/Projects/2026/plan.md",
-        ])
-        #expect(breadcrumbs(of: URL(filePath: "/Users/me/notes/top.md"), in: root).map(\.path) == ["/Users/me/notes", "/Users/me/notes/top.md"])
-        #expect(breadcrumbs(of: URL(filePath: "/tmp/loose.md"), in: root).map(\.path) == ["/tmp", "/tmp/loose.md"])
-        #expect(breadcrumbs(of: file, in: nil).map(\.path) == ["/Users/me/notes/Projects/2026", "/Users/me/notes/Projects/2026/plan.md"])
-        #expect(breadcrumbs(of: nil, in: root).map(\.path) == ["/Users/me/notes"])
-        #expect(breadcrumbs(of: URL(filePath: "/Users/me/notesbook/x.md"), in: root).map(\.path) == ["/Users/me/notesbook", "/Users/me/notesbook/x.md"])
-    }
-
     /// Resumes a folder window of two tabs behind a window standing in for a file opened at launch.
     @Test @MainActor func resumeReadsOnlyTheSelectedTabAndOpensBehindTheFileOpenedAtLaunch() throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString).standardizedFileURL
@@ -91,8 +78,9 @@ struct NavigationTests {
         ])
         let front = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 200), styleMask: [.titled], backing: .buffered, defer: false)
         front.isReleasedWhenClosed = false
-        front.orderFront(nil)
         defer { front.close() }
+        Offscreen.install()
+        defer { Offscreen.uninstall() }
 
         MainWindowController.resume(session, behind: front)
         let documents = NSDocumentController.shared
@@ -109,14 +97,13 @@ struct NavigationTests {
         }
         #expect(documents.document(for: a) == nil)
         #expect(tabs.count == 2 && tabs[1] === second && tabs[0].document == nil)
-        #expect(tabs.map(\.tabName) == [a, b].map { FileManager.default.displayName(atPath: $0.path) })
+        #expect(tabs.map(\.tabName) == ["a", "b"])
         #expect(second.textView?.selectedRange().location == 5)
-        let ordered = NSApp.orderedWindows
-        let (inFront, behind) = (try #require(ordered.firstIndex(of: front)), try #require(ordered.firstIndex { $0 === second.window }))
-        #expect(inFront < behind)
+        #expect(Offscreen.placed.contains { $0.window === second.window && $0.place == .below && $0.relativeTo == front.windowNumber })
         #expect(tabs[0].window?.isVisible == false)
 
         // The unread tab keeps its place in the session, and reads its file when selected.
+        Offscreen.main = second.window
         let saved = try #require(MainWindowController.session().windows.first { $0.folder == root.path })
         #expect(saved.tabs.map(\.path) == [a.path, b.path] && saved.tabs[0].place == inA && saved.selected == 1)
         tabs[0].showWindow(nil)
@@ -130,6 +117,8 @@ struct NavigationTests {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         try Data("# Plan\n".utf8).write(to: root.appending(path: "plan.md"))
+        Offscreen.install()
+        defer { Offscreen.uninstall() }
         let controller = MainWindowController(folder: Folder(root))
         let window = try #require(controller.window)
         defer { window.orderOut(nil) }

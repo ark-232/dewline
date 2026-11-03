@@ -15,7 +15,8 @@ enum LinkTarget: Equatable {
 }
 
 enum Links {
-    static let schemes: Set<String> = ["http", "https", "mailto"]
+    /// `dewline:` links run in the app (SchemeLinks), as Welcome.md's "Show me a change" does.
+    static let schemes: Set<String> = ["http", "https", "mailto", "dewline"]
 
     /// A markdown link's destination: an address, a relative path to a note with an optional `#heading`, or a heading
     /// here. Relative paths resolve from `folder`, the document's.
@@ -80,6 +81,22 @@ enum Links {
     private static func decoded(_ text: String) -> String {
         text.removingPercentEncoding ?? text
     }
+
+    @MainActor private static var underlines: [NSColor: NSColor] = [:]
+
+    /// A link's and a wikilink's look: the note's ink, a thin underline in the accent at 45% (60% in dark), and a tip
+    /// saying how to follow it.
+    @MainActor
+    static var style: [NSAttributedString.Key: Any] {
+        let store = ThemeStore.shared
+        let accent = store.color(.accent)
+        let underline = underlines[accent] ?? NSColor(name: nil) { accent.resolved(for: $0).withAlphaComponent($0.isDark ? 0.6 : 0.45) }
+        underlines = [accent: underline]
+        return [
+            .foregroundColor: store.color(.ink), .underlineStyle: NSUnderlineStyle.single.rawValue, .underlineColor: underline,
+            .toolTip: "\u{2318}-click to open",
+        ]
+    }
 }
 
 extension EditorTextView {
@@ -128,8 +145,21 @@ extension EditorTextView {
         return true
     }
 
+    /// The link or wikilink under `point`: the text it shows, and its address when it is a web link.
+    func link(at point: NSPoint) -> (range: NSRange, url: URL?)? {
+        guard let index = character(at: point), let span = span(at: index, { [.link, .wikiLink, .embed].contains($0) }),
+            NSLocationInRange(index, span.content)
+        else { return nil }
+        guard span.kind == .link, case .web(let url)? = destination(of: span).map({ Links.target(of: $0, from: nil) }) else {
+            return (span.content, nil)
+        }
+        return (span.content, url)
+    }
+
     private func follow(_ target: LinkTarget) {
         switch target {
+        case .web(let url) where url.scheme?.lowercased() == "dewline":
+            SchemeLinks.handle(url)
         case .web(let url):
             NSWorkspace.shared.open(url)
         case .note(let url, let heading):
