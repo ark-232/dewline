@@ -6,3 +6,4 @@ package.json
 package-lock.json
 wrangler.jsonc
 .gitignore
+docs/_template.html
