@@ -293,15 +293,17 @@ extension MarkdownStyler {
         schedule()
     }
 
-    /// Runs `styleSome` on the main run loop's next pass, which comes after any event in hand and before the view
-    /// displays. A block, unlike a timer, runs before the display that follows an event; unlike the main queue, it
-    /// also runs in a run loop nested inside a main-queue job.
+    /// Runs `styleSome` when the main run loop next goes to wait, which comes after any event in hand and before the
+    /// view displays, and wakes it for the pass. Unlike a timer, the observer runs before the display that follows an
+    /// event; unlike the main queue, it also runs in a run loop nested inside a main-queue job; unlike a block, which
+    /// can queue another for the same turn, it runs once a frame.
     private func schedule() {
         guard !scheduled else { return }
         scheduled = true
-        RunLoop.main.perform(inModes: [.common]) { [weak self] in
+        let observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, false, 0) { [weak self] _, _ in
             MainActor.assumeIsolated { self?.styleSome() }
         }
+        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
         CFRunLoopWakeUp(CFRunLoopGetMain())
     }
 
