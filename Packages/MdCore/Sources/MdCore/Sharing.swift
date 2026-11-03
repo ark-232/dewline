@@ -43,19 +43,25 @@ public final class Share: Sendable {
         self.collab = collab
     }
 
-    /// Shares `text` as `fileName`. `changed` runs on a background thread.
-    public static func host(nodeKey: Data, name: String, fileName: String, text: String, changed: @escaping @Sendable () -> Void) throws(Failure) -> Share {
+    /// Shares `text` as `fileName`. `changed` runs on a background thread. `loopback` listens on 127.0.0.1 only, with
+    /// no relay, for tests.
+    public static func host(
+        nodeKey: Data, name: String, fileName: String, text: String, loopback: Bool = false, changed: @escaping @Sendable () -> Void
+    ) throws(Failure) -> Share {
         do {
-            return Share(try Collab.host(nodeKey: nodeKey, name: name, fileName: fileName, text: text, listener: Listener(changed)))
+            return Share(
+                try Collab.host(nodeKey: nodeKey, name: name, fileName: fileName, text: text, loopback: loopback, listener: Listener(changed)))
         } catch {
             throw Failure(message: Self.message(error))
         }
     }
 
     /// Joins through a `dewline://join` link as `name`.
-    public static func join(nodeKey: Data, name: String, link: String, changed: @escaping @Sendable () -> Void) throws(Failure) -> Share {
+    public static func join(
+        nodeKey: Data, name: String, link: String, loopback: Bool = false, changed: @escaping @Sendable () -> Void
+    ) throws(Failure) -> Share {
         do {
-            return Share(try Collab.join(nodeKey: nodeKey, name: name, link: link, listener: Listener(changed)))
+            return Share(try Collab.join(nodeKey: nodeKey, name: name, link: link, loopback: loopback, listener: Listener(changed)))
         } catch {
             throw Failure(message: Self.message(error))
         }
@@ -87,6 +93,8 @@ public final class Share: Sendable {
     }
 
     public var isHost: Bool { collab.isHost() }
+    /// The host's name; empty when a guest's link didn't carry one.
+    public var hostName: String { collab.hostName() }
     public var fileName: String { collab.fileName() }
     /// The shared text as the app last showed it.
     public var text: String { collab.text() }

@@ -348,14 +348,26 @@ final class EditorTextView: CaretTextView {
         marks.layoutIfDirty()
     }
 
+    /// The Keep bar's focused change, set by the bar.
+    var keepBarFocus: () -> UInt64? = { nil }
+
+    /// The change Keep Change and Revert Change decide: the one under the caret, else the Keep bar's, else the first
+    /// marked change, where the bar starts.
+    var changeToDecide: UInt64? {
+        if let id = marks.changeAtCaret { return id }
+        let changes = marks.live?.changes ?? [:]
+        if let id = keepBarFocus(), changes[id]?.marked == true { return id }
+        return changes.filter { $0.value.marked && !$0.value.conflict }.min { $0.value.range.location < $1.value.range.location }?.key
+    }
+
     /// Cmd-Return.
     @objc func keepChange(_ sender: Any?) {
-        marks.keepAtCaret()
+        if let id = changeToDecide { marks.live?.keep(id) }
     }
 
     /// Option-Cmd-Delete.
     @objc func revertChange(_ sender: Any?) {
-        marks.revertAtCaret()
+        if let id = changeToDecide { marks.live?.revert(id) }
     }
 
     /// Shift-Cmd-Return: keeps every marked change in this file.
@@ -664,7 +676,7 @@ final class EditorTextView: CaretTextView {
     override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == #selector(format(_:)) { return isEditable }
         if menuItem.action == #selector(keepChange(_:)) || menuItem.action == #selector(revertChange(_:)) {
-            return marks.changeAtCaret != nil
+            return changeToDecide != nil
         }
         switch menuItem.action {
         case #selector(keepAllChanges(_:)), #selector(revertAllChanges(_:)):
