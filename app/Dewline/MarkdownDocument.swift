@@ -11,6 +11,9 @@ final class MarkdownDocument: NSDocument {
     /// The hash of the file's bytes as opened or last saved, when no engine keeps the file.
     private var baseHash = contentHash(Data())
     private var hasBOM = false
+    /// Made by File > New and never read: it saves itself as a new file in its folder.
+    private var isNew = true
+    private var firstSave: Task<Void, Never>?
     /// `dewline open --wait` connections, answered when this document closes.
     private var waiters: [ControlSocket.Connection] = []
     /// The engine that opens the file; none reads and saves it directly. Set only before the document reads, which
@@ -75,6 +78,7 @@ final class MarkdownDocument: NSDocument {
     }
 
     override func close() {
+        firstSave?.cancel()
         live?.close()
         live = nil
         super.close()
@@ -109,6 +113,7 @@ final class MarkdownDocument: NSDocument {
             throw CocoaError(.fileReadInapplicableStringEncoding)
         }
         Self.onMain {
+            isNew = false
             text = decoded
             baseHash = contentHash(data)
             hasBOM = data.starts(with: Self.bom)
@@ -138,6 +143,7 @@ final class MarkdownDocument: NSDocument {
             throw CocoaError(.fileReadInapplicableStringEncoding, userInfo: [NSURLErrorKey: url])
         }
         Self.onMain {
+            isNew = false
             hasBOM = opened.bom
             let live = LiveFile(engine: engine, doc: opened.doc, url: url, gitdir: opened.gitdir, document: self)
             // A tab already showing the document, as after Save As, holds its text.
@@ -270,10 +276,52 @@ final class MarkdownDocument: NSDocument {
         return [device, inode]
     }
 
-    /// A new document's first save starts in Settings > General's folder.
+    /// Where a new note goes: the folder its window shows, else Settings > General's folder.
+    var newNoteFolder: URL {
+        (windowControllers.first as? MainWindowController)?.folder?.url ?? Preferences.shared.newFileFolder
+    }
+
     override func prepareSavePanel(_ savePanel: NSSavePanel) -> Bool {
-        if fileURL == nil { savePanel.directoryURL = Preferences.shared.newFileFolder }
+        if fileURL == nil { savePanel.directoryURL = newNoteFolder }
         return super.prepareSavePanel(savePanel)
+    }
+
+    /// A new note saves itself 2 s after an edit, as Untitled.md in its folder; from then on the engine autosaves it
+    /// like any file it opened.
+    override func updateChangeCount(_ change: NSDocument.ChangeType) {
+        super.updateChangeCount(change)
+        guard isNew, fileURL == nil, change == .changeDone else { return }
+        firstSave?.cancel()
+        firstSave = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            await self?.saveNew()
+        }
+    }
+
+    /// Writes a new note to the first free Untitled name in its folder and opens it through the engine.
+    func saveNew() async {
+        firstSave?.cancel()
+        guard isNew, fileURL == nil, !windowControllers.isEmpty else { return }
+        let folder = newNoteFolder
+        var url = folder.appending(path: "Untitled.md")
+        var number = 2
+        while FileManager.default.fileExists(atPath: url.path) {
+            url = folder.appending(path: "Untitled \(number).md")
+            number += 1
+        }
+        let error: (any Error)? = await withCheckedContinuation { continuation in
+            do {
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            } catch {
+                return continuation.resume(returning: error)
+            }
+            save(to: url, ofType: Self.type, for: .saveAsOperation) { continuation.resume(returning: $0) }
+        }
+        if let error {
+            Logger(subsystem: "dev.arkwerx.dewline", category: "engine")
+                .error("A new note did not save: \(String(describing: error), privacy: .public)")
+        }
     }
 
     override func willPresentError(_ error: any Error) -> any Error {

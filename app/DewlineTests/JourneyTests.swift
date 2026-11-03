@@ -76,6 +76,38 @@ struct JourneyTests {
         #expect(controller.window?.isVisible == false)
     }
 
+    /// File > New in a folder window: the save panel starts in that folder, and with no Cmd-S the note saves itself as
+    /// Untitled.md there 2 s after the last keystroke, then autosaves through the engine like any opened file.
+    @Test func j1NewNoteInAFolderSavesItselfThere() async throws {
+        let vault = try Vault(["Untitled.md": "taken\n"])
+        defer { vault.remove() }
+        let document = MarkdownDocument()
+        document.engine = vault.engine
+        NSDocumentController.shared.addDocument(document)
+        let controller = MainWindowController(folder: Folder(vault.notes))
+        controller.display(document)
+        defer { document.close() }
+        let textView = try #require(controller.textView)
+        textView.history.undoManager.groupsByEvent = false
+        let panel = NSSavePanel()
+        #expect(document.prepareSavePanel(panel))
+        #expect(panel.directoryURL?.standardizedFileURL == vault.notes.standardizedFileURL)
+
+        Self.type("# Groceries\nEggs.", into: textView)
+        #expect(document.fileURL == nil)
+        let url = vault.url("Untitled 2.md")
+        try await Self.until { document.fileURL != nil && document.live != nil }
+        #expect(document.fileURL?.standardizedFileURL == url.standardizedFileURL)
+        #expect(try Data(contentsOf: url) == Data("# Groceries\nEggs.".utf8))
+        #expect(vault.text("Untitled.md") == "taken\n")
+        #expect(!document.isDocumentEdited)
+
+        textView.setSelectedRange(NSRange(location: (textView.string as NSString).length, length: 0))
+        Self.type(" Milk.", into: textView)
+        try await Self.until { vault.text("Untitled 2.md") == "# Groceries\nEggs. Milk." }
+        #expect(controller.window?.isVisible == false)
+    }
+
     // MARK: J2 A vault: Quick Open, wikilinks, back and forward
 
     private static let obsidianVault = [
