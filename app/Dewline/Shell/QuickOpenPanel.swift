@@ -454,7 +454,7 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
         }
     }
 
-    /// Names the panel for VoiceOver and shows the chip for a scope or a setting's values, else the dew-line mark.
+    /// Names the panel for VoiceOver and shows the chip for a scope or a setting's values, else the d-bead mark.
     private func chrome(_ name: String, chip word: String? = nil, placeholder text: String) {
         title = name
         field.setAccessibilityLabel(name)

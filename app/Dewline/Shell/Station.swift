@@ -132,7 +132,7 @@ final class StationSplitController: NSSplitViewController {
 }
 
 /// The 40 pt band along the window's top, on the frame: past the traffic lights, the sidebar toggle and back and
-/// forward as bare glyphs; over the editor island, the dew-line mark, the `dewline` wordmark and the path to the open
+/// forward as bare glyphs; over the editor island, the d-bead mark, the `dewline` wordmark and the path to the open
 /// file; at the right, who is here and Share. Its row centers on the traffic lights, which stay where macOS puts them.
 final class TitleBand: NSView {
     static let height: CGFloat = 40

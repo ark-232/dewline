@@ -349,24 +349,22 @@ final class ChromeButton: NSControl {
     }
 }
 
-/// The dew-line mark: an 18 pt line with a 6 pt signal bead and its glow, the brand at its smallest.
+/// The d-bead mark: a stem and a line in the theme's ink and a round bead in sea, fitted to the view and resting on
+/// its bottom edge. Drawn on the icon's 1024 grid, where the mark spans x 160 to 832 and y 288 to 832.
 final class DewMark: NSView {
-    private let rail = CALayer()
-    private let bead = CALayer()
+    /// The brand's sea, the bead's color in every theme.
+    private static let sea = NSColor(name: nil) {
+        $0.isDark ? NSColor(srgbRed: 0x7F / 255, green: 0xC4 / 255, blue: 0xB2 / 255, alpha: 1)
+            : NSColor(srgbRed: 0x2F / 255, green: 0x73 / 255, blue: 0x65 / 255, alpha: 1)
+    }
 
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        wantsLayer = true
-        layer?.addSublayer(rail)
-        layer?.addSublayer(bead)
-        bead.cornerRadius = 3
-        bead.shadowOffset = .zero
-        bead.shadowRadius = 3
+    init(size: NSSize = NSSize(width: 18, height: 12)) {
+        super.init(frame: NSRect(origin: .zero, size: size))
         setAccessibilityElement(false)
         translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            widthAnchor.constraint(equalToConstant: 18),
-            heightAnchor.constraint(equalToConstant: 12),
+            widthAnchor.constraint(equalToConstant: size.width),
+            heightAnchor.constraint(equalToConstant: size.height),
         ])
         NotificationCenter.default.addObserver(self, selector: #selector(themeDidChange), name: ThemeStore.didChange, object: nil)
     }
@@ -375,24 +373,27 @@ final class DewMark: NSView {
         fatalError("DewMark is built in code")
     }
 
-    override var wantsUpdateLayer: Bool { true }
+    override var isFlipped: Bool { true }
 
-    override func updateLayer() {
-        let appearance = effectiveAppearance
-        let signal = Chrome.color(.signal).resolved(for: appearance).cgColor
-        let scale = window?.backingScaleFactor ?? 2
-        rail.frame = NSRect(x: 0, y: bounds.midY - 0.5 / scale, width: bounds.width, height: 1 / scale * 1.5)
-        rail.backgroundColor = signal
-        rail.opacity = 0.7
-        bead.frame = NSRect(x: 9, y: bounds.midY - 3, width: 6, height: 6)
-        bead.backgroundColor = signal
-        bead.shadowColor = Chrome.color(.glow).resolved(for: appearance).cgColor
-        bead.shadowOpacity = Chrome.glowOpacity(dark: appearance.isDark)
-    }
-
-    override func layout() {
-        super.layout()
-        needsDisplay = true
+    override func draw(_ dirtyRect: NSRect) {
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        let scale = min(bounds.width / 672, bounds.height / 544)
+        context.translateBy(x: (bounds.width - 672 * scale) / 2, y: bounds.height - 544 * scale)
+        context.scaleBy(x: scale, y: scale)
+        context.translateBy(x: -160, y: -288)
+        // The whole bead draws first: the line covers its lower part, so no seam shows where it rests.
+        Self.sea.resolved(for: effectiveAppearance).setFill()
+        NSBezierPath(ovalIn: NSRect(x: 280, y: 428.9, width: 384, height: 384)).fill()
+        Chrome.color(.ink).resolved(for: effectiveAppearance).setFill()
+        let stem = NSBezierPath()
+        stem.move(to: NSPoint(x: 640, y: 312.9))
+        stem.line(to: NSPoint(x: 768, y: 288))
+        stem.line(to: NSPoint(x: 768, y: 832))
+        stem.line(to: NSPoint(x: 640, y: 832))
+        stem.close()
+        stem.fill()
+        NSBezierPath(ovalIn: NSRect(x: 160, y: 768, width: 64, height: 64)).fill()
+        NSBezierPath(rect: NSRect(x: 192, y: 768, width: 640, height: 64)).fill()
     }
 
     @objc private func themeDidChange() {

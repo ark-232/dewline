@@ -14,14 +14,13 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
     }
 
     private let list = LaunchList()
-    private let icon = NSImageView(image: LaunchWindowController.icon)
+    private let icon = DewMark(size: NSSize(width: 96, height: 96))
     private let segments = NSSegmentedControl(labels: ["Recent", "Pinned", "Folders"], trackingMode: .selectOne, target: nil, action: nil)
     private let filter = NSSearchField()
     private let empty = NSTextField(labelWithString: "")
     private let wordmark = NSTextField(labelWithString: "")
-    private let tagline = NSTextField(labelWithString: "Nothing changes behind your back.")
+    private let tagline = NSTextField(labelWithString: "Notes that stay files.")
     private let version = NSTextField(labelWithString: "")
-    private let underline = Stroke(LaunchWindowController.cobalt)
     private let horizon = Stroke(.clear)
     private var rows: [Row] = []
     /// First lines of files and paths of folders, empty for a file or folder that no longer exists.
@@ -78,7 +77,7 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
         fatalError("LaunchWindowController is built in code")
     }
 
-    /// The first time per launch, the window rises 10 pt as it fades in and the rules draw in; under
+    /// The first time per launch, the window rises 10 pt as it fades in and the horizon draws in; under
     /// Reduce Motion it only fades.
     override func showWindow(_ sender: Any?) {
         defer { if let window { Updates.shared.windowDidShow(window) } }
@@ -96,7 +95,6 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
             window.animator().setFrame(frame, display: true)
         }
         if !still {
-            underline.drawIn(after: 0.08, over: 0.24)
             horizon.drawIn(after: 0.16, over: 0.3)
         }
     }
@@ -151,7 +149,7 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
             view.translatesAutoresizingMaskIntoConstraints = false
             root.addSubview(view)
         }
-        for view in [icon, wordmark, underline, tagline, horizon, actions, version] as [NSView] {
+        for view in [icon, wordmark, tagline, horizon, actions, version] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             left.addSubview(view)
         }
@@ -172,15 +170,8 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
             root.heightAnchor.constraint(equalToConstant: 460),
 
             icon.centerXAnchor.constraint(equalTo: left.centerXAnchor),
-            icon.widthAnchor.constraint(equalToConstant: 96),
-            icon.heightAnchor.constraint(equalToConstant: 96),
             wordmark.topAnchor.constraint(equalTo: icon.bottomAnchor, constant: 14),
             wordmark.centerXAnchor.constraint(equalTo: left.centerXAnchor),
-            // The underline sits under "line"; a label's text starts 2 pt in.
-            underline.leadingAnchor.constraint(equalTo: wordmark.leadingAnchor, constant: 2 + Self.width("dew")),
-            underline.widthAnchor.constraint(equalToConstant: Self.width("line") - 0.4),
-            underline.topAnchor.constraint(equalTo: wordmark.firstBaselineAnchor, constant: 5),
-            underline.heightAnchor.constraint(equalToConstant: 2.5),
             tagline.topAnchor.constraint(equalTo: wordmark.bottomAnchor, constant: 6),
             tagline.centerXAnchor.constraint(equalTo: left.centerXAnchor),
             horizon.topAnchor.constraint(equalTo: tagline.bottomAnchor, constant: 20),
@@ -361,62 +352,10 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
 
     // MARK: Brand
 
-    private static let cobalt = NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            ? NSColor(srgbRed: 0.429, green: 0.615, blue: 0.961, alpha: 1)
-            : NSColor(srgbRed: 0.191, green: 0.374, blue: 0.81, alpha: 1)
-    }
-
     private static let wordmark: [NSAttributedString.Key: Any] = [
         .font: NSFont(descriptor: NSFont.systemFont(ofSize: 30, weight: .medium).fontDescriptor.withDesign(.serif)!, size: 30)!,
         .kern: -0.4,
     ]
-
-    private static func width(_ text: String) -> CGFloat {
-        NSAttributedString(string: text, attributes: wordmark).size().width
-    }
-
-    /// The app icon as the spec draws it: a cobalt tile with a glass pane rising from its bottom edge,
-    /// an ink line with a cobalt underline, and a struck grey line.
-    private static let icon = NSImage(size: NSSize(width: 96, height: 96), flipped: true) { rect in
-        let s = rect.width
-        let tile = NSBezierPath(roundedRect: rect.insetBy(dx: s * 0.06, dy: s * 0.06), xRadius: s * 0.2, yRadius: s * 0.2)
-        NSGraphicsContext.saveGraphicsState()
-        let shadow = NSShadow()
-        shadow.shadowOffset = NSSize(width: 0, height: -2)
-        shadow.shadowBlurRadius = 5
-        shadow.shadowColor = NSColor(srgbRed: 0.1, green: 0.1, blue: 0.4, alpha: 0.35)
-        shadow.set()
-        NSColor(srgbRed: 0.16, green: 0.25, blue: 0.7, alpha: 1).setFill()
-        tile.fill()
-        NSGraphicsContext.restoreGraphicsState()
-        NSGradient(
-            starting: NSColor(srgbRed: 0.174, green: 0.374, blue: 0.867, alpha: 1),
-            ending: NSColor(srgbRed: 0.143, green: 0.129, blue: 0.553, alpha: 1)
-        )!.draw(in: tile, angle: 90)
-        NSGradient(
-            starting: NSColor(srgbRed: 0.194, green: 0.525, blue: 0.915, alpha: 0.9),
-            ending: NSColor(srgbRed: 0.194, green: 0.525, blue: 0.915, alpha: 0)
-        )!.draw(in: tile, relativeCenterPosition: NSPoint(x: -0.4, y: -0.9))
-        NSGraphicsContext.saveGraphicsState()
-        tile.addClip()
-        let pane = NSRect(x: s * 0.24, y: s * 0.42, width: s * 0.52, height: s * 0.6)
-        NSGradient(
-            starting: NSColor(srgbRed: 0.986, green: 0.995, blue: 1, alpha: 0.97),
-            ending: NSColor(srgbRed: 0.907, green: 0.939, blue: 0.974, alpha: 0.94)
-        )!.draw(in: NSBezierPath(roundedRect: pane, xRadius: s * 0.08, yRadius: s * 0.08), angle: 90)
-        func bar(_ x: CGFloat, _ y: CGFloat, _ width: CGFloat, _ height: CGFloat, _ color: NSColor) {
-            color.setFill()
-            let bar = NSRect(x: pane.minX + pane.width * x, y: pane.minY + pane.height * y, width: pane.width * width, height: s * height)
-            NSBezierPath(roundedRect: bar, xRadius: bar.height / 2, yRadius: bar.height / 2).fill()
-        }
-        bar(0.16, 0.18, 0.62, 0.05, NSColor(srgbRed: 0.101, green: 0.132, blue: 0.189, alpha: 1))
-        bar(0.52, 0.31, 0.26, 0.03, NSColor(srgbRed: 0.176, green: 0.33, blue: 0.827, alpha: 1))
-        bar(0.16, 0.5, 0.5, 0.04, NSColor(srgbRed: 0.705, green: 0.72, blue: 0.745, alpha: 1))
-        bar(0.12, 0.515, 0.58, 0.014, NSColor(srgbRed: 0.433, green: 0.446, blue: 0.469, alpha: 1))
-        NSGraphicsContext.restoreGraphicsState()
-        return true
-    }
 }
 
 /// The recents list, passing keys it doesn't use to the launch window.
