@@ -4,11 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>URL scheme · Dewline docs</title>
-<meta name="description" content="The dewline:// links Dewline handles: open a file at a line, export HTML or PDF, and join a shared session.">
+<meta name="description" content="The dewline:// links: open, export, join and demo.">
+<meta name="doc-type" content="reference">
 <link rel="canonical" href="https://dewline.arkwerx.com/docs/url-scheme/">
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#F7FBF9" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#091110" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F9FAFA" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E100F" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preload" href="/fonts/newsreader-var.v1.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/ibm-plex-sans-var-latin1.v3.woff2" as="font" type="font/woff2" crossorigin>
@@ -44,8 +45,8 @@
     <a class="dtop-label" href="/docs/">Docs</a>
     <button type="button" class="search-open" aria-keyshortcuts="Meta+K /"><span>Search</span><kbd>⌘K</kbd></button>
     <nav class="dtop-links" aria-label="Site">
-      <a href="https://github.com/ark-232/dewline/releases/latest">Download</a>
       <a href="https://github.com/ark-232/dewline">Source</a>
+      <a class="dtop-get" href="https://github.com/ark-232/dewline/releases/latest">Download</a>
     </nav>
   </div>
 </header>
@@ -60,41 +61,45 @@
       </ul>
     </div>
     <div class="dnav-group">
-      <p class="dnav-title">Guide</p>
+      <p class="dnav-title">Write</p>
       <ul>
         <li><a href="/docs/editing/">Editing</a></li>
         <li><a href="/docs/markdown/">Markdown</a></li>
-        <li><a href="/docs/files/">Files and saves</a></li>
-        <li><a href="/docs/collaboration/">Collaboration</a></li>
+        <li><a href="/docs/keyboard/">Keyboard</a></li>
         <li><a href="/docs/themes-and-fonts/">Themes and fonts</a></li>
-        <li><a href="/docs/keyboard/">Keyboard shortcuts</a></li>
         <li><a href="/docs/export/">Export</a></li>
       </ul>
     </div>
     <div class="dnav-group">
-      <p class="dnav-title">Reference</p>
+      <p class="dnav-title">Files and changes</p>
       <ul>
-        <li><a href="/docs/cli/">Command line</a></li>
-        <li><a href="/docs/mcp/">MCP server</a></li>
-        <li><a href="/docs/agents/">Agents and changes</a></li>
+        <li><a href="/docs/files/">Files</a></li>
+        <li><a href="/docs/agents/">Agents</a></li>
+        <li><a href="/docs/collaboration/">Collaboration</a></li>
+      </ul>
+    </div>
+    <div class="dnav-group">
+      <p class="dnav-title">Developers</p>
+      <ul>
+        <li><a href="/docs/cli/">CLI</a></li>
+        <li><a href="/docs/mcp/">MCP</a></li>
         <li><a href="/docs/url-scheme/" aria-current="page">URL scheme</a></li>
       </ul>
     </div>
     <div class="dnav-group">
-      <p class="dnav-title">Technical</p>
+      <p class="dnav-title">About</p>
       <ul>
-        <li><a href="/docs/architecture/">Architecture</a></li>
-        <li><a href="/docs/performance/">Performance</a></li>
         <li><a href="/docs/security/">Security and privacy</a></li>
+        <li><a href="/docs/performance/">Performance</a></li>
+        <li><a href="/docs/architecture/">Architecture</a></li>
       </ul>
     </div>
   </nav>
 
   <main class="dmain" id="main">
     <article class="prose">
-      <p class="eyebrow">Reference</p>
       <h1>URL scheme</h1>
-      <p class="lead">Dewline registers <code>dewline://</code>. A link can open a file at a line, export a file as HTML or PDF, or join a shared session. Any app that opens URLs can use one, and so can <code>open</code> in Terminal.</p>
+      <p class="lead"><code>dewline://</code> links open a note at a line, export a note, or join a shared session. Any app that opens URLs can use them, and so can <code>open</code> in Terminal.</p>
 
       <div class="table" tabindex="0" role="region" aria-label="The dewline:// links">
         <table>
@@ -103,6 +108,7 @@
             <tr><td><a href="#open"><code>dewline://open</code></a></td><td>Opens a file, with the caret on a line when given.</td></tr>
             <tr><td><a href="#export"><code>dewline://export</code></a></td><td>Writes a file as HTML or PDF with the app's export.</td></tr>
             <tr><td><a href="#join"><code>dewline://join</code></a></td><td>Asks to join someone's live editing session.</td></tr>
+            <tr><td><a href="#demo"><code>dewline://demo</code></a></td><td>Runs the change demo in Welcome.md.</td></tr>
           </tbody>
         </table>
       </div>
@@ -131,16 +137,19 @@
         <dt><code>to</code></dt>
         <dd><code>pdf</code> or <code>html</code>, in any case. Optional; the default is <code>pdf</code>.</dd>
       </dl>
-      <p>The app writes the export in the background with its own layout. A link can't write DOCX, and because <code>out</code> must carry the format's extension, a link can't overwrite a file of any other kind. For DOCX, use <a href="/docs/cli/#export"><code>dewline export --to docx</code></a>.</p>
+      <p>The app writes the export in the background with its own layout. Since <code>out</code> must carry the format's extension, a link can't overwrite a file of another kind. A link can't write DOCX; use <a href="/docs/cli/#export"><code>dewline export --to docx</code></a>.</p>
 
       <h2 id="join"><code>dewline://join</code></h2>
       <div class="code" data-lang="URL">
 <pre tabindex="0"><code>dewline://join?node=…&amp;relay=…&amp;addr=…&amp;cap=…</code></pre>
       </div>
-      <p>An invite to a live editing session. The host's Copy Invite Link makes one: it carries the host's node id, its relay, its direct addresses and a random 256-bit capability. Opening it asks for the name the host will see, and the host approves you by name. Each link admits one join attempt, whatever the host decides. You never write one by hand. <a href="/docs/collaboration/">Collaboration</a> covers sessions.</p>
+      <p>An invite to a live editing session, made by the host's Copy Invite Link. It carries the host's node id, relay, direct addresses and a random 256-bit capability. Opening it asks for the name the host will see. Each link admits one join attempt, whatever the host decides. See <a href="/docs/collaboration/#join">Collaboration</a>.</p>
+
+      <h2 id="demo"><code>dewline://demo</code></h2>
+      <p>Runs the change demo on Welcome.md: a demo writer edits the paragraph that holds the link, and the change is marked. Welcome.md uses it for “Show me a change”. Help &gt; Replay the Demo does the same.</p>
 
       <h2 id="paths">Path rules</h2>
-      <p><code>open</code> and <code>export</code> pass every path through the same check before they touch it:</p>
+      <p><code>open</code> and <code>export</code> check every path before they touch it:</p>
       <ul>
         <li>Percent-encode the path in the query: a space is <code>%20</code>. A leading <code>~</code> is your home folder.</li>
         <li>The path must be absolute once <code>~</code> is expanded.</li>
@@ -150,12 +159,12 @@
       </ul>
 
       <h2 id="errors">Errors</h2>
-      <p>A link Dewline refuses opens nothing and writes nothing. The app shows the reason in an alert:</p>
+      <p>A refused link opens nothing and writes nothing. The app shows the reason in an alert:</p>
       <div class="table" tabindex="0" role="region" aria-label="Errors a link can show">
         <table>
           <thead><tr><th scope="col">Alert</th><th scope="col">Cause</th></tr></thead>
           <tbody>
-            <tr><td><code>The link has no path.</code></td><td><code>path</code> is missing or empty. <code>out</code> gives the same message with its own name.</td></tr>
+            <tr><td><code>This link doesn't say which note to open.</code></td><td><code>path</code> is missing or empty.</td></tr>
             <tr><td><code>&lt;path&gt;: the path is not absolute</code></td><td>A relative path.</td></tr>
             <tr><td><code>&lt;path&gt;: it is outside the folder</code></td><td>The path resolves outside your home folder.</td></tr>
             <tr><td><code>&lt;path&gt;: it is inside ~/Library</code></td><td>The path is inside <code>~/Library</code>.</td></tr>
@@ -163,15 +172,15 @@
             <tr><td><code>&lt;path&gt;: No such file or directory (os error 2)</code></td><td>Neither the file nor its folder exists.</td></tr>
             <tr><td><code>Dewline exports HTML or PDF, not docx.</code></td><td><code>to</code> names another format.</td></tr>
             <tr><td><code>The export has to be named .pdf.</code></td><td><code>out</code> has the wrong extension for <code>to</code>.</td></tr>
-            <tr><td><code>Dewline doesn’t know the link …</code></td><td>Any other action after <code>dewline://</code>.</td></tr>
+            <tr><td><code>Dewline can't open this kind of link.</code></td><td>Any other action after <code>dewline://</code>.</td></tr>
           </tbody>
         </table>
       </div>
     </article>
 
     <nav class="pager" aria-label="Previous and next page">
-      <a class="prev" href="/docs/agents/"><span>Previous</span><b>Agents and changes</b></a>
-      <a class="next" href="/docs/architecture/"><span>Next</span><b>Architecture</b></a>
+      <a class="prev" href="/docs/mcp/">Previous: MCP</a>
+      <a class="next" href="/docs/security/">Next: Security and privacy</a>
     </nav>
   </main>
 
@@ -182,13 +191,13 @@
 
 <footer class="foot">
   <div class="foot-in wrap">
-    <p>Free, source-available under <a class="text-link" href="https://github.com/ark-232/dewline/blob/main/LICENSE.md">FSL-1.1-ALv2</a>. Published by ArkWerx LLC.</p>
+    <p>© 2026 ArkWerx LLC</p>
     <nav aria-label="Project">
-      <a href="/">Home</a>
+      <a href="/docs/">Docs</a>
+      <a href="https://github.com/ark-232/dewline/releases">Releases</a>
       <a href="https://github.com/ark-232/dewline">Source</a>
-      <a href="https://github.com/ark-232/dewline/releases/latest">Releases</a>
-      <a href="https://github.com/ark-232/dewline/issues">Issues</a>
-      <a href="https://github.com/ark-232/dewline/blob/main/SECURITY.md">Security</a>
+      <a href="/docs/security/">Security</a>
+      <a href="https://github.com/ark-232/dewline/issues/new">Report an issue</a>
     </nav>
   </div>
 </footer>

@@ -4,11 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Command line · Dewline docs</title>
-<meta name="description" content="Every dewline subcommand and flag, its exit codes, the environment it reads and the files it writes, with real runs.">
+<meta name="description" content="Every dewline subcommand, flag, exit code and file.">
+<meta name="doc-type" content="reference">
 <link rel="canonical" href="https://dewline.arkwerx.com/docs/cli/">
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#F7FBF9" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#091110" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F9FAFA" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E100F" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preload" href="/fonts/newsreader-var.v1.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/ibm-plex-sans-var-latin1.v3.woff2" as="font" type="font/woff2" crossorigin>
@@ -44,8 +45,8 @@
     <a class="dtop-label" href="/docs/">Docs</a>
     <button type="button" class="search-open" aria-keyshortcuts="Meta+K /"><span>Search</span><kbd>⌘K</kbd></button>
     <nav class="dtop-links" aria-label="Site">
-      <a href="https://github.com/ark-232/dewline/releases/latest">Download</a>
       <a href="https://github.com/ark-232/dewline">Source</a>
+      <a class="dtop-get" href="https://github.com/ark-232/dewline/releases/latest">Download</a>
     </nav>
   </div>
 </header>
@@ -60,49 +61,53 @@
       </ul>
     </div>
     <div class="dnav-group">
-      <p class="dnav-title">Guide</p>
+      <p class="dnav-title">Write</p>
       <ul>
         <li><a href="/docs/editing/">Editing</a></li>
         <li><a href="/docs/markdown/">Markdown</a></li>
-        <li><a href="/docs/files/">Files and saves</a></li>
-        <li><a href="/docs/collaboration/">Collaboration</a></li>
+        <li><a href="/docs/keyboard/">Keyboard</a></li>
         <li><a href="/docs/themes-and-fonts/">Themes and fonts</a></li>
-        <li><a href="/docs/keyboard/">Keyboard shortcuts</a></li>
         <li><a href="/docs/export/">Export</a></li>
       </ul>
     </div>
     <div class="dnav-group">
-      <p class="dnav-title">Reference</p>
+      <p class="dnav-title">Files and changes</p>
       <ul>
-        <li><a href="/docs/cli/" aria-current="page">Command line</a></li>
-        <li><a href="/docs/mcp/">MCP server</a></li>
-        <li><a href="/docs/agents/">Agents and changes</a></li>
+        <li><a href="/docs/files/">Files</a></li>
+        <li><a href="/docs/agents/">Agents</a></li>
+        <li><a href="/docs/collaboration/">Collaboration</a></li>
+      </ul>
+    </div>
+    <div class="dnav-group">
+      <p class="dnav-title">Developers</p>
+      <ul>
+        <li><a href="/docs/cli/" aria-current="page">CLI</a></li>
+        <li><a href="/docs/mcp/">MCP</a></li>
         <li><a href="/docs/url-scheme/">URL scheme</a></li>
       </ul>
     </div>
     <div class="dnav-group">
-      <p class="dnav-title">Technical</p>
+      <p class="dnav-title">About</p>
       <ul>
-        <li><a href="/docs/architecture/">Architecture</a></li>
-        <li><a href="/docs/performance/">Performance</a></li>
         <li><a href="/docs/security/">Security and privacy</a></li>
+        <li><a href="/docs/performance/">Performance</a></li>
+        <li><a href="/docs/architecture/">Architecture</a></li>
       </ul>
     </div>
   </nav>
 
   <main class="dmain" id="main">
     <article class="prose">
-      <p class="eyebrow">Reference</p>
       <h1>Command line</h1>
-      <p class="lead">The <code>dewline</code> command opens files from a terminal, works as your <code>$EDITOR</code>, exports without a window, serves notes to agents and checks your setup. This page lists every subcommand and flag in 0.1.0.</p>
+      <p class="lead">The <code>dewline</code> command opens notes from a terminal, works as your <code>$EDITOR</code>, exports, serves notes to agents and checks your setup.</p>
 
       <h2 id="where">Where it lives</h2>
-      <p>The command ships inside the app at <code>/Applications/Dewline.app/Contents/Helpers/dewline</code>. The Homebrew cask links it onto your PATH. Without the cask, call it by that full path.</p>
+      <p>The command ships inside the app at <code>/Applications/Dewline.app/Contents/Helpers/dewline</code>. The Homebrew cask puts it on your PATH; otherwise call it by that path.</p>
       <div class="code" data-lang="Shell">
 <pre tabindex="0"><code><span class="p">$ </span>dewline --version
 dewline 0.1.0</code></pre>
       </div>
-      <p>Every example below ran against the 0.1.0 build on 2 November 2026, in a scratch folder. Paths in the output show the home folder as <code>/Users/you</code>.</p>
+      <p>Every example ran against the 0.1.0 build on 2 November 2026. Output shows the home folder as <code>/Users/you</code>.</p>
 
       <h2 id="commands">Commands</h2>
       <div class="table" tabindex="0" role="region" aria-label="The dewline subcommands">
@@ -125,10 +130,10 @@ dewline 0.1.0</code></pre>
       <div class="code" data-lang="Usage">
 <pre tabindex="0"><code>dewline open [--wait] &lt;FILE[:LINE[:COLUMN]]&gt;...</code></pre>
       </div>
-      <p>Opens each file in Dewline and brings the app forward. When the app isn't running, the command starts it, waits up to 10 seconds for it to listen, and gives it 10 seconds to show each file.</p>
+      <p>Opens each file in Dewline and brings the app forward. When the app isn't running, the command starts it. It waits up to 10 seconds for the app to listen, then 10 seconds per file.</p>
       <dl>
         <dt><code>FILE[:LINE[:COLUMN]]</code></dt>
-        <dd>A file, with the caret at <code>LINE</code> and <code>COLUMN</code> when given. Both count from 1. A relative path starts at the current folder, and a leading <code>~</code> is your home folder. When a file exists under the whole argument, it opens as itself, so a colon in a file name stays part of the name.</dd>
+        <dd>A file, with the caret at <code>LINE</code> and <code>COLUMN</code> when given, both counting from 1. A relative path starts at the current folder, and <code>~</code> is your home folder. If a file exists under the whole argument, it opens as is, so a colon can be part of a name.</dd>
         <dt><code>--wait</code></dt>
         <dd>Returns once every file's window has closed. Git and other tools that start an editor need this to know you are done.</dd>
       </dl>
@@ -162,18 +167,18 @@ set -gx EDITOR "dewline open --wait"</code></pre>
       <div class="code" data-lang="Usage">
 <pre tabindex="0"><code>dewline notify --hook &lt;claude|codex|cursor&gt;</code></pre>
       </div>
-      <p>Agent hooks run this command with the hook event's JSON on stdin. It sends Dewline the realpath of each file a tool names and BLAKE3 hashes of its bytes, never the content, so the change can carry the agent's name. You don't run it yourself. <a href="/docs/agents/">Agents and changes</a> covers what it sends and how to install the hooks.</p>
+      <p>Agent hooks run this command with the hook event's JSON on stdin. It sends Dewline each file's realpath and BLAKE3 hashes, never the content, so a change can carry the agent's name. You don't run it yourself; see <a href="/docs/agents/#install">Agents</a>.</p>
       <dl>
         <dt><code>--hook &lt;claude|codex|cursor&gt;</code></dt>
         <dd>Whose hook runs it. Required.</dd>
       </dl>
-      <p>It always exits 0, even on a bad flag, because Claude Code and Codex take a hook's exit code 2 as a refusal of the tool call. <a href="/docs/agents/#what-a-hook-sends">What a hook sends</a> lists its other limits.</p>
+      <p>It always exits 0, even on a bad flag. Claude Code and Codex read a hook's exit code 2 as a refusal of the tool call. <a href="/docs/agents/#what-a-hook-sends">What a hook sends</a> lists its other limits.</p>
 
       <h2 id="changes"><code>dewline changes</code></h2>
       <div class="code" data-lang="Usage">
 <pre tabindex="0"><code>dewline changes [--json] [--session &lt;ID&gt;] [--since &lt;TIME&gt;]</code></pre>
       </div>
-      <p>Lists each agent change you kept or reverted in Dewline, oldest first: the time in UTC, the decision, the agent and its session, and the file. An agent can run it before its next edit to see what you threw away.</p>
+      <p>Lists each agent change you kept or reverted, oldest first: UTC time, decision, agent, session and file. An agent can run it before its next edit to see what you threw away.</p>
       <dl>
         <dt><code>--json</code></dt>
         <dd>Prints a JSON array, one object per decision.</dd>
@@ -196,7 +201,7 @@ set -gx EDITOR "dewline open --wait"</code></pre>
 <pre tabindex="0"><code><span class="p">$ </span>dewline changes --json --session 9f2c51e0-demo
 [{"vendor":"claude","session":"9f2c51e0-demo","file":"/Users/you/Notes/projects/launch-plan.md","time":"2026-11-02T17:42:10Z","decision":"kept","excerpt_hash":"b8bd7e533ca4a32f8950b88300c840eb8b74fd14a30f4c54c916c7224b5e644a"}]</code></pre>
       </div>
-      <p>The JSON fields are <code>vendor</code> (the agent, such as <code>claude</code> or <code>codex</code>), <code>session</code>, <code>file</code>, <code>time</code>, <code>decision</code> (<code>kept</code> or <code>reverted</code>) and <code>excerpt_hash</code>, the BLAKE3 hash of the change's text. The log never holds the text itself. No decisions prints nothing and exits 0.</p>
+      <p>The JSON fields are <code>vendor</code> (such as <code>claude</code>), <code>session</code>, <code>file</code>, <code>time</code>, <code>decision</code> (<code>kept</code> or <code>reverted</code>) and <code>excerpt_hash</code>. The hash is BLAKE3 of the change's text; the log never holds the text. No decisions prints nothing and exits 0.</p>
 
       <h2 id="capture"><code>dewline capture</code></h2>
       <div class="code" data-lang="Usage">
@@ -229,10 +234,10 @@ dewline: /Users/you/Documents/Dewline/Inbox.md: there is nothing to capture</cod
         <dt><code>-o &lt;OUT&gt;</code></dt>
         <dd>Where the export goes. By default it goes beside <code>FILE</code> with the format's extension. The folder must exist.</dd>
       </dl>
-      <p>The command writes HTML and DOCX itself, with no window. <a href="/docs/export/#command-line">Export</a> covers how that output differs from the app's.</p>
+      <p>The command writes HTML and DOCX itself, with no window. <a href="/docs/export/#command-line">Export</a> says how that output differs from the app's.</p>
       <aside class="callout caution">
         <p class="callout-title">PDF from the command line fails in 0.1.0</p>
-        <p>PDF needs the app's paged layout, so <code>--to pdf</code> opens a <code>dewline://export</code> link for Dewline to handle. In 0.1.0 the command puts the source in a <code>file</code> field, the app reads <code>path</code>, and Dewline shows <code>The link has no path.</code> No PDF is written, and the command still exits 0. Use File &gt; Export as PDF… in the app, or a <a href="/docs/url-scheme/#export"><code>dewline://export</code></a> link with <code>path</code>.</p>
+        <p><code>--to pdf</code> hands the export to the app through a <code>dewline://export</code> link. In 0.1.0 that link names the wrong field, so no PDF is written and the command still exits 0. The fix is on main for the next release. Until then, export PDF from the app, or open a <a href="/docs/url-scheme/#export"><code>dewline://export</code></a> link with <code>path</code>.</p>
       </aside>
       <div class="code" data-lang="Shell">
 <pre tabindex="0"><code><span class="p">$ </span>dewline export projects/launch-plan.md --to html
@@ -248,13 +253,13 @@ launch-plan.md
 <pre tabindex="0"><code><span class="p">$ </span>dewline export reading.md --to html -o reading.md
 dewline: /Users/you/Notes/reading.md: the export would replace its own source</code></pre>
       </div>
-      <p><a href="/docs/export/">Export</a> covers what each format keeps.</p>
+      <p><a href="/docs/export/#what-exports">Export</a> lists what each format keeps.</p>
 
       <h2 id="mcp"><code>dewline mcp</code></h2>
       <div class="code" data-lang="Usage">
 <pre tabindex="0"><code>dewline mcp &lt;ROOT&gt;</code></pre>
       </div>
-      <p>Serves the notes in <code>ROOT</code> to an agent over MCP, on stdin and stdout, until stdin closes. Agents start it; you add it to their config once. <a href="/docs/mcp/">MCP server</a> covers setup, tools and limits.</p>
+      <p>Serves the notes in <code>ROOT</code> to an agent over MCP, on stdin and stdout, until stdin closes. Agents start it; you add it to their config once. See <a href="/docs/mcp/">MCP</a>.</p>
       <p>It refuses a folder that is your home folder or holds it, a folder inside <code>~/Library</code>, and a folder that holds <code>.ssh</code>:</p>
       <div class="code" data-lang="Shell">
 <pre tabindex="0"><code><span class="p">$ </span>dewline mcp ~
@@ -269,7 +274,7 @@ dewline: /Users/you/keys: the folder holds .ssh</code></pre>
       <div class="code" data-lang="Usage">
 <pre tabindex="0"><code>dewline doctor [--install-hooks | --links &lt;DIR&gt;]</code></pre>
       </div>
-      <p>With no flag, it reports three things and changes nothing: whether the app matches this command, which agent hooks are in place, and which companion tools are on your PATH.</p>
+      <p>With no flag, it changes nothing. It reports whether the app matches this command, which agent hooks are in place, and which companion tools are on your PATH.</p>
       <div class="code" data-lang="Shell">
 <pre tabindex="0"><code><span class="p">$ </span>dewline doctor
 Version: app and command are both 0.1.0
@@ -286,10 +291,10 @@ Companions:
   vale: not installed; brew install vale
   harper-ls: not installed; brew install harper</code></pre>
       </div>
-      <p>The version check reads the app that holds the command, or <code>/Applications/Dewline.app</code> when the command lives elsewhere. A mismatch says so and tells you to use the command inside the app. Settings &gt; Agents runs the same check and shows each agent as Installed or Not installed.</p>
+      <p>The version check reads the app that holds the command, or <code>/Applications/Dewline.app</code>. A mismatch says to use the command inside the app. Settings &gt; Agents shows the same hook check as Installed or Not set up.</p>
       <dl>
         <dt><code>--install-hooks</code></dt>
-        <dd>Merges the missing hooks into <code>~/.claude/settings.json</code>, <code>~/.codex/hooks.json</code> and <code>~/.cursor/hooks.json</code>. For each file it prints the entries it would add and asks <code>Merge them in? [y/N]</code>, so it needs a terminal. It keeps every other key and hook, copies the old file to <code>&lt;file&gt;.dewline-backup-&lt;seconds&gt;</code> first, and leaves a file alone if it changed after it was read. <a href="/docs/agents/#install">Agents and changes</a> shows the hooks it adds.</dd>
+        <dd>Merges the missing hooks into <code>~/.claude/settings.json</code>, <code>~/.codex/hooks.json</code> and <code>~/.cursor/hooks.json</code>. For each file it prints the entries and asks <code>Merge them in? [y/N]</code>, so it needs a terminal. It keeps every other key and hook. It copies the old file to <code>&lt;file&gt;.dewline-backup-&lt;seconds&gt;</code> first, and skips a file that changed after it was read. <a href="/docs/agents/#by-hand">Agents</a> shows the hooks it adds.</dd>
         <dt><code>--links &lt;DIR&gt;</code></dt>
         <dd>Prints each broken relative link and CLAUDE.md <code>@import</code> in the Markdown files under <code>DIR</code>, and nothing else. A problem is <code>no such file</code>, <code>imports a file that imports it</code> or <code>more than 5 imports deep</code>. It skips hidden folders other than <code>.claude</code>, <code>.cursor</code> and <code>.github</code>, skips <code>node_modules</code> and <code>target</code>, and doesn't follow symlinked folders. It exits 1 when it finds any.</dd>
       </dl>
@@ -306,7 +311,7 @@ dewline: 1 broken link</code></pre>
           <tbody>
             <tr><td class="n"><code>0</code></td><td>Done. <code>notify</code> always exits 0.</td></tr>
             <tr><td class="n"><code>1</code></td><td>The command failed. Each line of the reason goes to stderr after <code>dewline:</code>. <code>doctor --links</code> also exits 1 when it finds a broken link.</td></tr>
-            <tr><td class="n"><code>2</code></td><td>The arguments didn't parse: a missing file, an unknown flag or a value <code>--to</code> or <code>--hook</code> doesn't take.</td></tr>
+            <tr><td class="n"><code>2</code></td><td>The arguments didn't parse: a missing file, a flag the command lacks, or a value <code>--to</code> or <code>--hook</code> doesn't take.</td></tr>
           </tbody>
         </table>
       </div>
@@ -319,7 +324,7 @@ For more information, try '--help'.
 <span class="p">$ </span>echo $?
 2</code></pre>
       </div>
-      <p>Before it prints a path or a message from the app, the command replaces control characters with <code>�</code>, so a hostile file name can't drive your terminal.</p>
+      <p>Before it prints a path or a message, the command replaces control characters with <code>�</code>. A hostile file name can't drive your terminal.</p>
 
       <h2 id="environment">Environment</h2>
       <div class="table" tabindex="0" role="region" aria-label="Environment variables the command reads">
@@ -332,7 +337,7 @@ For more information, try '--help'.
           </tbody>
         </table>
       </div>
-      <p>The inbox location is not an environment variable. <code>capture</code> and <code>mcp</code> read the app's Settings &gt; Files &gt; Inbox choice from the <code>DewlineInboxPath</code> default in <code>dev.arkwerx.dewline</code>.</p>
+      <p>The inbox location is not an environment variable. <code>capture</code> and <code>mcp</code> read Settings &gt; Files &gt; Inbox from the <code>DewlineInboxPath</code> default in <code>dev.arkwerx.dewline</code>.</p>
 
       <h2 id="files">Files</h2>
       <p>The app's own folder is <code>~/Library/Application Support/dev.arkwerx.dewline</code>, shortened here to <code>…/dev.arkwerx.dewline</code>.</p>
@@ -349,8 +354,8 @@ For more information, try '--help'.
     </article>
 
     <nav class="pager" aria-label="Previous and next page">
-      <a class="prev" href="/docs/export/"><span>Previous</span><b>Export</b></a>
-      <a class="next" href="/docs/mcp/"><span>Next</span><b>MCP server</b></a>
+      <a class="prev" href="/docs/collaboration/">Previous: Collaboration</a>
+      <a class="next" href="/docs/mcp/">Next: MCP</a>
     </nav>
   </main>
 
@@ -361,13 +366,13 @@ For more information, try '--help'.
 
 <footer class="foot">
   <div class="foot-in wrap">
-    <p>Free, source-available under <a class="text-link" href="https://github.com/ark-232/dewline/blob/main/LICENSE.md">FSL-1.1-ALv2</a>. Published by ArkWerx LLC.</p>
+    <p>© 2026 ArkWerx LLC</p>
     <nav aria-label="Project">
-      <a href="/">Home</a>
+      <a href="/docs/">Docs</a>
+      <a href="https://github.com/ark-232/dewline/releases">Releases</a>
       <a href="https://github.com/ark-232/dewline">Source</a>
-      <a href="https://github.com/ark-232/dewline/releases/latest">Releases</a>
-      <a href="https://github.com/ark-232/dewline/issues">Issues</a>
-      <a href="https://github.com/ark-232/dewline/blob/main/SECURITY.md">Security</a>
+      <a href="/docs/security/">Security</a>
+      <a href="https://github.com/ark-232/dewline/issues/new">Report an issue</a>
     </nav>
   </div>
 </footer>
