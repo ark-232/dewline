@@ -3,30 +3,31 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Dewline, a native Markdown editor for Mac</title>
-<meta name="description" content="A native Markdown editor for the files you already keep. Open any folder or Obsidian vault. Free, with no account and no telemetry.">
+<title>Dewline: a Markdown editor for Mac</title>
+<meta name="description" content="Dewline: a Markdown editor for Mac. Open a folder of notes or an Obsidian vault and write. Each note stays a plain .md file. Free, no account.">
 <link rel="canonical" href="https://dewline.arkwerx.com/">
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#F7FBF9" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#091110" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F9FAFA" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E100F" media="(prefers-color-scheme: dark)">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://dewline.arkwerx.com/">
 <meta property="og:title" content="Dewline">
-<meta property="og:description" content="Notes that stay files. A native Markdown editor for Mac.">
+<meta property="og:description" content="Dewline: a Markdown editor for Mac.">
 <meta property="og:image" content="https://dewline.arkwerx.com/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="The Dewline wordmark above the line: Notes that stay files.">
+<meta property="og:image:alt" content="The Dewline wordmark and tagline.">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preload" href="/fonts/newsreader-var.v1.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/ibm-plex-sans-var-latin1.v3.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/styles.css">
-<script src="/site.js" defer></script>
+<script src="/site.js"></script>
 </head>
-<body>
+<body class="home">
+<a class="skip" href="#main">Skip to content</a>
 <header class="top">
-  <div class="top-in wrap">
+  <div class="top-in col">
     <a class="lockup" href="/" aria-label="Dewline home"><svg aria-hidden="true" focusable="false" viewBox="-8 -12 979.9 176">
   <g transform="matrix(0.27316 0 0 0.27316 -43.71 -77.27)">
     <path class="bead" d="M348.6 768A192 192 0 1 1 595.4 768Z"/>
@@ -47,228 +48,142 @@
   </g>
 </svg></a>
     <nav aria-label="Site">
-      <a class="opt" href="#features">Features</a>
-      <a class="opt" href="#compare">Compare</a>
-      <a class="opt" href="#developers">Developers</a>
       <a href="/docs/">Docs</a>
       <a href="https://github.com/ark-232/dewline">Source</a>
+      <a class="btn small" href="https://github.com/ark-232/dewline/releases/latest">Download</a>
     </nav>
   </div>
 </header>
 
-<main>
-  <section class="hero">
-    <div class="wrap hero-in">
-      <div class="pitch">
-        <h1>A native Markdown editor for the files you already keep.</h1>
-        <p class="lead">Open any folder or Obsidian vault and write with live rendering, wikilinks, math and diagrams. Free, with no account and no telemetry.</p>
-        <div class="get">
-          <a class="btn" href="https://github.com/ark-232/dewline/releases/latest">Download for macOS 26</a>
-          <a class="text-link" href="#compare">Coming from Obsidian or Notion</a>
-        </div>
-        <div class="brew">
-          <code id="brew-hero">brew install --cask ark-232/tap/dewline</code>
-          <button type="button" class="copy" data-copy="brew-hero" aria-label="Copy the Homebrew command">Copy</button>
-        </div>
-        <p class="meta">macOS 26 or later, on Apple Silicon and Intel.</p>
+<main id="main">
+  <section class="hero" id="hero">
+    <div class="col">
+      <h1 data-tagline>Notes that stay files.</h1>
+      <p class="lead">Dewline is a Markdown editor for Mac. Open a folder of notes or an Obsidian vault and write. Each note stays a plain .md file you can see in Finder.</p>
+      <div class="get">
+        <a class="btn" href="https://github.com/ark-232/dewline/releases/download/v0.1.0/Dewline-0.1.0.dmg">Download Dewline 0.1.0</a>
+        <a class="text-link" href="#write">See it work</a>
       </div>
-      <figure class="win" role="img" aria-label="A Dewline window editing a note called Dew point in a field-notes folder, with a sidebar, tabs, a task list and a table rendered in the page">
-        <div aria-hidden="true" class="win-bar">
-          <span class="lights"><i></i><i></i><i></i></span>
-          <span class="tabs"><span class="tab on">Dew point.md</span><span class="tab">Station log.md</span><span class="tab">Glossary.md</span></span>
-        </div>
-        <div aria-hidden="true" class="win-body">
-          <div class="side">
-            <h3>Pinned</h3>
-            <ul><li>Station log</li></ul>
-            <h3>field-notes</h3>
-            <ul>
-              <li>Inbox</li>
-              <li>weather</li>
-              <li class="in sel">Dew point</li>
-              <li class="in">Glossary</li>
-              <li class="in">Station log</li>
-              <li>trips</li>
-              <li class="in">Utqiagvik</li>
-              <li>README</li>
-            </ul>
-          </div>
-          <div class="doc">
-            <p class="fm"><span>status: draft</span><span>tags: weather</span></p>
-            <h3>Dew point</h3>
-            <p>Dew forms on any surface that cools below the dew point. Tuesday's readings are in <span class="wl">Station log</span>. <span class="tg">#weather</span></p>
-            <p>Wind mixes the air next to the grass, so <span class="mk">**</span><b>calm nights</b><span class="mk">**</span><span class="caret"></span> give the heaviest dew.</p>
-            <ul class="tasks">
-              <li><span class="box x"><svg viewBox="0 0 10 10"><path d="M1.8 5.2 4 7.3 8.2 2.8"/></svg></span><span class="done">Log readings at 04:00 and 06:00</span></li>
-              <li><span class="box"></span><span>Compare the grass sensor with the air sensor</span></li>
-            </ul>
-            <table>
-              <thead><tr><th>Time</th><th class="n">Air °C</th><th class="n">Grass °C</th><th>Dew</th></tr></thead>
-              <tbody>
-                <tr><td>02:00</td><td class="n">7.4</td><td class="n">5.9</td><td>None</td></tr>
-                <tr><td>04:00</td><td class="n">6.1</td><td class="n">3.2</td><td>Light</td></tr>
-                <tr><td>06:00</td><td class="n">5.6</td><td class="n">2.4</td><td>Heavy</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-        <div aria-hidden="true" class="status"><span>Markdown</span><span>Saved</span></div>
+      <p class="fine">macOS 26 or later. Free, no account.</p>
+      <div class="brew">
+        <code id="brew">brew install --cask ark-232/tap/dewline</code>
+        <button type="button" class="copy" data-copy="brew" aria-label="Copy the Homebrew command">Copy</button>
+      </div>
+      <figure class="shot crop-left">
+        <picture><source srcset="/img/hero-dark.webp" media="(prefers-color-scheme: dark)"><img src="/img/hero.webp" width="1120" height="700" decoding="async" fetchpriority="high" alt="The Dewline window: the Field Notes folder in the sidebar and the note Launch plan open, with a task list and a table."></picture>
       </figure>
     </div>
-    <div class="horizon" aria-hidden="true"></div>
-    <div class="facts">
-      <ul class="wrap facts-in">
-        <li><h2>Opens what you have</h2><p>Any .md file, any folder, any Obsidian vault, in place. No import.</p></li>
-        <li><h2>Saves only your edits</h2><p>A save changes the bytes you edited and never overwrites a newer copy on disk.</p></li>
-        <li><h2>No plugins to hunt for</h2><p>Wikilinks, math, Mermaid, find in files, Vim, and export to HTML, PDF and DOCX.</p></li>
-        <li><h2>Shows outside changes</h2><p>When git, a sync app, a script or a coding agent changes the open file, you keep or revert each change.</p></li>
-      </ul>
+  </section>
+
+  <section class="sec" id="write">
+    <div class="col">
+      <h2>See your Markdown as you type.</h2>
+      <p>Headings, lists, tables, math and diagrams render in place. Open the preview beside the text when you want the finished page. It scrolls with you.</p>
+      <figure class="shot crop-right reveal">
+        <picture><source srcset="/img/write-dark.webp" media="(prefers-color-scheme: dark)"><img src="/img/write.webp" width="1120" height="700" decoding="async" loading="lazy" alt="The note’s Markdown source on the left and the rendered preview in a pane on the right."></picture>
+      </figure>
     </div>
   </section>
 
-  <section class="sec" id="why" aria-label="Why Dewline">
-    <div class="wrap reasons">
-      <div>
-        <h2>A Mac app, built as one.</h2>
-        <p>Dewline is AppKit and TextKit 2 over a Rust engine. No Electron, no web view, and no JavaScript runs on your notes. Menus, tabs, the sidebar and Quick Look work the way the rest of your Mac does.</p>
-      </div>
-      <div>
-        <h2>Your files stay your files.</h2>
-        <p>Dewline opens any .md file where it lives: a folder, a git repo, an Obsidian vault. Saves change only the bytes you edited and never overwrite a newer copy on disk. Every write takes a snapshot first, and File &gt; Snapshots restores any of them.</p>
-      </div>
-      <div>
-        <h2>The features are built in.</h2>
-        <p>Links, embeds, math, diagrams, export and live collaboration come with the app. There is no plugin to find, update or trust.</p>
-      </div>
+  <section class="sec" id="files">
+    <div class="col">
+      <h2>Your folder is the library.</h2>
+      <p>The sidebar shows the folder you opened, under its own name. Make, rename and move notes there, and Finder sees the same files. Nothing is imported.</p>
+      <figure class="shot crop-left reveal">
+        <picture><source srcset="/img/files-dark.webp" media="(prefers-color-scheme: dark)"><img src="/img/files.webp" width="1120" height="700" decoding="async" loading="lazy" alt="The sidebar under the folder name Field Notes, with a new note being renamed Packing list."></picture>
+      </figure>
     </div>
   </section>
 
-  <section class="sec" id="features">
-    <div class="wrap">
-      <h2>What is in the app</h2>
-      <div class="groups">
-        <div>
-          <h3>Writing</h3>
-          <ul>
-            <li>Live rendering: syntax hides until the caret reaches it</li>
-            <li>Tables, task lists, footnotes, callouts, highlights and front matter</li>
-            <li>Math and Mermaid diagrams, drawn natively</li>
-            <li>Code highlighting</li>
-          </ul>
+  <section class="sec" id="changes">
+    <div class="col">
+      <h2>See what changed in a note.</h2>
+      <p>When git, a sync app, a script or a coding agent changes a note, Dewline marks each change. Keep it or revert it, one at a time or all at once.</p>
+      <figure class="shot demo reveal crop-bottom" data-demo>
+        <div class="frames">
+          <picture data-caption="An agent edits the note." aria-hidden="true"><source srcset="/img/changes-1-dark.webp" media="(prefers-color-scheme: dark)"><img src="/img/changes-1.webp" width="1120" height="700" decoding="async" loading="lazy" alt="The note Launch plan before an agent edits it."></picture>
+          <picture data-caption="Each change is marked." class="on"><source srcset="/img/changes-2-dark.webp" media="(prefers-color-scheme: dark)"><img src="/img/changes-2.webp" width="1120" height="700" decoding="async" loading="lazy" alt="The same note with three changes marked: a new task and two new dates, with a bar that reads Claude Code changed 3 places, Revert and Keep."></picture>
+          <picture data-caption="Keep or revert it." aria-hidden="true"><source srcset="/img/changes-3-dark.webp" media="(prefers-color-scheme: dark)"><img src="/img/changes-3.webp" width="1120" height="700" decoding="async" loading="lazy" alt="The new task kept and unmarked; the two date changes still marked, and the bar reads Claude Code changed 2 places."></picture>
         </div>
-        <div>
-          <h3>Links and finding things</h3>
-          <ul>
-            <li>Wikilinks, embeds and #tags</li>
-            <li>A sidebar for the folder, and tabs</li>
-            <li>Quick Open and a command palette (<kbd>⇧⌘P</kbd>)</li>
-            <li>Find in files</li>
-          </ul>
-        </div>
-        <div>
-          <h3>Files and saves</h3>
-          <ul>
-            <li>Any folder or Obsidian vault, opened in place</li>
-            <li>Saves that change only what you edited</li>
-            <li>A snapshot before every write, restored from File &gt; Snapshots</li>
-            <li>When something else changes the open file (git, a sync app, a script or a coding agent), Dewline marks each change and lets you keep or revert it</li>
-          </ul>
-        </div>
-        <div>
-          <h3>Look and modes</h3>
-          <ul>
-            <li>Six themes and installable fonts</li>
-            <li>A Source view and Vim mode</li>
-            <li>Focus and typewriter modes</li>
-          </ul>
-        </div>
-        <div>
-          <h3>Sharing</h3>
-          <ul>
-            <li>Export to HTML, PDF and DOCX</li>
-            <li>Quick Look previews in Finder</li>
-            <li>Live collaboration by invite link, peer to peer, while both of you are online</li>
-          </ul>
-        </div>
-      </div>
+        <figcaption>
+          <p data-caption>Each change is marked.</p>
+          <span class="ctl" data-replay hidden><button type="button">Play again</button></span>
+          <span class="ctl" data-steps hidden>
+            <button type="button" aria-pressed="false" aria-label="Step 1: An agent edits the note.">1</button>
+            <button type="button" aria-pressed="true" aria-label="Step 2: Each change is marked.">2</button>
+            <button type="button" aria-pressed="false" aria-label="Step 3: Keep or revert it.">3</button>
+          </span>
+        </figcaption>
+      </figure>
     </div>
   </section>
 
-  <section class="sec" id="compare">
-    <div class="wrap">
-      <h2>Coming from Obsidian or Notion</h2>
-      <p class="sec-lead">Dewline opens Obsidian vaults as they are, so you can use it instead of Obsidian on your Mac, or beside it. For Notion, it suits the notes and docs you want to keep as files. Here is what it does and does not do today.</p>
-      <div class="table-scroll" tabindex="0" role="region" aria-label="Dewline compared with Obsidian and Notion">
-        <table class="compare">
-          <thead><tr><th scope="col">Job</th><th scope="col">Dewline</th><th scope="col">Obsidian</th><th scope="col">Notion</th></tr></thead>
-          <tbody>
-            <tr><th scope="row">Write Markdown with syntax hidden until the caret arrives</th><td>Yes</td><td>Yes</td><td>Not Markdown</td></tr>
-            <tr><th scope="row">Open an existing vault or folder in place, no import</th><td>Yes</td><td>Yes</td><td>No</td></tr>
-            <tr><th scope="row">Wikilinks, embeds, #tags, callouts, front matter</th><td>Yes</td><td>Yes</td><td>Partial</td></tr>
-            <tr><th scope="row">Backlinks pane, graph view, Canvas, Bases</th><td>No (backlinks only through the MCP server)</td><td>Yes</td><td>Not applicable</td></tr>
-            <tr><th scope="row">Community plugins and themes</th><td>No, by design (six built-in themes)</td><td>Yes</td><td>Integrations</td></tr>
-            <tr><th scope="row">Phone and tablet apps</th><td>No</td><td>Yes</td><td>Yes</td></tr>
-            <tr><th scope="row">Sync between your devices</th><td>No (planned: Mac to Mac, peer to peer)</td><td>Paid Sync</td><td>Cloud</td></tr>
-            <tr><th scope="row">Databases, views, relations</th><td>No</td><td>Bases</td><td>Yes</td></tr>
-            <tr><th scope="row">Web access, public pages</th><td>No</td><td>Publish (paid)</td><td>Yes</td></tr>
-            <tr><th scope="row">Team workspace, permissions</th><td>No</td><td>No</td><td>Yes</td></tr>
-            <tr><th scope="row">Live co-editing</th><td>Yes, by invite link, peer to peer, both online</td><td>Plugins</td><td>Yes</td></tr>
-            <tr><th scope="row">Works offline, files on disk</th><td>Yes</td><td>Yes</td><td>Limited</td></tr>
-            <tr><th scope="row">Export HTML, PDF, DOCX</th><td>Yes</td><td>PDF, plugins</td><td>Lossy</td></tr>
-            <tr><th scope="row">Native Mac app</th><td>Yes (AppKit, TextKit 2)</td><td>No (Electron)</td><td>No (Electron)</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p class="note">Dewline is Mac only and has no mobile app. If you need your notes on a phone, keep Obsidian or Notion for that and open the same files in Dewline on your Mac.</p>
+  <section class="sec" id="agent">
+    <div class="col">
+      <h2>Talk to your own agent beside the note.</h2>
+      <p>Open the agent panel and chat with the agent you already use, such as Gemini CLI, Claude Code or Codex. Its edits arrive as marked changes. Dewline ships no model and needs no account.</p>
+      <figure class="shot crop-right reveal">
+        <picture><source srcset="/img/agent-dark.webp" media="(prefers-color-scheme: dark)"><img src="/img/agent.webp" width="1120" height="700" decoding="async" loading="lazy" alt="The agent panel beside the note: a request, the agent’s reply, and a line that reads Edited Launch plan.md, 3 places. The note shows the three changes marked."></picture>
+      </figure>
     </div>
   </section>
 
-  <section class="sec" id="developers">
-    <div class="wrap dev">
-      <div>
-        <h2>For developers</h2>
-        <p class="sec-lead">The app carries a <code>dewline</code> command at <code>Dewline.app/Contents/Helpers/dewline</code>. It opens files at a line, waits like an editor should, exports without a window, and serves a folder's notes to an agent over MCP.</p>
-        <p>Agent hooks run <code>dewline notify</code>, so a change from a coding agent carries its name. The <a class="text-link" href="https://github.com/ark-232/dewline/blob/main/docs/hooks.md">hooks guide</a> has the settings for each one.</p>
-      </div>
-      <pre class="term" tabindex="0"><code><span class="c"># use Dewline as $EDITOR</span>
-<span class="p">$ </span>export EDITOR="dewline open --wait"
-<span class="c"># open a file at line 12</span>
-<span class="p">$ </span>dewline open notes/plan.md:12
-<span class="c"># write a DOCX beside the file</span>
-<span class="p">$ </span>dewline export notes/plan.md --to docx
-<span class="c"># serve a folder's notes over stdio</span>
-<span class="p">$ </span>dewline mcp ~/notes</code></pre>
+  <section class="sec" id="links">
+    <div class="col">
+      <h2>Links show where they go.</h2>
+      <p>A link on its own line becomes a card with the page’s title and picture. Hover any other link to see the same preview. You can turn previews off.</p>
+      <figure class="shot reveal">
+        <picture><source srcset="/img/links-dark.webp" media="(prefers-color-scheme: dark)"><img src="/img/links.webp" width="1120" height="700" decoding="async" loading="lazy" alt="A note with a link card for a GitHub repository, and a preview popover open over an inline link."></picture>
+      </figure>
     </div>
   </section>
 
-  <section class="close" id="get">
-    <div class="wrap">
-      <svg class="mark" aria-hidden="true" focusable="false" viewBox="144 272 704 576">
-  <path class="bead" d="M348.6 768A192 192 0 1 1 595.4 768Z"/>
-  <path class="ink" d="M640 312.9L768 288V768H640Z"/>
-  <path class="ink" d="M832 768H192A32 32 0 0 0 192 832H832Z"/>
-</svg>
-      <h2>Notes that stay files.</h2>
+  <!-- Ships after the two-Mac collaboration check passes (ux-v4 spec, section 7): remove hidden. -->
+  <section class="sec" id="share" hidden>
+    <div class="col">
+      <h2>Write together, Mac to Mac.</h2>
+      <p>Send an invite link. You approve each person by name, then you both edit the same note.</p>
+      <figure class="shot reveal">
+        <picture><source srcset="/img/share-dark.webp" media="(prefers-color-scheme: dark)"><img src="/img/share.webp" width="1120" height="700" decoding="async" loading="lazy" alt="The Share popover: Copy Invite Link, Ana asking to join with Approve and Deny, and Sam editing."></picture>
+      </figure>
+    </div>
+  </section>
+
+  <section class="sec" id="facts">
+    <div class="col">
+      <h2>The short version</h2>
+      <dl class="short">
+        <div><dt>Price</dt><dd>Free.</dd></div>
+        <div><dt>Account</dt><dd>None.</dd></div>
+        <div><dt>Files</dt><dd>Plain Markdown, opened where they are.</dd></div>
+        <div><dt>Saving</dt><dd>Automatic, and a save never overwrites a newer copy on disk.</dd></div>
+        <div><dt>Mac</dt><dd>macOS 26 or later, Apple Silicon and Intel.</dd></div>
+        <div><dt>Source</dt><dd>Available on <a class="text-link" href="https://github.com/ark-232/dewline">GitHub</a> under the <a class="text-link" href="https://github.com/ark-232/dewline/blob/main/LICENSE.md">FSL</a>.</dd></div>
+        <div><dt>Switching</dt><dd><a class="text-link" href="/docs/first-steps/#switching">Coming from Obsidian or Notion</a></dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <section class="sec" id="get">
+    <div class="col">
+      <h2>Try it on your own notes.</h2>
       <div class="get">
-        <a class="btn" href="https://github.com/ark-232/dewline/releases/latest">Download for macOS 26</a>
-      </div>
-      <div class="brew">
-        <code id="brew-close">brew install --cask ark-232/tap/dewline</code>
-        <button type="button" class="copy" data-copy="brew-close" aria-label="Copy the Homebrew command">Copy</button>
+        <a class="btn" href="https://github.com/ark-232/dewline/releases/download/v0.1.0/Dewline-0.1.0.dmg">Download Dewline 0.1.0</a>
+        <a class="text-link" href="/docs/">Read the docs</a>
       </div>
     </div>
   </section>
 </main>
 
 <footer class="foot">
-  <div class="foot-in wrap">
-    <p>Free, source-available under <a class="text-link" href="https://github.com/ark-232/dewline/blob/main/LICENSE.md">FSL-1.1-ALv2</a>. Published by ArkWerx LLC.</p>
+  <div class="foot-in col">
+    <p>© 2026 ArkWerx LLC</p>
     <nav aria-label="Project">
       <a href="/docs/">Docs</a>
+      <a href="https://github.com/ark-232/dewline/releases">Releases</a>
       <a href="https://github.com/ark-232/dewline">Source</a>
-      <a href="https://github.com/ark-232/dewline/releases/latest">Releases</a>
-      <a href="https://github.com/ark-232/dewline/issues">Issues</a>
-      <a href="https://github.com/ark-232/dewline/blob/main/SECURITY.md">Security</a>
+      <a href="/docs/security/">Security</a>
+      <a href="https://github.com/ark-232/dewline/issues/new">Report an issue</a>
     </nav>
   </div>
 </footer>
