@@ -40,28 +40,28 @@
   ],
   "groups": [
     {
-      "name": "Letter",
+      "name": "Cursor",
       "layers": [
         {
-          "name": "letter",
-          "image-name": "letter.svg",
+          "name": "cursor",
+          "image-name": "cursor.svg",
           "glass": false,
           "fill-specializations": [
             {
               "value": {
-                "solid": "srgb:0.9333,0.9804,0.9608,1.0"
+                "solid": "srgb:0.7882,0.2824,0.1647,1.0"
               }
             },
             {
               "appearance": "dark",
               "value": {
-                "solid": "srgb:0.8824,0.9216,0.9020,1.0"
+                "solid": "srgb:0.8784,0.3765,0.2431,1.0"
               }
             },
             {
               "appearance": "tinted",
               "value": {
-                "solid": "srgb:1,1,1,1"
+                "solid": "srgb:1.0000,1.0000,1.0000,1.0"
               }
             }
           ]
@@ -69,8 +69,8 @@
       ],
       "specular": false,
       "shadow": {
-        "kind": "neutral",
-        "opacity": 0.3
+        "kind": "none",
+        "opacity": 0
       },
       "translucency": {
         "enabled": false,
@@ -78,68 +78,41 @@
       }
     },
     {
-      "name": "Bead",
+      "name": "Glyph",
       "layers": [
         {
-          "name": "bead",
-          "image-name": "bead.svg",
-          "glass": true,
+          "name": "glyph",
+          "image-name": "glyph.svg",
+          "glass": false,
           "fill-specializations": [
             {
               "value": {
-                "linear-gradient": [
-                  "srgb:0.7961,0.8980,0.8627,1.0",
-                  "srgb:0.9373,0.9804,0.9608,1.0"
-                ],
-                "orientation": {
-                  "start": {
-                    "x": 0.5,
-                    "y": 0
-                  },
-                  "stop": {
-                    "x": 0.5,
-                    "y": 1
-                  }
-                }
+                "solid": "srgb:0.9569,0.9373,0.8941,1.0"
               }
             },
             {
               "appearance": "dark",
               "value": {
-                "linear-gradient": [
-                  "srgb:0.3255,0.5843,0.5059,1.0",
-                  "srgb:0.6235,0.8275,0.7490,1.0"
-                ],
-                "orientation": {
-                  "start": {
-                    "x": 0.5,
-                    "y": 0
-                  },
-                  "stop": {
-                    "x": 0.5,
-                    "y": 1
-                  }
-                }
+                "solid": "srgb:0.9294,0.9020,0.8392,1.0"
               }
             },
             {
               "appearance": "tinted",
               "value": {
-                "solid": "srgb:1,1,1,1"
+                "solid": "srgb:1.0000,1.0000,1.0000,1.0"
               }
             }
           ]
         }
       ],
-      "lighting": "combined",
-      "specular": true,
+      "specular": false,
       "shadow": {
-        "kind": "neutral",
-        "opacity": 0.35
+        "kind": "none",
+        "opacity": 0
       },
       "translucency": {
-        "enabled": true,
-        "value": 0.15
+        "enabled": false,
+        "value": 0
       }
     }
   ],
