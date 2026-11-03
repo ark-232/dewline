@@ -572,9 +572,32 @@ struct JourneyTests {
         for action in changeCommands {
             #expect(Self.enabled(action, in: chain) == true, "\(action) is disabled with a change under the caret")
         }
+        // With the caret elsewhere the keys act on the Keep bar's change, as its buttons do.
         tab.textView.setSelectedRange(NSRange(location: 0, length: 0))
-        #expect(Self.enabled(#selector(EditorTextView.keepChange(_:)), in: chain) == false)
+        #expect(Self.enabled(#selector(EditorTextView.keepChange(_:)), in: chain) == true)
         #expect(Self.enabled(#selector(EditorTextView.keepAllChanges(_:)), in: chain) == true)
+        tab.textView.keepChange(nil)
+        #expect(tab.marked.isEmpty)
+        #expect(tab.textView.string == after)
+        #expect(Self.enabled(#selector(EditorTextView.keepChange(_:)), in: chain) == false)
+    }
+
+    /// The keys follow the Keep bar's focus when the caret is in no change: the bar's change is the one decided.
+    @Test func theChangeKeysFollowTheKeepBar() async throws {
+        let vault = try Vault(["plan.md": Self.plan])
+        defer { vault.remove() }
+        let tab = try Tab(vault.url("plan.md"), engine: vault.engine)
+        defer { tab.close() }
+        try Self.agentWrite(Self.agentPlan, to: vault.url("plan.md"), id: "toolu_1", engine: vault.engine)
+        try await Self.until { tab.marked.count == 4 }
+        let changes = tab.marked
+        tab.textView.setSelectedRange(NSRange(location: 0, length: 0))
+        tab.textView.revertChange(nil)
+        #expect(tab.marked.map(\.id) == changes.dropFirst().map(\.id))
+        #expect(tab.textView.string.contains("Alpha line.\n"))
+        tab.textView.keepBarFocus = { changes[2].id }
+        tab.textView.keepChange(nil)
+        #expect(tab.marked.map(\.id) == [changes[1].id, changes[3].id])
     }
 
     /// The responders a menu command looks through, in AppKit's order, for a window that is never key.
