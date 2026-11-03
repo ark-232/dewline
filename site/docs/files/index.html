@@ -3,12 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Files and saves · Dewline docs</title>
-<meta name="description" content="How Dewline opens files in place, saves only what you edited, keeps snapshots, and shows changes made outside the app.">
+<title>Files · Dewline docs</title>
+<meta name="description" content="Make, find, rename, move and delete notes, and how saving and conflicts work.">
+<meta name="doc-type" content="how-to">
 <link rel="canonical" href="https://dewline.arkwerx.com/docs/files/">
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#F7FBF9" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#091110" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F9FAFA" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E100F" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preload" href="/fonts/newsreader-var.v1.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/ibm-plex-sans-var-latin1.v3.woff2" as="font" type="font/woff2" crossorigin>
@@ -44,8 +45,8 @@
     <a class="dtop-label" href="/docs/">Docs</a>
     <button type="button" class="search-open" aria-keyshortcuts="Meta+K /"><span>Search</span><kbd>⌘K</kbd></button>
     <nav class="dtop-links" aria-label="Site">
-      <a href="https://github.com/ark-232/dewline/releases/latest">Download</a>
       <a href="https://github.com/ark-232/dewline">Source</a>
+      <a class="dtop-get" href="https://github.com/ark-232/dewline/releases/latest">Download</a>
     </nav>
   </div>
 </header>
@@ -60,138 +61,133 @@
       </ul>
     </div>
     <div class="dnav-group">
-      <p class="dnav-title">Guide</p>
+      <p class="dnav-title">Write</p>
       <ul>
         <li><a href="/docs/editing/">Editing</a></li>
         <li><a href="/docs/markdown/">Markdown</a></li>
-        <li><a href="/docs/files/" aria-current="page">Files and saves</a></li>
-        <li><a href="/docs/collaboration/">Collaboration</a></li>
+        <li><a href="/docs/keyboard/">Keyboard</a></li>
         <li><a href="/docs/themes-and-fonts/">Themes and fonts</a></li>
-        <li><a href="/docs/keyboard/">Keyboard shortcuts</a></li>
         <li><a href="/docs/export/">Export</a></li>
       </ul>
     </div>
     <div class="dnav-group">
-      <p class="dnav-title">Reference</p>
+      <p class="dnav-title">Files and changes</p>
       <ul>
-        <li><a href="/docs/cli/">Command line</a></li>
-        <li><a href="/docs/mcp/">MCP server</a></li>
-        <li><a href="/docs/agents/">Agents and changes</a></li>
+        <li><a href="/docs/files/" aria-current="page">Files</a></li>
+        <li><a href="/docs/agents/">Agents</a></li>
+        <li><a href="/docs/collaboration/">Collaboration</a></li>
+      </ul>
+    </div>
+    <div class="dnav-group">
+      <p class="dnav-title">Developers</p>
+      <ul>
+        <li><a href="/docs/cli/">CLI</a></li>
+        <li><a href="/docs/mcp/">MCP</a></li>
         <li><a href="/docs/url-scheme/">URL scheme</a></li>
       </ul>
     </div>
     <div class="dnav-group">
-      <p class="dnav-title">Technical</p>
+      <p class="dnav-title">About</p>
       <ul>
-        <li><a href="/docs/architecture/">Architecture</a></li>
-        <li><a href="/docs/performance/">Performance</a></li>
         <li><a href="/docs/security/">Security and privacy</a></li>
+        <li><a href="/docs/performance/">Performance</a></li>
+        <li><a href="/docs/architecture/">Architecture</a></li>
       </ul>
     </div>
   </nav>
 
   <main class="dmain" id="main">
     <article class="prose">
-      <p class="eyebrow">Guide</p>
-      <h1>Files and saves</h1>
-      <p class="lead">Your notes stay plain Markdown files where you keep them. Dewline writes only the bytes you change, never overwrites a newer version, and shows you what other apps change in a file you have open.</p>
+      <h1>Files</h1>
+      <p class="lead">Each note is a plain Markdown file in a folder you choose. Dewline saves it as you type.</p>
 
-      <h2 id="in-place">Files stay in place</h2>
-      <p>Dewline opens a file where it lives and saves it there. It keeps no library, no database and no copy of your notes. Any other app, sync service or script can read and change the same files while Dewline is open.</p>
-      <ul>
-        <li>The sidebar lists files ending in <code>.md</code>, <code>.markdown</code>, <code>.mdown</code> and <code>.mkd</code> as notes. Other files show with a two-letter tag.</li>
-        <li>A file must be UTF-8, with or without a byte-order mark. A file in any other encoding does not open, and Dewline never writes it.</li>
-        <li>If another app renames or moves an open file, its window follows the file to its new name.</li>
-      </ul>
+      <h2 id="new">Make a note</h2>
+      <ol class="steps">
+        <li><b>Select a folder</b> in the sidebar.</li>
+        <li><b>Press <span class="keys"><kbd>⌘</kbd><kbd>N</kbd></span></b>, or click <strong>+</strong> on the folder's row. <code>Untitled.md</code> opens, ready to type.</li>
+        <li><b>Write a first line.</b> It becomes the note's name.</li>
+      </ol>
+      <p>New Folder is <span class="keys"><kbd>⇧</kbd><kbd>⌘</kbd><kbd>N</kbd></span>. Without a folder, notes go in <code>~/Documents/Dewline</code>.</p>
 
-      <h2 id="saving">How a save works</h2>
-      <p>Dewline saves 2 seconds after you stop typing. File &gt; Save <span class="keys"><kbd>⌘</kbd><kbd>S</kbd></span> saves now, after taking in anything the file gained on disk first.</p>
-      <h3 id="byte-exact">Only your edits change</h3>
-      <p>Opening a file never writes to it and never normalizes it. A save writes the text you see, so every byte you did not edit stays as it was: the byte-order mark, the line endings, trailing spaces, unusual spacing and syntax Dewline does not render.</p>
-      <p>The new bytes go to a hidden file beside the original, which takes the original's permissions, owner, group, flags and extended attributes, then replace it in one step. A symlink, a file with other hard links or an access control list is written in place instead, and if that write fails the original bytes go back.</p>
-
-      <h3 id="never-overwrite">A newer file is never overwritten</h3>
-      <p>Every save checks that the file on disk still holds the bytes Dewline last read or wrote. If something else changed it in between, Dewline writes nothing. It takes in the other version first, as an <a href="#outside-changes">outside change</a>, and saves after that.</p>
-      <p>Autosave also waits while:</p>
-      <ul>
-        <li>an input method is composing text, or a Writing Tools session is open;</li>
-        <li>a conflict in the file waits for your choice;</li>
-        <li>an agent's hook reports that it is about to edit the file. See <a href="/docs/agents/">Agents and changes</a>.</li>
-      </ul>
-      <p>While a save waits, your text is kept as the file's draft in the snapshot store. If the file is deleted, autosave stops; <span class="keys"><kbd>⌘</kbd><kbd>S</kbd></span> writes it again.</p>
-
-      <h2 id="snapshots">Snapshots</h2>
-      <p>Dewline keeps earlier versions of the files you open. It snapshots a file:</p>
-      <ul>
-        <li>when another app changes it on disk, keeping both the version it replaced and the new one;</li>
-        <li>before an outside change merges into edits you have not saved, keeping your text;</li>
-        <li>before you restore a snapshot, so a restore can be undone.</li>
-      </ul>
-      <p>File &gt; Snapshots lists the open file's snapshots, newest first, each with its time and its writer: You, Claude Code, Codex, Cursor, Unknown app, or git with its action, such as Rebase. Choose one to restore it as one undoable edit. Hold <kbd>⌥</kbd> while the menu is open to pin or unpin a snapshot instead.</p>
-      <div class="table" tabindex="0" role="region" aria-label="How long snapshots last">
+      <h2 id="find">Find a note</h2>
+      <p>Press <span class="keys"><kbd>⇧</kbd><kbd>⌘</kbd><kbd>O</kbd></span>, type a few letters of the name and press <kbd>↩</kbd>. If nothing matches, a row offers to create it: “Create “plan.md” in Field Notes”.</p>
+      <div class="table" tabindex="0" role="region" aria-label="Quick Open prefixes">
         <table>
-          <thead><tr><th scope="col">A snapshot is kept while it is</th></tr></thead>
+          <thead><tr><th scope="col">Type first</th><th scope="col">To search</th></tr></thead>
           <tbody>
-            <tr><td>pinned, for as long as it stays pinned</td></tr>
-            <tr><td>one of its file's 50 newest</td></tr>
-            <tr><td>less than 30 days old</td></tr>
+            <tr><td><code>&gt;</code></td><td>Commands and settings (the command palette, <span class="keys"><kbd>⇧</kbd><kbd>⌘</kbd><kbd>P</kbd></span>)</td></tr>
+            <tr><td><code>@</code></td><td>Headings in this note</td></tr>
+            <tr><td><code>:</code></td><td>A line in this note, by number</td></tr>
+            <tr><td><code>#</code></td><td>Headings across the folder</td></tr>
+            <tr><td><code>?</code></td><td>The list of prefixes</td></tr>
           </tbody>
         </table>
       </div>
-      <p>Snapshots live in <code>~/Library/Application Support/dev.arkwerx.dewline/</code>, never beside your files. They are compressed with zstd and stored by their BLAKE3 hash, so identical versions take the space of one. Agent transcripts and agent settings files are never snapshotted.</p>
+      <p><code>notes@intro</code> goes to the heading “intro” in notes.md. To search inside notes, use <a href="/docs/editing/#find">Find in Files</a>.</p>
 
-      <h2 id="outside-changes">Outside changes</h2>
-      <p>Dewline watches every open file and its folder. When git, a sync app, a script or a coding agent writes to the file, Dewline reads the new version 150 ms after the last write and merges it into the window. It merges against the version you both started from, so your unsaved edits and theirs combine. The change does not clear your undo history.</p>
-      <h3 id="quiet-or-marked">Quiet or marked</h3>
-      <p>Some changes land quietly: the text updates and nothing is marked. Others are marked for you to keep or revert.</p>
-      <div class="table" tabindex="0" role="region" aria-label="Which outside changes are marked">
+      <h2 id="manage">Rename, move or delete a note</h2>
+      <div class="table" tabindex="0" role="region" aria-label="Managing notes">
         <table>
-          <thead><tr><th scope="col">The change</th><th scope="col">With no unsaved edits</th><th scope="col">With unsaved edits</th></tr></thead>
+          <thead><tr><th scope="col">To</th><th scope="col">Do this</th></tr></thead>
           <tbody>
-            <tr><td>A coding agent's, named by its hooks</td><td>Marked</td><td>Marked</td></tr>
-            <tr><td>git's, such as a checkout or a rebase</td><td>Quiet</td><td>Marked</td></tr>
-            <tr><td>Any other app's</td><td>Quiet</td><td>Marked</td></tr>
-            <tr><td>Any other app's, to an agent's instruction file such as <code>CLAUDE.md</code></td><td>Marked</td><td>Marked</td></tr>
+            <tr><td>Rename</td><td>Click the window title, or File &gt; Rename…, or select the sidebar row and press <kbd>↩</kbd></td></tr>
+            <tr><td>Move</td><td>Drag the row onto another folder</td></tr>
+            <tr><td>Move to Trash</td><td>Select the row and press <span class="keys"><kbd>⌘</kbd><kbd>⌫</kbd></span></td></tr>
+            <tr><td>Duplicate, pin, show in Finder</td><td>Right-click the row</td></tr>
           </tbody>
         </table>
       </div>
-      <p>A hook that reports late can still name a change that landed quietly; the change then becomes marked.</p>
+      <p>Each is one step of <span class="keys"><kbd>⌘</kbd><kbd>Z</kbd></span>. If another app renames an open note, its window follows it.</p>
+      <p>The sidebar hides <code>.git</code>, <code>node_modules</code>, dotfiles and what <code>.gitignore</code> lists. Settings &gt; Files can show ignored files, dimmed.</p>
 
-      <h3 id="keep-revert">Keep and Revert</h3>
-      <p>A marked change shows in its writer's color: a wash under the new text, a tick in the margin, and the writer's name and time beside the line. Removed text shows struck through where it was. A bead on the thin line across the top of the page marks each change in the file, and a click on a bead jumps to it.</p>
-      <p>While the file has changes waiting, a bar along the bottom of the page names the writer and how many places changed, steps between them, and offers Revert and Keep.</p>
-      <div class="table" tabindex="0" role="region" aria-label="Keep and Revert keys">
+      <h2 id="saving">How saving works</h2>
+      <p>Dewline saves 2 seconds after you stop typing, and when you quit. <span class="keys"><kbd>⌘</kbd><kbd>S</kbd></span> saves at once.</p>
+      <ul>
+        <li>A save changes only the bytes you edited. Line endings and spacing stay as they were.</li>
+        <li>A save never overwrites a newer copy. Dewline takes in another app's version first.</li>
+        <li>Notes must be UTF-8 text. Dewline opens <code>.md</code>, <code>.markdown</code>, <code>.mdown</code> and <code>.mkd</code> files; other files open in Quick Look.</li>
+      </ul>
+      <p><a href="/docs/architecture/#saves">Architecture</a> explains how a save checks the disk.</p>
+
+      <h2 id="conflicts">Choose between two versions</h2>
+      <p>When another app and you change the same paragraph, a card appears under it: “Two versions of this paragraph”. Your text stays editable, and saving waits until you choose.</p>
+      <div class="table" tabindex="0" role="region" aria-label="Conflict choices">
         <table>
-          <thead><tr><th scope="col">Command</th><th scope="col">Keys</th><th scope="col">What it does</th></tr></thead>
+          <thead><tr><th scope="col">Button</th><th scope="col">Keys</th><th scope="col">Result</th></tr></thead>
           <tbody>
-            <tr><td>Keep Change</td><td><span class="keys"><kbd>⌘</kbd><kbd>↩</kbd></span></td><td>Keeps the change under the caret. The text stays as it is.</td></tr>
-            <tr><td>Revert Change</td><td><span class="keys"><kbd>⌥</kbd><kbd>⌘</kbd><kbd>⌫</kbd></span></td><td>Puts back the text from before the change.</td></tr>
-            <tr><td>Keep All Changes</td><td><span class="keys"><kbd>⇧</kbd><kbd>⌘</kbd><kbd>↩</kbd></span></td><td>Keeps every marked change in the file.</td></tr>
-            <tr><td>Revert All Changes</td><td><span class="keys"><kbd>⌥</kbd><kbd>⇧</kbd><kbd>⌘</kbd><kbd>⌫</kbd></span></td><td>Reverts every marked change in the file.</td></tr>
-            <tr><td>Next Change</td><td><span class="keys"><kbd>⌃</kbd><kbd>⌘</kbd><kbd>↓</kbd></span></td><td>Moves to the next change.</td></tr>
-            <tr><td>Previous Change</td><td><span class="keys"><kbd>⌃</kbd><kbd>⌘</kbd><kbd>↑</kbd></span></td><td>Moves to the previous change.</td></tr>
+            <tr><td>Keep Yours (default)</td><td><span class="keys"><kbd>⌥</kbd><kbd>⌘</kbd><kbd>⌫</kbd></span></td><td>Drops the other version</td></tr>
+            <tr><td>Use git’s, or Use the other version</td><td><span class="keys"><kbd>⌘</kbd><kbd>↩</kbd></span></td><td>Replaces your text with theirs</td></tr>
+            <tr><td>Keep Both</td><td></td><td>Keeps yours, then theirs after it</td></tr>
           </tbody>
         </table>
       </div>
-      <p>Each decision is an edit you can undo, and it saves like any other edit. A revert is a new write of the file; it does not roll back the other app's history.</p>
-      <p>View &gt; Review Changes <span class="keys"><kbd>⇧</kbd><kbd>⌘</kbd><kbd>R</kbd></span> lists the marked changes across the window's open files, grouped by writer. View &gt; Follow Changes scrolls each new marked change into view while you are not typing. When an agent's turn ends with changes waiting, one line under the tab bar says so, such as "Claude finished · 3 places in 2 files · Review". There is no sound and no notification.</p>
+      <p>As everywhere, <span class="keys"><kbd>⌘</kbd><kbd>↩</kbd></span> takes the change and <span class="keys"><kbd>⌥</kbd><kbd>⌘</kbd><kbd>⌫</kbd></span> rejects it. No conflict markers enter the file.</p>
 
-      <h2 id="conflicts">Conflicts</h2>
-      <p>When an outside change and your unsaved edit touch the same place, Dewline cannot merge them. It never writes conflict markers into the file. Instead a card appears under the paragraph, "Two versions of this paragraph": your text stays above it and stays editable, and the other version shows in the card.</p>
-      <dl>
-        <dt>Keep Both <span class="keys"><kbd>⌘</kbd><kbd>↩</kbd></span></dt>
-        <dd>The default. Keeps your version, then the other one after it.</dd>
-        <dt>Keep Yours <span class="keys"><kbd>⌥</kbd><kbd>⌘</kbd><kbd>⌫</kbd></span></dt>
-        <dd>Drops the other version.</dd>
-        <dt>Use Claude's, or Use Other for an unknown app</dt>
-        <dd>Replaces your version with the other one.</dd>
-      </dl>
-      <p>Saving waits until you choose. A file git marks as unmerged during a merge or rebase also opens a card when its text differs from yours.</p>
+      <h2 id="snapshots">Go back to an earlier version</h2>
+      <ol class="steps">
+        <li><b>Choose File &gt; Earlier Versions…</b> Each version shows its time and writer: “Today, 9:41 AM · Claude Code”.</li>
+        <li><b>Select a version</b> to see what differs.</li>
+        <li><b>Click Restore</b>, or Open as Copy. A restore is one edit you can undo.</li>
+      </ol>
+      <p>Dewline keeps a version when another app changes a note, before a merge and before a restore. Versions live in <code>~/Library/Application Support/dev.arkwerx.dewline/</code>.</p>
+      <details>
+        <summary>How long versions are kept</summary>
+        <p>A version stays while it is pinned, one of its note's 50 newest, or less than 30 days old. Pin one with its checkbox in the list. Versions are zstd-compressed and stored once per content, by BLAKE3 hash. Agent transcripts and settings files are never kept.</p>
+      </details>
+
+      <h2 id="inbox">Capture to the inbox</h2>
+      <p><code>Inbox.md</code> sits in the Dewline folder in Documents. Add to it from anywhere:</p>
+      <ul>
+        <li>Dock menu or File &gt; Capture…: type, then press <kbd>↩</kbd>.</li>
+        <li>A shortcut you set in Settings &gt; Files &gt; Capture shortcut.</li>
+        <li><a href="/docs/cli/#capture"><code>dewline capture</code></a> in Terminal.</li>
+      </ul>
+      <p>File &gt; Open Inbox opens it. For a note a day, turn on Settings &gt; Files &gt; Daily note. It opens <code>Daily/2026-11-02.md</code> on the day's first launch.</p>
     </article>
 
     <nav class="pager" aria-label="Previous and next page">
-      <a class="prev" href="/docs/markdown/"><span>Previous</span><b>Markdown</b></a>
-      <a class="next" href="/docs/collaboration/"><span>Next</span><b>Collaboration</b></a>
+      <a class="prev" href="/docs/export/">Previous: Export</a>
+      <a class="next" href="/docs/agents/">Next: Agents</a>
     </nav>
   </main>
 
@@ -202,13 +198,13 @@
 
 <footer class="foot">
   <div class="foot-in wrap">
-    <p>Free, source-available under <a class="text-link" href="https://github.com/ark-232/dewline/blob/main/LICENSE.md">FSL-1.1-ALv2</a>. Published by ArkWerx LLC.</p>
+    <p>© 2026 ArkWerx LLC</p>
     <nav aria-label="Project">
-      <a href="/">Home</a>
+      <a href="/docs/">Docs</a>
+      <a href="https://github.com/ark-232/dewline/releases">Releases</a>
       <a href="https://github.com/ark-232/dewline">Source</a>
-      <a href="https://github.com/ark-232/dewline/releases/latest">Releases</a>
-      <a href="https://github.com/ark-232/dewline/issues">Issues</a>
-      <a href="https://github.com/ark-232/dewline/blob/main/SECURITY.md">Security</a>
+      <a href="/docs/security/">Security</a>
+      <a href="https://github.com/ark-232/dewline/issues/new">Report an issue</a>
     </nav>
   </div>
 </footer>
