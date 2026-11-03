@@ -1,0 +1,339 @@
+{
+  "date": "2026-11-02",
+  "commit": "v0.1.0-10-gd9e812a",
+  "mac": "Apple M4 Pro, 24 GB, macOS 27.2",
+  "xcode": "Xcode 27.2",
+  "build": "Release, arm64, unsigned",
+  "load": [
+    2.58,
+    3.61,
+    3.78
+  ],
+  "corpusBytes": {
+    "1MB": 1048633,
+    "10MB": 10485949
+  },
+  "appBytes": 53053916,
+  "dmgBytes": 20535034,
+  "firstLaunchMs": 890.8,
+  "launch1MB": {
+    "coldMs": [
+      664.4,
+      626.3,
+      629.0
+    ],
+    "warmMs": [
+      390.8,
+      410.1,
+      389.5,
+      421.4,
+      393.5
+    ]
+  },
+  "idle1MB": {
+    "footprintMB": 69.8,
+    "cpuPercent": 0.0,
+    "idleWakeups": 0,
+    "contextSwitches": 56,
+    "frontmost": true
+  },
+  "idle10MB": {
+    "footprintMB": 186.0,
+    "cpuPercent": 0.0,
+    "idleWakeups": 0,
+    "contextSwitches": 54,
+    "frontmost": true
+  },
+  "keystrokeParts": {
+    "clockUs": [
+      52.880000000000003,
+      52.829999999999998,
+      52.829999999999998
+    ],
+    "efficiencyShare": [
+      0.0050000000000000001,
+      0.0050000000000000001,
+      0.0012999999999999999
+    ],
+    "frontmost": [
+      true,
+      true,
+      true
+    ],
+    "1MB": {
+      "attributes": {
+        "p50": 0.45,
+        "p95": 0.75,
+        "p99": 0.82
+      },
+      "caretAndDisplay": {
+        "p50": 0.83,
+        "p95": 0.99,
+        "p99": 1.07
+      },
+      "commit": {
+        "p50": 2.42,
+        "p95": 2.94,
+        "p99": 3.22
+      },
+      "frame": {
+        "p50": 9.74,
+        "p95": 11.11,
+        "p99": 11.98
+      },
+      "invalidation": {
+        "p50": 0.61,
+        "p95": 0.71,
+        "p99": 1
+      },
+      "keyDown": {
+        "p50": 1.81,
+        "p95": 4.01,
+        "p99": 5.48
+      },
+      "paragraphLayout": {
+        "p50": 1.26,
+        "p95": 1.47,
+        "p99": 1.6
+      },
+      "parse": {
+        "p50": 0.19,
+        "p95": 0.28,
+        "p99": 0.3
+      },
+      "reveal": {
+        "p50": 0.06,
+        "p95": 0.07,
+        "p99": 0.09
+      },
+      "storageEdit": {
+        "p50": 0.1,
+        "p95": 0.98,
+        "p99": 1.07
+      },
+      "viewportLayout": {
+        "p50": 1.7,
+        "p95": 2.02,
+        "p99": 2.19
+      }
+    },
+    "10MB": {
+      "attributes": {
+        "p50": 0.5,
+        "p95": 0.78,
+        "p99": 0.92
+      },
+      "caretAndDisplay": {
+        "p50": 0.86,
+        "p95": 1.03,
+        "p99": 1.09
+      },
+      "commit": {
+        "p50": 2.22,
+        "p95": 2.67,
+        "p99": 2.94
+      },
+      "frame": {
+        "p50": 10.47,
+        "p95": 12,
+        "p99": 13.09
+      },
+      "invalidation": {
+        "p50": 0.71,
+        "p95": 0.79,
+        "p99": 0.84
+      },
+      "keyDown": {
+        "p50": 2.35,
+        "p95": 4.31,
+        "p99": 5.74
+      },
+      "paragraphLayout": {
+        "p50": 1.23,
+        "p95": 1.43,
+        "p99": 1.54
+      },
+      "parse": {
+        "p50": 0.19,
+        "p95": 0.27,
+        "p99": 0.3
+      },
+      "reveal": {
+        "p50": 0.05,
+        "p95": 0.07,
+        "p99": 0.09
+      },
+      "storageEdit": {
+        "p50": 0.11,
+        "p95": 1.06,
+        "p99": 1.14
+      },
+      "viewportLayout": {
+        "p50": 1.98,
+        "p95": 2.39,
+        "p99": 2.53
+      }
+    },
+    "reruns": 0
+  },
+  "keystroke10MB": {
+    "frontmost": true,
+    "max": 13.31,
+    "p50": 10.48,
+    "p95": 12.14,
+    "p99": 12.99
+  },
+  "keystroke1MB": {
+    "frontmost": true,
+    "max": 17.79,
+    "p50": 9.81,
+    "p95": 11.16,
+    "p99": 12.69
+  },
+  "open10MB": {
+    "displayMs": 6.07,
+    "frontmost": true,
+    "ms": 30.15,
+    "setTextMs": 24.08,
+    "styledMs": 2250.72
+  },
+  "open1MB": {
+    "displayMs": 57.73,
+    "frontmost": true,
+    "ms": 71.29,
+    "setTextMs": 13.56,
+    "styledMs": 294.29
+  },
+  "parse": {
+    "document1MBMs": 6.62,
+    "frontmost": true,
+    "paragraphUs": 3.08,
+    "paragraphWindowUs": 4.46
+  },
+  "reveal": {
+    "deselect1MB": 75.98,
+    "frontmost": true,
+    "max": 12.37,
+    "p50": 8.19,
+    "p95": 9.24,
+    "p99": 11.2,
+    "selectAll1MB": 100.32
+  },
+  "scroll": {
+    "frontmost": true,
+    "max": 25.76,
+    "over8_3ms": 199,
+    "p50": 14.38,
+    "p95": 16.61,
+    "p99": 18.23
+  },
+  "scrollSettled": {
+    "frontmost": true,
+    "max": 26.06,
+    "over8_3ms": 199,
+    "p50": 14.88,
+    "p95": 17.08,
+    "p99": 18.71
+  },
+  "budgets": [
+    {
+      "metric": "Keystroke, 1 MB, p50",
+      "unit": "ms",
+      "budget": 9.5,
+      "measured": 9.81,
+      "pass": false
+    },
+    {
+      "metric": "Keystroke, 1 MB, p99",
+      "unit": "ms",
+      "budget": 16,
+      "measured": 12.69,
+      "pass": true
+    },
+    {
+      "metric": "Keystroke, 10 MB, p95",
+      "unit": "ms",
+      "budget": 16,
+      "measured": 12.14,
+      "pass": true
+    },
+    {
+      "metric": "Cold launch, 1 MB, slowest of 3",
+      "unit": "ms",
+      "budget": 750,
+      "measured": 664.4,
+      "pass": true
+    },
+    {
+      "metric": "Warm launch, 1 MB, median of 5",
+      "unit": "ms",
+      "budget": 425,
+      "measured": 393.5,
+      "pass": true
+    },
+    {
+      "metric": "Open 1 MB",
+      "unit": "ms",
+      "budget": 85,
+      "measured": 71.29,
+      "pass": true
+    },
+    {
+      "metric": "Open 10 MB",
+      "unit": "ms",
+      "budget": 250,
+      "measured": 30.15,
+      "pass": true
+    },
+    {
+      "metric": "Idle memory, 1 MB",
+      "unit": "MB",
+      "budget": 80,
+      "measured": 69.8,
+      "pass": true
+    },
+    {
+      "metric": "Idle memory, 10 MB",
+      "unit": "MB",
+      "budget": 150,
+      "measured": 186.0,
+      "pass": false
+    },
+    {
+      "metric": "Idle CPU, 1 MB",
+      "unit": "%",
+      "budget": 0,
+      "measured": 0.0,
+      "pass": true
+    },
+    {
+      "metric": "Idle CPU, 10 MB",
+      "unit": "%",
+      "budget": 0,
+      "measured": 0.0,
+      "pass": true
+    },
+    {
+      "metric": "Idle wakeups in 60 s, 1 MB",
+      "unit": "",
+      "budget": 0,
+      "measured": 0,
+      "pass": true
+    },
+    {
+      "metric": "Idle wakeups in 60 s, 10 MB",
+      "unit": "",
+      "budget": 0,
+      "measured": 0,
+      "pass": true
+    },
+    {
+      "metric": "DMG",
+      "unit": "MB",
+      "budget": 20,
+      "measured": 19.5837345123291,
+      "pass": true
+    }
+  ],
+  "pass": false
+}
