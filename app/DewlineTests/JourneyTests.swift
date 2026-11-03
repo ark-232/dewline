@@ -24,11 +24,11 @@ struct JourneyTests {
         let window = try #require(launch.window)
         defer { window.close() }
         #expect(!window.isVisible)
-        let actions = Self.views(in: window.contentView!).compactMap { $0 as? NSControl }.filter { $0.accessibilityRole() == .button }
-        let new = try #require(actions.first { $0.accessibilityLabel() == "New Document" })
-        #expect(new.action == #selector(AppDelegate.newDocument(_:)))
+        let buttons = Self.views(in: window.contentView!).compactMap { $0 as? NSButton }
+        let new = try #require(buttons.first { $0.title == "New Note" })
+        #expect(new.action == #selector(AppDelegate.newDocument(_:)) && new.keyEquivalent == "\r")
         #expect((NSApp.delegate as AnyObject?)?.responds(to: #selector(AppDelegate.newDocument(_:))) == true)
-        #expect(actions.map { $0.accessibilityLabel() ?? "" }.prefix(3) == ["New Document", "Open…", "Open Folder…"])
+        #expect(buttons.map(\.title).suffix(3) == ["Open Folder…", "Open…", "New Note"])
     }
 
     /// File > New, typing, then the first save into the folder Settings > General names writes exactly what was
@@ -522,28 +522,20 @@ struct JourneyTests {
     }
 
     /// View > Show Sidebar (Control-Cmd-S) goes up the responder chain from the text view, as the menu sends it, and
-    /// collapses the sidebar; the title band's button, which targets the split directly, does the same.
+    /// collapses the sidebar; sending it again shows it.
     @Test func showSidebarFromTheMenuCollapsesTheSidebar() async throws {
         let vault = try Vault(["plan.md": "# Plan\n"])
         defer { vault.remove() }
         let tab = try Tab(vault.url("plan.md"), engine: vault.engine)
         defer { tab.close() }
-        let split = try #require(tab.window.contentViewController?.children.first as? NSSplitViewController)
+        let split = try #require(tab.window.contentViewController as? NSSplitViewController)
         let sidebar = try #require(split.splitViewItems.first)
         let chain = Self.chain(from: tab.textView)
-        withKnownIssue("NSSplitViewController answers no to toggleSidebar: without a sidebar-behavior item, so NSWindow takes it") {
-            #expect(chain.first { $0.responds(to: #selector(NSSplitViewController.toggleSidebar(_:))) } === split)
-            #expect(Self.enabled(#selector(NSSplitViewController.toggleSidebar(_:)), in: chain))
-        }
+        #expect(Self.enabled(#selector(NSSplitViewController.toggleSidebar(_:)), in: chain))
+        #expect(tab.textView.tryToPerform(#selector(NSSplitViewController.toggleSidebar(_:)), with: nil))
+        try await Self.until { sidebar.isCollapsed }
         _ = tab.textView.tryToPerform(#selector(NSSplitViewController.toggleSidebar(_:)), with: nil)
-        try await Task.sleep(for: .milliseconds(400))
-        withKnownIssue("the menu's toggleSidebar: never reaches StationSplitController") {
-            #expect(sidebar.isCollapsed)
-        }
-        let button = try #require(Self.views(in: tab.window.contentView!).compactMap { $0 as? NSControl }.first { $0.accessibilityLabel() == "Show or hide the sidebar" })
-        let wasCollapsed = sidebar.isCollapsed
-        button.performClick(nil)
-        try await Self.until { sidebar.isCollapsed != wasCollapsed }
+        try await Self.until { !sidebar.isCollapsed }
     }
 
     /// The change commands are off with nothing marked and on with a change under the caret; Back, Forward and Find in
