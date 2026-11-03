@@ -19,7 +19,7 @@ final class LaunchWindowController: NSWindowController, NSTableViewDataSource, N
     private let filter = NSSearchField()
     private let empty = NSTextField(labelWithString: "")
     private let wordmark = NSTextField(labelWithString: "")
-    private let tagline = NSTextField(labelWithString: "Nothing changes behind your back.")
+    private let tagline = NSTextField(labelWithString: "Notes that stay files.")
     private let version = NSTextField(labelWithString: "")
     private let horizon = Stroke(.clear)
     private var rows: [Row] = []
