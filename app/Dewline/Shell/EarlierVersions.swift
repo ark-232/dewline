@@ -216,6 +216,7 @@ extension EarlierVersions {
         case .agent(.codex, _): "Codex"
         case .agent(.cursor, _): "Cursor"
         case .agent(.demo, _): "Demo"
+        case .agent(.acp, let session): AgentWrites.name(session)
         case .git(let action): action ?? "git"
         case .external: "Another app"
         case .collaborator(_, let name): name

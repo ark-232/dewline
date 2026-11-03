@@ -161,6 +161,7 @@ impl From<Origin> for core::Origin {
                     Vendor::Codex => claims::Vendor::Codex,
                     Vendor::Cursor => claims::Vendor::Cursor,
                     Vendor::Demo => claims::Vendor::Demo,
+                    Vendor::Acp => claims::Vendor::Acp,
                 },
                 session,
             },

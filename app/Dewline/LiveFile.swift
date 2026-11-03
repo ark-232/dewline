@@ -169,6 +169,7 @@ final class LiveFile {
             case .codex: .codex
             case .cursor: .cursor
             case .demo: .demo
+            case .acp: .acp
             }
         let url = URL(fileURLWithPath: path)
         guard let before = try? Data(contentsOf: url),
