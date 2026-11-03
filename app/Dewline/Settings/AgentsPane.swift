@@ -51,130 +51,31 @@ struct HookStatus: Equatable, Sendable {
 
 struct AgentsPane: View {
     let store: ThemeStore
-    @Environment(\.colorScheme) private var scheme
     @State private var hooks = HookStatus(claude: false, codex: false)
-    private let command = HookStatus.installCommand()
 
     var body: some View {
         SettingsPage {
-            SettingsSection(title: "Hooks", note: "A hook tells Dewline which agent wrote a change. Codex runs a new hook only after you trust it: type /hooks in Codex and trust Dewline\u{2019}s.") {
-                SettingsRow(label: "Command") {
-                    Text(hooks.onPath ?? "Not on your PATH; the app\u{2019}s own runs")
-                        .font(hooks.onPath == nil ? Station.label : Station.mono(12))
-                        .foregroundStyle(Station.color(.ink2))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .help(hooks.version ?? "dewline doctor didn\u{2019}t run")
-                }
+            SettingsSection(title: "Hooks", note: "Hooks tell Dewline which agent wrote a change.") {
                 SettingsRow(label: "Claude Code") { installed(hooks.claude) }
-                SettingsRow(label: "Codex") { installed(hooks.codex) }
+                SettingsRow(label: "Codex", detail: "In Codex, type /hooks and trust Dewline\u{2019}s.") { installed(hooks.codex) }
                 SettingsRow(label: "Cursor") { installed(hooks.cursor) }
-            }
-            SettingsSection(note: "Paste it in Terminal. It runs the dewline command inside this app; reopen Settings to see the result.") {
-                SettingsRow(label: "Install hooks") {
-                    HStack(spacing: 12) {
-                        Text("dewline doctor --install-hooks")
-                            .font(Station.mono(12))
-                            .foregroundStyle(Station.color(.ink2))
-                            .lineLimit(1)
-                            .help(command)
-                        Button("Copy Command") {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(command, forType: .string)
-                        }
-                        .buttonStyle(.station)
+                SettingsRow(label: "") {
+                    Button("Set Up\u{2026}") { NSApp.sendAction(Self.setUpHooks, to: nil, from: nil) }
                         .fixedSize()
-                    }
+                        .help(hooks.version ?? "")
                 }
-            }
-            SettingsSection(title: "Unknown writer") {
-                SettingsNote("When Dewline can\u{2019}t tell who wrote a change, it labels the change Unknown, with a hollow bead and a dashed underline. Claude Code\u{2019}s Bash edits, Gemini, sync and other apps show up this way, because no hook reports exactly what they wrote.")
-            }
-            SettingsSection(title: "Writers", trailing: "\(Self.writers.count)", note: "Each writer's changes are marked in its color. A well sets the hue and strength; Dewline keeps the lightness so text on a mark stays readable. A hue within ΔE 8 of a color in your Light or Dark theme shows the clash.") {
-                ForEach(Self.writers) { writer in
-                    WriterRow(writer: writer, store: store, dark: scheme == .dark)
-                }
-            }
-            RestoreDefaults {
-                store.writerHues = store.writerHues.filter { !Self.writers.contains($0.key) }
             }
         }
         .task { hooks = await Task.detached { HookStatus.read() }.value }
     }
 
-    /// Every writer but the collaborator, whose color is in Collaboration, and the demo.
-    private static let writers = Writer.allCases.filter { $0 != .collaborator && $0 != .demo }
+    /// Answered by HookSetup, which lists the files the hooks change before it installs them.
+    static let setUpHooks = Selector(("setUpHooks:"))
 
-    /// A filled `ink` dot and "Installed", or a hollow `ink3` ring and "Not installed".
+    /// "Installed", or "Not set up".
     private func installed(_ on: Bool) -> some View {
-        HStack(spacing: 8) {
-            Circle()
-                .strokeBorder(Station.color(on ? .ink : .ink3), lineWidth: 1.25)
-                .background(Circle().fill(on ? Station.color(.ink) : .clear))
-                .frame(width: 7, height: 7)
-            Text(on ? "Installed" : "Not installed")
-                .font(Station.label)
-                .foregroundStyle(Station.color(on ? .ink : .ink3))
-        }
-        .accessibilityElement(children: .combine)
-    }
-}
-
-/// A writer's name set as its insertion mark (a wash under a solid underline, dashed for an unknown app), a color well,
-/// and, when a theme color sits within ΔE 8, the clash and a button for the nearest clear hue.
-struct WriterRow: View {
-    let writer: Writer
-    let store: ThemeStore
-    let dark: Bool
-
-    var body: some View {
-        let color = Color(nsColor: store.writerColor(writer))
-        let clash = store.clash(writer)
-        let well = Binding {
-            color
-        } set: { picked in
-            if let pick = OKLCH(NSColor(picked)) { store.writerHues[writer] = pick }
-        }
-        VStack(spacing: 0) {
-            Hairline()
-            HStack(alignment: .center, spacing: 16) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(writer.name)
-                        .font(Station.label)
-                        .foregroundStyle(Station.color(.ink))
-                        .underline(pattern: writer == .unknown ? .dash : .solid, color: color)
-                        .padding(.horizontal, 3)
-                        .background(color.opacity(dark ? 0.24 : 0.15), in: .rect(cornerRadius: 2))
-                    if let clash {
-                        Text("Close to \(clash.theme.name)'s \(clash.token.label) in \(clash.dark ? "Dark" : "Light") (ΔE \(clash.deltaE.formatted(.number.precision(.fractionLength(1)))))")
-                            .font(Station.small)
-                            .foregroundStyle(Station.color(.ink3))
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .frame(width: 190, alignment: .leading)
-                HStack(spacing: 12) {
-                    ColorPicker("\(writer.name) color", selection: well, supportsOpacity: false)
-                        .labelsHidden()
-                    if let hue = clash?.clearHue {
-                        Button {
-                            store.writerHues[writer] = hue
-                        } label: {
-                            HStack(spacing: 6) {
-                                Circle().fill(Color(nsColor: (dark ? writer.colors(hue).dark : writer.colors(hue).light).color)).frame(width: 8, height: 8)
-                                Text("Use Clear Hue")
-                            }
-                        }
-                        .buttonStyle(.station)
-                        .help("Moves \(writer.name) to hue \(Int(hue.h.rounded()))°, the nearest one clear of both themes")
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .padding(.vertical, 9)
-            .frame(minHeight: 44)
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(writer.name)
+        Text(on ? "Installed" : "Not set up")
+            .font(Station.label)
+            .foregroundStyle(Station.color(on ? .ink : .ink2))
     }
 }

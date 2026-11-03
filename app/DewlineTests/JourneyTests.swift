@@ -24,11 +24,11 @@ struct JourneyTests {
         let window = try #require(launch.window)
         defer { window.close() }
         #expect(!window.isVisible)
-        let actions = Self.views(in: window.contentView!).compactMap { $0 as? NSControl }.filter { $0.accessibilityRole() == .button }
-        let new = try #require(actions.first { $0.accessibilityLabel() == "New Document" })
-        #expect(new.action == #selector(AppDelegate.newDocument(_:)))
+        let buttons = Self.views(in: window.contentView!).compactMap { $0 as? NSButton }
+        let new = try #require(buttons.first { $0.title == "New Note" })
+        #expect(new.action == #selector(AppDelegate.newDocument(_:)) && new.keyEquivalent == "\r")
         #expect((NSApp.delegate as AnyObject?)?.responds(to: #selector(AppDelegate.newDocument(_:))) == true)
-        #expect(actions.map { $0.accessibilityLabel() ?? "" }.prefix(3) == ["New Document", "Open…", "Open Folder…"])
+        #expect(buttons.map(\.title).suffix(3) == ["Open Folder…", "Open…", "New Note"])
     }
 
     /// File > New, typing, then the first save into the folder Settings > General names writes exactly what was
@@ -73,6 +73,38 @@ struct JourneyTests {
         try await Self.save(document, to: url, .saveOperation)
         #expect(try Data(contentsOf: url) == Data("# Groceries\nEggs, milk and bread. And tea.\n- [ ] oats".utf8))
         #expect(!document.isDocumentEdited)
+        #expect(controller.window?.isVisible == false)
+    }
+
+    /// File > New in a folder window: the save panel starts in that folder, and with no Cmd-S the note saves itself as
+    /// Untitled.md there 2 s after the last keystroke, then autosaves through the engine like any opened file.
+    @Test func j1NewNoteInAFolderSavesItselfThere() async throws {
+        let vault = try Vault(["Untitled.md": "taken\n"])
+        defer { vault.remove() }
+        let document = MarkdownDocument()
+        document.engine = vault.engine
+        NSDocumentController.shared.addDocument(document)
+        let controller = MainWindowController(folder: Folder(vault.notes))
+        controller.display(document)
+        defer { document.close() }
+        let textView = try #require(controller.textView)
+        textView.history.undoManager.groupsByEvent = false
+        let panel = NSSavePanel()
+        #expect(document.prepareSavePanel(panel))
+        #expect(panel.directoryURL?.standardizedFileURL == vault.notes.standardizedFileURL)
+
+        Self.type("# Groceries\nEggs.", into: textView)
+        #expect(document.fileURL == nil)
+        let url = vault.url("Untitled 2.md")
+        try await Self.until { document.fileURL != nil && document.live != nil }
+        #expect(document.fileURL?.standardizedFileURL == url.standardizedFileURL)
+        #expect(try Data(contentsOf: url) == Data("# Groceries\nEggs.".utf8))
+        #expect(vault.text("Untitled.md") == "taken\n")
+        #expect(!document.isDocumentEdited)
+
+        textView.setSelectedRange(NSRange(location: (textView.string as NSString).length, length: 0))
+        Self.type(" Milk.", into: textView)
+        try await Self.until { vault.text("Untitled 2.md") == "# Groceries\nEggs. Milk." }
         #expect(controller.window?.isVisible == false)
     }
 
@@ -320,17 +352,20 @@ struct JourneyTests {
     /// name, the Keep bar counts them and the Changes tab lists each line with its changed words in bold, and Keep,
     /// Revert and Keep All decide them: Keep and Revert act on the Keep bar's change when the caret is elsewhere, the
     /// file's bytes follow each decision, the decisions log holds one line per decision without the text, and nothing
-    /// is left to review.
+    /// is left to review. The closed files are listed as changed while closed, and one opens with Claude's write
+    /// marked.
     @Test func j3AnAgentsChangesAreReviewedKeptAndReverted() async throws {
         let vault = try Vault(["plan.md": Self.plan, "a.md": "# A\n\nOld a.\n", "b.md": "# B\n\nOld b.\n"])
         defer { vault.remove() }
         let tab = try Tab(vault.url("plan.md"), engine: vault.engine)
         defer { tab.close() }
         let claude = ChangeEngine.Origin.agent(.claude, session: "s1")
+        ClosedChanges.engine = vault.engine
+        defer { ClosedChanges.engine = MarkdownDocument.sharedEngine }
 
-        try Self.agentWrite(Self.agentPlan, to: vault.url("plan.md"), id: "toolu_1", engine: vault.engine)
-        try Self.agentWrite("# A\n\nNew a.\n", to: vault.url("a.md"), id: "toolu_2", engine: vault.engine)
-        try Self.agentWrite("# B\n\nNew b.\n", to: vault.url("b.md"), id: "toolu_3", engine: vault.engine)
+        try await Self.agentWrite(Self.agentPlan, to: vault.url("plan.md"), id: "toolu_1", engine: vault.engine)
+        try await Self.agentWrite("# A\n\nNew a.\n", to: vault.url("a.md"), id: "toolu_2", engine: vault.engine)
+        try await Self.agentWrite("# B\n\nNew b.\n", to: vault.url("b.md"), id: "toolu_3", engine: vault.engine)
         try await Self.until { tab.marked.count == 4 && tab.marked.allSatisfy { $0.change.origin == claude } }
         #expect(tab.textView.string == Self.agentPlan)
         #expect(!tab.document.isDocumentEdited)
@@ -390,12 +425,21 @@ struct JourneyTests {
         #expect(lines.allSatisfy { ($0["excerpt_hash"] as? String)?.count == 64 })
         #expect(!log.contains("revised"))
 
-        // The closed files hold the agent's bytes and open with nothing to review: the engine sees only open files.
+        // The closed files hold the agent's bytes and are listed; one opens with the write marked against the bytes it
+        // replaced, and leaves the list.
         #expect(vault.text("a.md") == "# A\n\nNew a.\n")
+        #expect(ClosedChanges.all.map { Self.realpath($0.url) } == ["a.md", "b.md"].map { Self.realpath(vault.url($0)) })
+        #expect(ClosedChanges.all.allSatisfy { $0.origin == claude })
         let closed = try Tab(vault.url("a.md"), engine: vault.engine)
         defer { closed.close() }
+        try await Self.until { closed.marked.count == 1 }
         #expect(closed.textView.string == "# A\n\nNew a.\n")
-        #expect(closed.live.changes.isEmpty)
+        #expect(closed.marked.first?.change.origin == claude)
+        #expect(closed.marked.first.map { closed.live.excerpt($0.id) } == "New")
+        #expect(!closed.document.isDocumentEdited)
+        #expect(ClosedChanges.all.map { Self.realpath($0.url) } == [Self.realpath(vault.url("b.md"))])
+        closed.textView.revertChange(nil)
+        #expect(closed.textView.string == "# A\n\nOld a.\n")
         #expect(tab.window.isVisible == false)
     }
 
@@ -531,6 +575,28 @@ struct JourneyTests {
         #expect(tab.textView.string == expected)
         try await Self.until { vault.text("plan.md") == expected }
         #expect(tab.live.changes.isEmpty)
+    }
+
+    /// On a conflict the change keys mean what they mean everywhere: Cmd-Return keeps the outside writer's text, here
+    /// git's version, and Option-Cmd-Delete keeps yours.
+    @Test(arguments: [true, false])
+    func j5TheChangeKeysOnAConflict(_ keep: Bool) async throws {
+        let ours = "# Plan\n\nShip on Friday.\n"
+        let theirs = "# Plan\n\nShip on Sunday.\n"
+        let vault = try Vault(["plan.md": ours])
+        defer { vault.remove() }
+        let tab = try Tab(vault.url("plan.md"), engine: vault.engine)
+        defer { tab.close() }
+        tab.textView.insertText("Monday", replacementRange: NSRange(location: tab.location(of: "Friday"), length: 6))
+        try vault.write("plan.md", theirs)
+        try await Self.until { tab.live.changes.values.contains(where: \.conflict) }
+        let conflict = try #require(tab.live.changes.values.first { $0.conflict })
+        tab.textView.setSelectedRange(NSRange(location: conflict.range.location + 1, length: 0))
+        if keep { tab.textView.keepChange(nil) } else { tab.textView.revertChange(nil) }
+        let expected = keep ? theirs : "# Plan\n\nShip on Monday.\n"
+        #expect(tab.textView.string == expected)
+        #expect(tab.live.changes.isEmpty)
+        try await Self.until { vault.text("plan.md") == expected }
     }
 
     // MARK: J6 Earlier versions
@@ -731,28 +797,20 @@ struct JourneyTests {
     }
 
     /// View > Show Sidebar (Control-Cmd-S) goes up the responder chain from the text view, as the menu sends it, and
-    /// collapses the sidebar; the title band's button, which targets the split directly, does the same.
+    /// collapses the sidebar; sending it again shows it.
     @Test func showSidebarFromTheMenuCollapsesTheSidebar() async throws {
         let vault = try Vault(["plan.md": "# Plan\n"])
         defer { vault.remove() }
         let tab = try Tab(vault.url("plan.md"), engine: vault.engine)
         defer { tab.close() }
-        let split = try #require(tab.window.contentViewController?.children.first as? NSSplitViewController)
+        let split = try #require(tab.window.contentViewController as? NSSplitViewController)
         let sidebar = try #require(split.splitViewItems.first)
         let chain = Self.chain(from: tab.textView)
-        withKnownIssue("NSSplitViewController answers no to toggleSidebar: without a sidebar-behavior item, so NSWindow takes it") {
-            #expect(chain.first { $0.responds(to: #selector(NSSplitViewController.toggleSidebar(_:))) } === split)
-            #expect(Self.enabled(#selector(NSSplitViewController.toggleSidebar(_:)), in: chain))
-        }
+        #expect(Self.enabled(#selector(NSSplitViewController.toggleSidebar(_:)), in: chain))
+        #expect(tab.textView.tryToPerform(#selector(NSSplitViewController.toggleSidebar(_:)), with: nil))
+        try await Self.until { sidebar.isCollapsed }
         _ = tab.textView.tryToPerform(#selector(NSSplitViewController.toggleSidebar(_:)), with: nil)
-        try await Task.sleep(for: .milliseconds(400))
-        withKnownIssue("the menu's toggleSidebar: never reaches StationSplitController") {
-            #expect(sidebar.isCollapsed)
-        }
-        let button = try #require(Self.views(in: tab.window.contentView!).compactMap { $0 as? NSControl }.first { $0.accessibilityLabel() == "Show or hide the sidebar" })
-        let wasCollapsed = sidebar.isCollapsed
-        button.performClick(nil)
-        try await Self.until { sidebar.isCollapsed != wasCollapsed }
+        try await Self.until { !sidebar.isCollapsed }
     }
 
     /// The change commands are off with nothing marked and on with a change under the caret; Back, Forward and Find in
@@ -784,15 +842,38 @@ struct JourneyTests {
         }
 
         let after = "# Plan\n\nShip on Friday.\n\nAgent note.\n"
-        try Self.agentWrite(after, to: vault.url("plan.md"), id: "toolu_1", engine: vault.engine)
+        try await Self.agentWrite(after, to: vault.url("plan.md"), id: "toolu_1", engine: vault.engine)
         try await Self.until { tab.marked.count == 1 }
         tab.textView.setSelectedRange(NSRange(location: tab.marked[0].change.range.location + 1, length: 0))
         for action in changeCommands {
             #expect(Self.enabled(action, in: chain) == true, "\(action) is disabled with a change under the caret")
         }
+        // With the caret elsewhere the keys act on the Keep bar's change, as its buttons do.
         tab.textView.setSelectedRange(NSRange(location: 0, length: 0))
-        #expect(Self.enabled(#selector(EditorTextView.keepChange(_:)), in: chain) == false)
+        #expect(Self.enabled(#selector(EditorTextView.keepChange(_:)), in: chain) == true)
         #expect(Self.enabled(#selector(EditorTextView.keepAllChanges(_:)), in: chain) == true)
+        tab.textView.keepChange(nil)
+        #expect(tab.marked.isEmpty)
+        #expect(tab.textView.string == after)
+        #expect(Self.enabled(#selector(EditorTextView.keepChange(_:)), in: chain) == false)
+    }
+
+    /// The keys follow the Keep bar's focus when the caret is in no change: the bar's change is the one decided.
+    @Test func theChangeKeysFollowTheKeepBar() async throws {
+        let vault = try Vault(["plan.md": Self.plan])
+        defer { vault.remove() }
+        let tab = try Tab(vault.url("plan.md"), engine: vault.engine)
+        defer { tab.close() }
+        try await Self.agentWrite(Self.agentPlan, to: vault.url("plan.md"), id: "toolu_1", engine: vault.engine)
+        try await Self.until { tab.marked.count == 4 }
+        let changes = tab.marked
+        tab.textView.setSelectedRange(NSRange(location: 0, length: 0))
+        tab.textView.revertChange(nil)
+        #expect(tab.marked.map(\.id) == changes.dropFirst().map(\.id))
+        #expect(tab.textView.string.contains("Alpha line.\n"))
+        tab.textView.keepBarFocus = { changes[2].id }
+        tab.textView.keepChange(nil)
+        #expect(tab.marked.map(\.id) == [changes[1].id, changes[3].id])
     }
 
     /// The responders a menu command looks through, in AppKit's order, for a window that is never key.
@@ -827,6 +908,20 @@ struct JourneyTests {
             if let submenu = item.submenu { return items(of: submenu, path + [submenu.title]) }
             return [((path + [item.title]).joined(separator: " › "), item)]
         }
+    }
+
+    // MARK: The test host
+
+    /// The test host is a build of its own, so what a test opens lands in its defaults, Application Support and
+    /// recent documents, never the app's.
+    @Test func theTestHostKeepsItsOwnDefaults() throws {
+        let id = try #require(Bundle.main.bundleIdentifier)
+        #expect(id == "dev.arkwerx.dewline.testhost")
+        let key = "JourneyTestHostProbe"
+        UserDefaults.standard.set(true, forKey: key)
+        defer { UserDefaults.standard.removeObject(forKey: key) }
+        #expect(UserDefaults.standard.persistentDomain(forName: id)?[key] as? Bool == true)
+        #expect(UserDefaults.standard.persistentDomain(forName: "dev.arkwerx.dewline")?[key] == nil)
     }
 
     // MARK: Error paths
@@ -921,10 +1016,12 @@ struct JourneyTests {
 
     /// Claude Code's Write: PreToolUse with the hash it read and the one it declares, the new bytes to a temporary file
     /// beside the original renamed over it, then PostToolUse with the hash it wrote.
-    private static func agentWrite(_ text: String, to url: URL, id: String, engine: ChangeEngine) throws {
+    private static func agentWrite(_ text: String, to url: URL, id: String, engine: ChangeEngine) async throws {
         let before = try String(contentsOf: url, encoding: .utf8)
         let path = realpath(url)
         claim(.preToolUse(.init(id: id, tool: .write, path: path, hash: hex(before), declared: hex(text))), engine)
+        // The tool runs once its PreToolUse hook has returned.
+        try await Task.sleep(for: .milliseconds(100))
         let temporary = url.deletingLastPathComponent().appending(path: "\(url.lastPathComponent).tmp.\(getpid()).\(UInt64(Date().timeIntervalSince1970 * 1000))")
         try Data(text.utf8).write(to: temporary)
         #expect(Darwin.rename(temporary.path, url.path) == 0)

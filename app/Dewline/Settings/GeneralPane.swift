@@ -7,18 +7,16 @@ struct GeneralPane: View {
 
     var body: some View {
         SettingsPage {
-            SettingsSection(note: "Live renders Markdown as you write; Source shows the plain text. View > Show Source (⌥⌘U) switches a window.") {
-                SettingsRow(label: "On launch") {
-                    TextChoice(label: "On launch", selection: $preferences.onLaunch, options: [
-                        ("Reopen last files", .lastFiles), ("Show the launch window", .launchWindow),
+            SettingsSection {
+                SettingsRow(label: "When Dewline opens") {
+                    TextChoice(label: "When Dewline opens", selection: $preferences.launchBehavior, options: [
+                        ("Reopen your notes", .lastFiles), ("Show the launch window", .launchWindow),
                     ])
                 }
-                SettingsRow(label: "Open documents in") {
-                    TextChoice(label: "Open documents in", selection: $preferences.opensInSource, options: [("Live", false), ("Source", true)])
+                SettingsRow(label: "Open notes in", detail: "Source shows the plain Markdown.") {
+                    TextChoice(label: "Open notes in", selection: $preferences.opensInSource, options: [("Live", false), ("Source", true)])
                 }
-            }
-            SettingsSection(note: "The first save of a new document starts here.") {
-                SettingsRow(label: "New files go in") {
+                SettingsRow(label: "New notes go in") {
                     FolderField(url: preferences.newFileFolder) { preferences.newFileFolder = $0 }
                 }
             }
@@ -56,7 +54,7 @@ struct GeneralPane: View {
             }
             RestoreDefaults {
                 let factory = Preferences.factory
-                preferences.onLaunch = factory.onLaunch
+                preferences.launchBehavior = factory.launchBehavior
                 preferences.opensInSource = factory.opensInSource
                 preferences.newFileFolder = factory.newFileFolder
                 updates.setAutomaticChecks(Bundle.main.object(forInfoDictionaryKey: "SUEnableAutomaticChecks") as? Bool ?? false)
