@@ -1,0 +1,65 @@
+name: site
+
+# Deploys dewline.arkwerx.com when site/ changes on main, so a site change goes live without a release. The page
+# serves the update feed too, so the job deploys the feed the last release committed to ark-232/dewline-updates,
+# verified with the app's public key, and checks that the live feed is that file afterwards. release.yml and pull.yml
+# still deploy the site with each release and pull.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "site/**"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: site-deploy
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  site:
+    runs-on: ubuntu-24.04
+    environment: site
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Put the released feed in the site
+        run: |
+          curl -fsSL --proto '=https' https://raw.githubusercontent.com/ark-232/dewline-updates/main/appcast.xml -o site/appcast.xml
+          scripts/verify-feed.sh site/appcast.xml "$(jq -r .SUPublicEDKey app/updater.golden.json)"
+          echo "FEED_SHA256=$(sha256sum site/appcast.xml | cut -d' ' -f1)" >> "$GITHUB_ENV"
+      - name: Require the token
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          [[ -n $CLOUDFLARE_API_TOKEN ]] || { echo "::error::The site environment needs a CLOUDFLARE_API_TOKEN secret (docs/release.md)"; exit 1; }
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - name: Deploy dewline.arkwerx.com
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          WRANGLER_SEND_METRICS: "false"
+        run: |
+          cd site
+          npx --yes wrangler@4.149.0 deploy
+      - name: Check the live feed
+        run: |
+          key=$(jq -r .SUPublicEDKey app/updater.golden.json)
+          for _ in $(seq 30); do
+            if scripts/verify-feed.sh https://dewline.arkwerx.com/appcast.xml "$key" "$FEED_SHA256"; then exit 0; fi
+            sleep 10
+          done
+          echo "::error::the live feed is not the released feed after 5 minutes"
+          exit 1
