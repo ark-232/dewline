@@ -91,6 +91,7 @@ final class KeepBar: NSView {
         self.textView = textView
         live = textView?.marks.live
         focusedChange = nil
+        textView?.keepBarFocus = { [weak self] in self?.focusedChange }
         if let textView {
             NotificationCenter.default.addObserver(self, selector: #selector(caretMoved), name: NSTextView.didChangeSelectionNotification, object: textView)
             observed.append((textView, NSTextView.didChangeSelectionNotification))

@@ -39,3 +39,33 @@ enum Tracking {
         if let window { alert.beginSheetModal(for: window) } else { alert.runModal() }
     }
 }
+
+/// The status bar lines the app posts: an export's result until the next keystroke, and "Change tracking is off" in
+/// every main window while a tracking problem stands.
+@MainActor
+enum FlowStatus {
+    static func start() {
+        let center = NotificationCenter.default
+        center.addObserver(forName: Export.didExport, object: nil, queue: .main) { note in
+            guard let url = note.object as? URL else { return }
+            MainActor.assumeIsolated {
+                StatusBar.post(.init(id: "export", kind: .result, text: "Exported \u{201C}\(url.lastPathComponent)\u{201D}", actions: [
+                    .init(title: "Show in Finder") { _ in NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                ], untilTyping: true))
+            }
+        }
+        center.addObserver(forName: Tracking.didChange, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { NSApp.windows.forEach(postTracking) }
+        }
+        center.addObserver(forName: NSWindow.didBecomeMainNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { NSApp.mainWindow.map(postTracking) }
+        }
+    }
+
+    private static func postTracking(in window: NSWindow) {
+        guard !Tracking.problems.isEmpty, window.windowController is MainWindowController else { return }
+        StatusBar.post(.init(id: "tracking", kind: .problem, text: "Change tracking is off", actions: [
+            .init(title: "Details") { view in Tracking.showDetails(in: view.window) }
+        ]), in: window)
+    }
+}

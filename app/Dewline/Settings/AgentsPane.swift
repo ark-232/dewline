@@ -70,7 +70,7 @@ struct AgentsPane: View {
     }
 
     /// Answered by HookSetup, which lists the files the hooks change before it installs them.
-    static let setUpHooks = Selector(("setUpHooks:"))
+    static let setUpHooks = #selector(AppDelegate.setUpHooks(_:))
 
     /// "Installed", or "Not set up".
     private func installed(_ on: Bool) -> some View {

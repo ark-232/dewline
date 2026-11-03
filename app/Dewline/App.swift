@@ -25,7 +25,7 @@ enum Launch {
     /// session to reopen. The one caller keeps the test host windowless.
     static func shouldShowLaunchWindow(session: Session?, defaults: UserDefaults, openWindows: Int) -> Bool {
         guard openWindows == 0 else { return false }
-        return Preferences(defaults: defaults).onLaunch == .launchWindow || (session?.windows.isEmpty ?? true)
+        return Preferences(defaults: defaults).launchBehavior == .launchWindow || (session?.windows.isEmpty ?? true)
     }
 }
 
@@ -59,6 +59,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        RightPane.makeChanges = { ReviewViewController(for: $0) }
+        Review.closedNotes = {
+            ClosedChanges.all.map { ClosedNote(url: $0.url, origin: $0.origin, time: $0.time) }.sorted { $0.time > $1.time }
+        }
+        FlowStatus.start()
         guard !isTestHost else { return }
         session = Session.load(from: defaults) ?? Session(windows: [])
     }
@@ -120,6 +125,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The test host leaves the real socket alone; ControlSocketTests make their own.
         guard !isTestHost else { return }
         Preferences.shared.keepWindows()
+        if let failure = MarkdownDocument.engineFailure { Tracking.report(.noEngine(failure)) }
+        Capture.shared.register(Preferences.shared.captureShortcut)
+        NotificationCenter.default.addObserver(forName: Preferences.didChange, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { Capture.shared.register(Preferences.shared.captureShortcut) }
+        }
         Export.publishPreviewStylesheet()
         NotificationCenter.default.addObserver(forName: ThemeStore.didChange, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated { Export.publishPreviewStylesheet() }
@@ -447,6 +457,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func capture(_ sender: Any?) {
         Capture.show()
+    }
+
+    /// Settings > Agents > Set Up… and the agent panel's Set Up: installs the hooks after a sheet listing the files.
+    @objc func setUpHooks(_ sender: Any?) {
+        HookSetup.install(from: NSApp.keyWindow ?? NSApp.mainWindow)
     }
 
     /// File > Join Shared Note…: the invite link, pasted.

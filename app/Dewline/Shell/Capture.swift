@@ -108,4 +108,16 @@ final class Capture: NSObject, NSTextFieldDelegate {
         let id = EventHotKeyID(signature: OSType(0x6477_6C6E), id: 1)  // "dwln"
         RegisterEventHotKey(key, modifiers, id, GetApplicationEventTarget(), 0, &hotKey)
     }
+
+    /// Registers Settings > Files > Capture shortcut, or nothing when it is empty.
+    func register(_ shortcut: Preferences.Shortcut?) {
+        guard let shortcut else { return register(key: nil, modifiers: 0) }
+        let flags = shortcut.modifiers
+        var modifiers: UInt32 = 0
+        if flags.contains(.command) { modifiers |= UInt32(cmdKey) }
+        if flags.contains(.option) { modifiers |= UInt32(optionKey) }
+        if flags.contains(.control) { modifiers |= UInt32(controlKey) }
+        if flags.contains(.shift) { modifiers |= UInt32(shiftKey) }
+        register(key: UInt32(shortcut.keyCode), modifiers: modifiers)
+    }
 }

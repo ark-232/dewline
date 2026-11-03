@@ -740,7 +740,7 @@ struct JourneyTests {
         #expect(Launch.shouldShowLaunchWindow(session: Session(windows: []), defaults: defaults, openWindows: 0))
         #expect(Launch.shouldShowLaunchWindow(session: nil, defaults: defaults, openWindows: 0))
         #expect(!Launch.shouldShowLaunchWindow(session: nil, defaults: defaults, openWindows: 1))
-        Preferences(defaults: defaults).onLaunch = .launchWindow
+        Preferences(defaults: defaults).launchBehavior = .launchWindow
         #expect(Launch.shouldShowLaunchWindow(session: one, defaults: defaults, openWindows: 0))
     }
 
