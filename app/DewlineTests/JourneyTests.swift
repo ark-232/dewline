@@ -557,6 +557,20 @@ struct JourneyTests {
         }
     }
 
+    // MARK: The test host
+
+    /// The test host is a build of its own, so what a test opens lands in its defaults, Application Support and
+    /// recent documents, never the app's.
+    @Test func theTestHostKeepsItsOwnDefaults() throws {
+        let id = try #require(Bundle.main.bundleIdentifier)
+        #expect(id == "dev.arkwerx.dewline.testhost")
+        let key = "JourneyTestHostProbe"
+        UserDefaults.standard.set(true, forKey: key)
+        defer { UserDefaults.standard.removeObject(forKey: key) }
+        #expect(UserDefaults.standard.persistentDomain(forName: id)?[key] as? Bool == true)
+        #expect(UserDefaults.standard.persistentDomain(forName: "dev.arkwerx.dewline")?[key] == nil)
+    }
+
     // MARK: Error paths
 
     /// A file that is not UTF-8, and a path that is a FIFO, refuse to open at once and are never written; a file
