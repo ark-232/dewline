@@ -101,6 +101,7 @@ html { scroll-behavior: smooth; scroll-padding-top: calc(var(--top-h) + 1rem); }
 .prose strong { font-weight: 500; color: var(--ink); }
 .prose a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 0.22em; }
 .prose a:hover { text-decoration-color: currentColor; }
+.prose a.btn { color: var(--on-dawn); text-decoration: none; }
 .prose :not(pre) > code {
   padding: 0.0625em 0.3125em; border-radius: 0.25rem; background: var(--surface);
   color: var(--ink); font-size: 0.875em; overflow-wrap: anywhere;
