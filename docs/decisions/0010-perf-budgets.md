@@ -13,4 +13,6 @@ Four of the plan's budgets were set before anything was measured. Three perf pas
 
 The other ten budgets are unchanged.
 
-Reopens if: the Rust library loses a large dependency (Mermaid, Loro or the sync stack), which lowers cold launch; TextKit or AppKit changes the keystroke path; or a pass finds a piece of launch worth more than 20 ms.
+**2 Nov 2026, for 0.1.1.** The owner raised idle memory with a 10 MB document from 150 MB to 200 MB. The 0.1.1 run measured 186 MB, up from 132 MB at 0.1.0, after the redesign added the right pane (preview, agent and changes), link previews and the status bar. The 1 MB budget stays at 80 MB (69.8 MB measured). Work to bring the 10 MB footprint back down continues in its own PR. The owner also raised keystroke p50 at 1 MB from 9.5 ms to 10 ms; the 0.1.1 run measured 9.8 ms with a clock probe of 52.9 µs against 44.5 µs in the 0.1.0 run, so the CPU ran about 19% slower.
+
+Reopens if: the memory work lands and the 10 MB footprint falls back near 132 MB, the Rust library loses a large dependency (Mermaid, Loro or the sync stack), which lowers cold launch; TextKit or AppKit changes the keystroke path; or a pass finds a piece of launch worth more than 20 ms.
