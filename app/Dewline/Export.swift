@@ -1,5 +1,6 @@
 import AppKit
 import MdCore
+import PDFKit
 import UniformTypeIdentifiers
 import WebKit
 
@@ -23,7 +24,7 @@ enum Export {
             switch self {
             case .html: "HTML"
             case .pdf: "PDF"
-            case .docx: "DOCX"
+            case .docx: "Word"
             }
         }
     }
@@ -120,13 +121,24 @@ enum Export {
         """
     }
 
-    /// The save panel for the window's document, set to `format`; a menu in the panel switches the format.
+    /// The format File > Export… last wrote, which the panel starts on.
+    static let formatKey = "DewlineExportFormat"
+    /// The last file written, which the status bar names with Show in Finder.
+    private(set) static var lastExport: URL?
+    static let didExport = Notification.Name("DewlineDidExport")
+
+    /// File > Export…: the save panel for the window's document with a Format menu (PDF, HTML, Word), starting on the
+    /// format last used, else `format`.
     static func run(for document: MarkdownDocument, text: String, format: Format, in window: NSWindow) {
         let panel = NSSavePanel()
         let title = document.fileURL?.deletingPathExtension().lastPathComponent ?? document.displayName ?? "Untitled"
+        let start = (UserDefaults.standard.object(forKey: formatKey) as? Int).flatMap(Format.init) ?? format
         let formats = NSPopUpButton(frame: .zero, pullsDown: false)
-        formats.addItems(withTitles: Format.allCases.map(\.name))
-        formats.selectItem(at: format.rawValue)
+        for choice in [Format.pdf, .html, .docx] {
+            formats.addItem(withTitle: choice.name)
+            formats.lastItem?.tag = choice.rawValue
+        }
+        formats.selectItem(withTag: start.rawValue)
         let label = NSTextField(labelWithString: "Format:")
         let accessory = NSStackView(views: [label, formats])
         accessory.edgeInsets = NSEdgeInsets(top: 8, left: 16, bottom: 8, right: 16)
@@ -134,25 +146,42 @@ enum Export {
         panel.isExtensionHidden = false
         panel.canCreateDirectories = true
         panel.nameFieldStringValue = title
-        func choose(_ format: Format) {
-            panel.allowedContentTypes = [format.type]
-        }
-        choose(format)
-        let chooser = PopUpTarget { choose(Format(rawValue: $0) ?? .html) }
+        panel.allowedContentTypes = [start.type]
+        let chooser = PopUpTarget { panel.allowedContentTypes = [(Format(rawValue: $0) ?? .pdf).type] }
         formats.target = chooser
         formats.action = #selector(PopUpTarget.changed(_:))
         let folder = document.fileURL?.deletingLastPathComponent()
         panel.beginSheetModal(for: window) { response in
             withExtendedLifetime(chooser) {}
-            guard response == .OK, let url = panel.url, let format = Format(rawValue: formats.indexOfSelectedItem) else { return }
+            guard response == .OK, let url = panel.url, let format = Format(rawValue: formats.selectedTag()) else { return }
+            UserDefaults.standard.set(format.rawValue, forKey: formatKey)
             Task { @MainActor in
                 do {
                     try await write(text, title: title, as: format, to: url, folder: folder)
+                    exported(url)
                 } catch {
                     document.presentError(error, modalFor: window, delegate: nil, didPresent: nil, contextInfo: nil)
                 }
             }
         }
+    }
+
+    /// An export finished: the status bar says "Exported “Launch plan.pdf”" with Show in Finder.
+    static func exported(_ url: URL) {
+        lastExport = url
+        NotificationCenter.default.post(name: didExport, object: url)
+    }
+
+    /// File > Print…: the note laid out as its PDF export, in the print panel.
+    static func print(_ text: String, title: String, folder: URL?, on window: NSWindow) async throws {
+        let url = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString + ".pdf")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try await write(text, title: title, as: .pdf, to: url, folder: folder)
+        guard let pdf = PDFDocument(data: try Data(contentsOf: url)), let operation = pdf.printOperation(for: .shared, scalingMode: .pageScaleNone, autoRotate: true) else {
+            throw Failure(errorDescription: "The note couldn\u{2019}t be laid out for printing.")
+        }
+        operation.jobTitle = title
+        operation.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
     }
 }
 

@@ -47,58 +47,24 @@ struct Hairline: View {
     }
 }
 
-/// A rounded surface on the frame, as the main window's islands are: 10 pt corners and a 1 px edge.
-struct Island: View {
-    let fill: Token
-    @Environment(\.colorSchemeContrast) private var contrast
-    @Environment(\.displayScale) private var scale
-
-    var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
-        shape.fill(Station.color(fill))
-            .overlay(shape.strokeBorder(contrast == .increased ? Station.color(.ink3) : Station.stroke, lineWidth: 1 / scale))
-    }
-}
-
-/// The horizon under a pane's title: the hairline across the island, lit in `signal` at its leading end with the
-/// glow, fading out over its last part.
-struct PaneHorizon: View {
-    @Environment(\.colorScheme) private var scheme
-
-    var body: some View {
-        ZStack(alignment: .leading) {
-            Hairline()
-            LinearGradient(
-                stops: [.init(color: Station.color(.signal), location: 0), .init(color: Station.color(.signal), location: 0.8),
-                        .init(color: Station.color(.signal).opacity(0), location: 1)],
-                startPoint: .leading, endPoint: .trailing
-            )
-            .frame(width: 128, height: 2)
-            .shadow(color: Station.color(.glow).opacity(Double(Chrome.glowOpacity(dark: scheme == .dark))), radius: 3)
-        }
-        .frame(height: 3)
-        .accessibilityHidden(true)
-    }
-}
-
 /// A pane's sections down a scroll view.
 struct SettingsPage<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 30) {
+            VStack(alignment: .leading, spacing: 24) {
                 content
             }
-            .padding(.horizontal, 28)
-            .padding(.top, 22)
-            .padding(.bottom, 28)
+            .padding(.horizontal, 24)
+            .padding(.top, 20)
+            .padding(.bottom, 24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
 
-/// A sentence-case label in Bricolage 11.5 / 600 `ink3`, a hairline over each row, and a note under the rows.
+/// A sentence-case label in SF 11 medium `ink2`, the rows, and at most one line of help under them.
 struct SettingsSection<Content: View>: View {
     var title: String?
     /// Mono `ink3` at the label's right, such as a count.
@@ -113,8 +79,7 @@ struct SettingsSection<Content: View>: View {
                     if let title {
                         Text(title)
                             .font(Station.section)
-                            .kerning(Chrome.sectionKern)
-                            .foregroundStyle(Station.color(.ink3))
+                            .foregroundStyle(Station.color(.ink2))
                             .accessibilityAddTraits(.isHeader)
                     }
                     Spacer()
@@ -135,7 +100,7 @@ struct SettingsSection<Content: View>: View {
     }
 }
 
-/// Explanation under a section: Bricolage 12 `ink3`, wrapping.
+/// Help under a section or row: SF 12 `ink2`, wrapping.
 struct SettingsNote: View {
     let text: String
 
@@ -146,14 +111,14 @@ struct SettingsNote: View {
     var body: some View {
         Text(text)
             .font(Station.small)
-            .foregroundStyle(Station.color(.ink3))
+            .foregroundStyle(Station.color(.ink2))
             .lineSpacing(2)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
-/// One setting: its name in a 190 pt column and its control after, with a hairline above.
+/// One setting: its name in a 230 pt column and its control after.
 struct SettingsRow<Control: View>: View {
     let label: String
     var detail: String?
@@ -161,7 +126,6 @@ struct SettingsRow<Control: View>: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Hairline()
             HStack(alignment: .center, spacing: 16) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(label)
@@ -170,95 +134,50 @@ struct SettingsRow<Control: View>: View {
                     if let detail {
                         Text(detail)
                             .font(Station.small)
-                            .foregroundStyle(Station.color(.ink3))
+                            .foregroundStyle(Station.color(.ink2))
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                .frame(width: 190, alignment: .leading)
+                .frame(width: 230, alignment: .leading)
                 control
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .accessibilityElement(children: .contain)
-            .padding(.vertical, 9)
-            .frame(minHeight: 44)
+            .padding(.vertical, 5)
+            .frame(minHeight: 32)
         }
     }
 }
 
-/// Words to pick one of, drawn as text: the chosen word in `ink` with the signal tick under it, the others in `ink3`.
-/// No fill. VoiceOver reads it as a picker.
+/// One of a few choices: a segmented control for up to three short ones, else a pop-up menu.
 struct TextChoice<Value: Hashable>: View {
     let label: String
     @Binding var selection: Value
     let options: [(String, Value)]
 
     var body: some View {
-        HStack(spacing: 20) {
-            ForEach(options.indices, id: \.self) { index in
-                Button(options[index].0) { selection = options[index].1 }
-                    .buttonStyle(ChoiceStyle(selected: selection == options[index].1))
-            }
+        let picker = Picker(label, selection: $selection) {
+            ForEach(options.indices, id: \.self) { Text(options[$0].0).tag(options[$0].1) }
         }
-        .accessibilityRepresentation {
-            Picker(label, selection: $selection) {
-                ForEach(options.indices, id: \.self) { Text(options[$0].0).tag(options[$0].1) }
-            }
+        .labelsHidden()
+        .fixedSize()
+        if options.count <= 3, options.allSatisfy({ $0.0.count <= 12 }) {
+            picker.pickerStyle(.segmented)
+        } else {
+            picker.pickerStyle(.menu)
         }
     }
 }
 
-/// On and Off as words, drawn like `TextChoice`. VoiceOver reads it as a switch.
+/// A switch.
 struct OnOff: View {
     let label: String
     @Binding var isOn: Bool
 
     var body: some View {
-        HStack(spacing: 20) {
-            Button("On") { isOn = true }
-                .buttonStyle(ChoiceStyle(selected: isOn))
-            Button("Off") { isOn = false }
-                .buttonStyle(ChoiceStyle(selected: !isOn))
-        }
-        .accessibilityRepresentation {
-            Toggle(label, isOn: $isOn)
-        }
-    }
-}
-
-private struct ChoiceStyle: ButtonStyle {
-    let selected: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        ChoiceLabel(configuration: configuration, selected: selected)
-    }
-}
-
-private struct ChoiceLabel: View {
-    let configuration: ButtonStyleConfiguration
-    let selected: Bool
-    @State private var hovering = false
-    @Environment(\.isFocused) private var focused
-    @Environment(\.isEnabled) private var enabled
-    @Environment(\.colorSchemeContrast) private var contrast
-
-    var body: some View {
-        configuration.label
-            .font(selected ? Station.labelActive : Station.label)
-            .foregroundStyle(Station.color(selected || configuration.isPressed ? .ink : hovering ? .ink2 : .ink3))
-            .padding(.vertical, 4)
-            .overlay(alignment: .bottom) {
-                if selected {
-                    Capsule()
-                        .fill(Station.color(.signal))
-                        .frame(height: contrast == .increased ? 3 : 2)
-                        .offset(y: 3)
-                }
-            }
-            .overlay { FocusRing(on: focused, radius: 4).padding(-4) }
-            .opacity(enabled ? 1 : 0.45)
-            .contentShape(.rect)
-            .onHover { hovering = $0 }
-            .focusEffectDisabled()
+        Toggle(label, isOn: $isOn)
+            .toggleStyle(.switch)
+            .labelsHidden()
     }
 }
 

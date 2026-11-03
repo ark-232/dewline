@@ -48,6 +48,8 @@ public final class ChangeEngine: Sendable {
         case claude, codex, cursor
         /// The first-run demo in Welcome.md.
         case demo
+        /// An agent in the agent panel; the session names it.
+        case acp
     }
 
     public enum Decision: Sendable {
@@ -80,6 +82,9 @@ public final class ChangeEngine: Sendable {
 
     public struct Opened: Sendable {
         public let doc: UInt64
+        /// An agent wrote the file while it was closed: `text` is what the write replaced, and the next landing brings
+        /// the write in, marked.
+        public let closed: Bool
         /// None when the file is not UTF-8 text.
         public let text: String?
         /// Whether the file starts with a byte-order mark, which `text` leaves out.
@@ -133,9 +138,28 @@ public final class ChangeEngine: Sendable {
         let opened = try Self.call { try engine.open(path: url.path) }
         let gitdir = opened.gitdir.map { URL(fileURLWithPath: $0, isDirectory: true) }
         guard case .text(let bom) = opened.contents else {
-            return Opened(doc: opened.doc, text: nil, bom: false, gitdir: gitdir)
+            return Opened(doc: opened.doc, closed: false, text: nil, bom: false, gitdir: gitdir)
         }
-        return Opened(doc: opened.doc, text: try Self.call { try engine.text(doc: opened.doc) }, bom: bom, gitdir: gitdir)
+        let text = try Self.call { try engine.text(doc: opened.doc) }
+        return Opened(doc: opened.doc, closed: opened.closed, text: text, bom: bom, gitdir: gitdir)
+    }
+
+    /// A file an agent wrote while no document had it open.
+    public struct ClosedChange: Sendable, Equatable {
+        public let url: URL
+        public let origin: Origin
+        public let time: Date
+    }
+
+    /// `origin` is about to write the file at `url`, which holds `before`. Unless the file is open, it is listed in
+    /// `closedChanges` until it opens, and opening it lands the write as marked changes.
+    public func closedWrite(_ url: URL, origin: Origin, before: Data) throws(Failure) {
+        try Self.call { try engine.closedWrite(path: url.path, origin: origin.ffi, before: before) }
+    }
+
+    /// Files written while closed, oldest first.
+    public func closedChanges() -> [ClosedChange] {
+        engine.closedChanges().map { ClosedChange(url: URL(fileURLWithPath: $0.path), origin: Origin($0.origin), time: $0.time) }
     }
 
     /// Whether the file differs from the base.
@@ -336,6 +360,7 @@ extension ChangeEngine.Vendor {
         case .codex: .codex
         case .cursor: .cursor
         case .demo: .demo
+        case .acp: .acp
         }
     }
 
@@ -345,6 +370,7 @@ extension ChangeEngine.Vendor {
         case .codex: .codex
         case .cursor: .cursor
         case .demo: .demo
+        case .acp: .acp
         }
     }
 }

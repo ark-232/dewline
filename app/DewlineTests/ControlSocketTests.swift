@@ -180,6 +180,7 @@ struct ControlSocketTests {
             edit.replacingOccurrences(of: #""tool":"Edit""#, with: #""tool":"Bash""#),
             edit.replacingOccurrences(of: #""tool":"Edit""#, with: #""tool":"apply_patch""#),
             edit.replacingOccurrences(of: #""vendor":"claude""#, with: #""vendor":"codex""#),
+            edit.replacingOccurrences(of: #""vendor":"claude","#, with: #""vendor":"acp","#).replacingOccurrences(of: #""tool":"Edit""#, with: #""tool":"Write""#),
             edit.replacingOccurrences(of: #""tool_use_id":"t1","#, with: ""),
             edit.replacingOccurrences(of: #""path":"/r/plan.md""#, with: #""path":"plan.md""#),
             edit.replacingOccurrences(of: #""/r/plan.md""#, with: #""/r/\#(String(repeating: "p", count: 1024))""#),

@@ -5,6 +5,13 @@ options:
   deploymentTarget:
     macOS: "26.0"
 
+# Test is Debug under other bundle IDs, so the test host keeps its own defaults, Application Support and recent
+# documents instead of the app's.
+configs:
+  Debug: debug
+  Test: debug
+  Release: release
+
 settings:
   base:
     SWIFT_VERSION: "6.0"
@@ -76,6 +83,9 @@ targets:
         # Ink, not Apple blue, fills the controls AppKit draws: default buttons, checkboxes, selected segments. Signal
         # draws lines and never fills a control (Station rule 1).
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+      configs:
+        Test:
+          PRODUCT_BUNDLE_IDENTIFIER: dev.arkwerx.dewline.testhost
     entitlements:
       path: Dewline/Dewline.entitlements
       properties:
@@ -120,9 +130,6 @@ targets:
             UTTypeTagSpecification:
               public.filename-extension: [md, markdown, mdown, mkd]
               public.mime-type: [text/markdown]
-    scheme:
-      testTargets:
-        - DewlineTests
 
   DewlinePreview:
     type: app-extension
@@ -138,6 +145,9 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: Dewline Preview
         INFOPLIST_KEY_NSHumanReadableCopyright: Copyright 2026 ArkWerx LLC
+      configs:
+        Test:
+          PRODUCT_BUNDLE_IDENTIFIER: dev.arkwerx.dewline.testhost.preview
     entitlements:
       path: QuickLook/DewlinePreview.entitlements
       properties:
@@ -166,3 +176,23 @@ targets:
       base:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: dev.arkwerx.dewline.tests
+      configs:
+        Test:
+          PRODUCT_BUNDLE_IDENTIFIER: dev.arkwerx.dewline.testhost.tests
+
+schemes:
+  Dewline:
+    build:
+      targets:
+        Dewline: all
+    run:
+      config: Debug
+    test:
+      config: Test
+      targets: [DewlineTests]
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

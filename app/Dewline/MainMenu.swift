@@ -1,5 +1,14 @@
 import AppKit
 
+/// What the window answers through the responder chain: the right pane's tabs, Share, and reopening a closed tab.
+@MainActor @objc protocol ShellActions {
+    func togglePreview(_ sender: Any?)
+    func toggleAgent(_ sender: Any?)
+    func toggleChanges(_ sender: Any?)
+    func shareNote(_ sender: Any?)
+    func reopenClosedTab(_ sender: Any?)
+}
+
 @MainActor
 enum MainMenu {
     static func build() -> NSMenu {
@@ -42,25 +51,32 @@ enum MainMenu {
 
     private static func fileMenu() -> NSMenu {
         let menu = NSMenu(title: "File")
-        menu.addItem(withTitle: "New", action: #selector(AppDelegate.newDocument(_:)), keyEquivalent: "n")
-        menu.addItem(withTitle: "New Tab", action: #selector(NSResponder.newWindowForTab(_:)), keyEquivalent: "t")
-        menu.addItem(withTitle: "Open…", action: #selector(NSDocumentController.openDocument(_:)), keyEquivalent: "o")
-        let folder = menu.addItem(withTitle: "Open Folder…", action: #selector(AppDelegate.openFolder(_:)), keyEquivalent: "o")
+        menu.addItem(withTitle: "New Note", action: #selector(AppDelegate.newNote(_:)), keyEquivalent: "n")
+        menu.addItem(withTitle: "New Folder", action: #selector(AppDelegate.newFolder(_:)), keyEquivalent: "N")
+        let window = menu.addItem(withTitle: "New Window", action: #selector(AppDelegate.newWindow(_:)), keyEquivalent: "n")
+        window.keyEquivalentModifierMask = [.command, .option]
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Open\u{2026}", action: #selector(NSDocumentController.openDocument(_:)), keyEquivalent: "o")
+        let folder = menu.addItem(withTitle: "Open Folder\u{2026}", action: #selector(AppDelegate.openFolder(_:)), keyEquivalent: "o")
         folder.keyEquivalentModifierMask = [.command, .option]
-        menu.addItem(withTitle: "Quick Open…", action: #selector(AppDelegate.quickOpen(_:)), keyEquivalent: "O")
+        menu.addItem(withTitle: "Quick Open\u{2026}", action: #selector(AppDelegate.quickOpen(_:)), keyEquivalent: "O")
+        menu.addItem(withTitle: "Open Inbox", action: #selector(AppDelegate.openInbox(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Today\u{2019}s Note", action: #selector(AppDelegate.openTodaysNote(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Capture\u{2026}", action: #selector(AppDelegate.capture(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Reopen Closed Tab", action: #selector(ShellActions.reopenClosedTab(_:)), keyEquivalent: "T")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         menu.addItem(withTitle: "Save", action: #selector(NSDocument.save(_:)), keyEquivalent: "s")
-        let snapshots = NSMenu(title: "Snapshots")
-        snapshots.delegate = SnapshotsMenu.shared
-        menu.addItem(withTitle: "Snapshots", action: nil, keyEquivalent: "").submenu = snapshots
+        menu.addItem(withTitle: "Rename\u{2026}", action: #selector(NSDocument.rename(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Duplicate", action: #selector(AppDelegate.duplicateNote(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Move to Trash", action: #selector(AppDelegate.trashNote(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Earlier Versions\u{2026}", action: #selector(AppDelegate.showEarlierVersions(_:)), keyEquivalent: "")
         menu.addItem(.separator())
-        let html = menu.addItem(withTitle: "Export as HTML…", action: #selector(MarkdownDocument.exportDocument(_:)), keyEquivalent: "")
-        html.tag = Export.Format.html.rawValue
-        let pdf = menu.addItem(withTitle: "Export as PDF…", action: #selector(MarkdownDocument.exportDocument(_:)), keyEquivalent: "E")
-        pdf.tag = Export.Format.pdf.rawValue
-        let docx = menu.addItem(withTitle: "Export as DOCX…", action: #selector(MarkdownDocument.exportDocument(_:)), keyEquivalent: "")
-        docx.tag = Export.Format.docx.rawValue
+        menu.addItem(withTitle: "Share\u{2026}", action: #selector(ShellActions.shareNote(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Join Shared Note\u{2026}", action: #selector(AppDelegate.joinSharedNote(_:)), keyEquivalent: "")
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Export\u{2026}", action: #selector(MarkdownDocument.exportDocument(_:)), keyEquivalent: "E").tag = Export.Format.pdf.rawValue
+        menu.addItem(withTitle: "Print\u{2026}", action: #selector(AppDelegate.printNote(_:)), keyEquivalent: "p")
         return menu
     }
 
@@ -134,21 +150,30 @@ enum MainMenu {
 
     private static func viewMenu() -> NSMenu {
         let menu = NSMenu(title: "View")
-        menu.addItem(withTitle: "Command Palette…", action: #selector(AppDelegate.showCommandPalette(_:)), keyEquivalent: "P")
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "Review Changes", action: #selector(ReviewPanel.toggleReview(_:)), keyEquivalent: "R").target = ReviewPanel.shared
-        menu.addItem(withTitle: "Follow Changes", action: #selector(ReviewPanel.toggleFollow(_:)), keyEquivalent: "").target = ReviewPanel.shared
-        menu.addItem(.separator())
+        for (title, action, key) in [
+            ("Preview", #selector(ShellActions.togglePreview(_:)), "p"), ("Agent", #selector(ShellActions.toggleAgent(_:)), "a"),
+        ] {
+            menu.addItem(withTitle: title, action: action, keyEquivalent: key).keyEquivalentModifierMask = [.command, .option]
+        }
+        menu.addItem(withTitle: "Changes", action: #selector(ShellActions.toggleChanges(_:)), keyEquivalent: "R")
         let sidebar = menu.addItem(withTitle: "Show Sidebar", action: #selector(NSSplitViewController.toggleSidebar(_:)), keyEquivalent: "s")
         sidebar.keyEquivalentModifierMask = [.command, .control]
-        menu.addItem(withTitle: "Show Previous Tab", action: #selector(MainWindowController.showPreviousTab(_:)), keyEquivalent: "{")
-        menu.addItem(withTitle: "Show Next Tab", action: #selector(MainWindowController.showNextTab(_:)), keyEquivalent: "}")
+        menu.addItem(withTitle: "Command Palette\u{2026}", action: #selector(AppDelegate.showCommandPalette(_:)), keyEquivalent: "P")
         menu.addItem(.separator())
         let source = menu.addItem(withTitle: "Show Source", action: #selector(EditorTextView.toggleSource(_:)), keyEquivalent: "u")
         source.keyEquivalentModifierMask = [.command, .option]
         menu.addItem(withTitle: "Focus", action: #selector(EditorTextView.toggleFocusMode(_:)), keyEquivalent: "D")
-        menu.addItem(withTitle: "Typewriter", action: #selector(EditorTextView.toggleTypewriterMode(_:)), keyEquivalent: "T")
+        menu.addItem(withTitle: "Typewriter", action: #selector(EditorTextView.toggleTypewriterMode(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Follow Changes", action: #selector(FollowChanges.toggleFollow(_:)), keyEquivalent: "").target = FollowChanges.shared
         menu.addItem(.separator())
+        menu.addItem(withTitle: "Show Previous Tab", action: #selector(MainWindowController.showPreviousTab(_:)), keyEquivalent: "{")
+        menu.addItem(withTitle: "Show Next Tab", action: #selector(MainWindowController.showNextTab(_:)), keyEquivalent: "}")
+        menu.addItem(withTitle: "Folding", action: nil, keyEquivalent: "").submenu = foldMenu()
+        return menu
+    }
+
+    private static func foldMenu() -> NSMenu {
+        let menu = NSMenu(title: "Folding")
         let left = String(UnicodeScalar(NSLeftArrowFunctionKey)!)
         let right = String(UnicodeScalar(NSRightArrowFunctionKey)!)
         for (title, action, key, shift) in [

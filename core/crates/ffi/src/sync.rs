@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use dewline_sync::{Listener, Session, Status};
+use dewline_sync::{Listener, Net, Session, Status};
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum CollabError {
@@ -69,6 +69,14 @@ fn key(bytes: Vec<u8>) -> Result<[u8; 32], CollabError> {
     })
 }
 
+fn net(loopback: bool) -> Net {
+    if loopback {
+        Net::Loopback
+    } else {
+        Net::Internet
+    }
+}
+
 fn peers(peers: Vec<dewline_sync::Peer>) -> Vec<CollabPeer> {
     peers
         .into_iter()
@@ -85,15 +93,18 @@ pub struct Collab(Session);
 #[uniffi::export]
 impl Collab {
     /// Shares `text` as `file_name`, with `node_key` from the Keychain.
+    /// `loopback` listens on 127.0.0.1 only, with no relay, for tests.
     #[uniffi::constructor]
     pub fn host(
         node_key: Vec<u8>,
         name: String,
         file_name: String,
         text: String,
+        loopback: bool,
         listener: Arc<dyn CollabListener>,
     ) -> Result<Arc<Collab>, CollabError> {
-        let session = Session::host(
+        let session = Session::host_on(
+            net(loopback),
             key(node_key)?,
             &name,
             &file_name,
@@ -109,9 +120,16 @@ impl Collab {
         node_key: Vec<u8>,
         name: String,
         link: String,
+        loopback: bool,
         listener: Arc<dyn CollabListener>,
     ) -> Result<Arc<Collab>, CollabError> {
-        let session = Session::join(key(node_key)?, &name, &link, Box::new(Forward(listener)))?;
+        let session = Session::join_on(
+            net(loopback),
+            key(node_key)?,
+            &name,
+            &link,
+            Box::new(Forward(listener)),
+        )?;
         Ok(Arc::new(Collab(session)))
     }
 
@@ -129,6 +147,11 @@ impl Collab {
             Status::Removed => CollabStatus::Removed,
             Status::Failed(message) => CollabStatus::Failed { message },
         }
+    }
+
+    /// The host's name; empty when a guest's link didn't carry one.
+    pub fn host_name(&self) -> String {
+        self.0.host_name()
     }
 
     pub fn is_host(&self) -> bool {

@@ -1,5 +1,6 @@
-//! `dewline://join?node=…&relay=…&addr=…&cap=…`: the host's node address and
-//! a one-time join capability. Binary values are lowercase base32 without
+//! `dewline://join?node=…&relay=…&addr=…&name=…&cap=…`: the host's node
+//! address, the host's name for the guest's wait, and a one-time join
+//! capability. Binary values are lowercase base32 without
 //! padding; the relay URL is percent-encoded.
 
 use std::net::SocketAddr;
@@ -12,6 +13,8 @@ const PREFIX: &str = "dewline://join?";
 pub struct Invite {
     pub host: EndpointAddr,
     pub capability: [u8; 32],
+    /// The host's name; empty in a link from before names were sent.
+    pub name: String,
 }
 
 fn base32(bytes: &[u8]) -> String {
@@ -65,17 +68,23 @@ impl Invite {
                 _ => {}
             }
         }
-        link + &format!("&cap={}", base32(&self.capability))
+        link + &format!(
+            "&name={}&cap={}",
+            escape(&self.name),
+            base32(&self.capability)
+        )
     }
 
     pub fn parse(link: &str) -> Option<Invite> {
         let query = link.trim().strip_prefix(PREFIX)?;
-        let (mut node, mut capability, mut addrs) = (None, None, Vec::new());
+        let (mut node, mut capability, mut addrs, mut name) =
+            (None, None, Vec::new(), String::new());
         for pair in query.split('&') {
             let (key, value) = pair.split_once('=')?;
             match key {
                 "node" => node = Some(PublicKey::from_bytes(&unbase32(value)?).ok()?),
                 "cap" => capability = Some(unbase32(value)?),
+                "name" => name = unescape(value)?,
                 "relay" => addrs.push(TransportAddr::Relay(
                     unescape(value)?.parse::<RelayUrl>().ok()?,
                 )),
@@ -88,6 +97,7 @@ impl Invite {
         Some(Invite {
             host: EndpointAddr::from_parts(node?, addrs),
             capability: capability?,
+            name,
         })
     }
 }

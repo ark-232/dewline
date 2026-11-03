@@ -281,7 +281,7 @@ final class FindInFilesController: NSViewController, NSSearchFieldDelegate, NSOu
         let (matches, count) = (search.matchCount, search.results.count)
         let found = "\(matches.formatted()) \(matches == 1 ? "match" : "matches") in \(count.formatted()) \(count == 1 ? "file" : "files")"
         status.stringValue = if field.stringValue.isEmpty {
-            "Type to search the Markdown files in \(FileManager.default.displayName(atPath: folder.url.path))."
+            "Search the notes in \(FileManager.default.displayName(atPath: folder.url.path))."
         } else if waitsForFiles {
             "Listing files…"
         } else if pending {

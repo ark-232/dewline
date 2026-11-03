@@ -50,13 +50,16 @@ final class LiveFile {
     private var autosaveRefused = false
     private var applying = false
     private var closed = false
+    /// Opened over an agent's write made while the file was closed: the write lands once a text view shows it.
+    private var landsWrite: Bool
     private nonisolated static let log = Logger(subsystem: "dev.arkwerx.dewline", category: "engine")
 
-    init(engine: ChangeEngine, doc: UInt64, url: URL, gitdir: URL?, document: MarkdownDocument) {
+    init(engine: ChangeEngine, doc: UInt64, url: URL, gitdir: URL?, document: MarkdownDocument, closedWrite: Bool = false) {
         self.engine = engine
         self.doc = doc
         self.url = url
         self.document = document
+        landsWrite = closedWrite
         Self.open[Key(engine, doc)] = self
         watchGit(gitdir)
         arm()
@@ -68,6 +71,10 @@ final class LiveFile {
         textView.marks.live = self
         textView.edited = { [weak self] range, delta in self?.edited(range, delta: delta) }
         textView.inputEnded = { [weak self] in self?.inputEnded() }
+        if landsWrite {
+            landsWrite = false
+            Task { await refresh() }
+        }
     }
 
     func close() {
@@ -129,6 +136,9 @@ final class LiveFile {
             case .sessionEnd: ("SessionEnd", nil, nil)
             }
         claims.async {
+            if case .preToolUse(let use) = claim.event, let hash = use.hash {
+                closedWrite(use.path, hash: hash, by: claim, engine: engine)
+            }
             let updates = engine.claim(
                 event: event, vendor: claim.vendor.rawValue, session: claim.session, toolUseId: use?.id,
                 tool: use?.tool.rawValue, path: path, hash: use?.hash, declared: use?.declared)
@@ -147,6 +157,28 @@ final class LiveFile {
                 }
                 if finished { Review.finished(vendor: claim.vendor, session: claim.session) }
             }
+        }
+    }
+
+    /// Before an agent's tool writes a file: keeps the bytes it read, if the file still holds them, so a write to a
+    /// file no tab has open lands marked when it opens (B5). The engine ignores open files.
+    private nonisolated static func closedWrite(_ path: String, hash: String, by claim: ControlSocket.Claim, engine: ChangeEngine) {
+        let vendor: ChangeEngine.Vendor =
+            switch claim.vendor {
+            case .claude: .claude
+            case .codex: .codex
+            case .cursor: .cursor
+            case .demo: .demo
+            case .acp: .acp
+            }
+        let url = URL(fileURLWithPath: path)
+        guard let before = try? Data(contentsOf: url),
+            contentHash(before).map({ String(format: "%02x", $0) }).joined() == hash
+        else { return }
+        do throws(ChangeEngine.Failure) {
+            try engine.closedWrite(url, origin: .agent(vendor, session: claim.session), before: before)
+        } catch {
+            log.error("A closed file's write was not kept: \(String(describing: error), privacy: .public)")
         }
     }
 
@@ -435,12 +467,12 @@ final class LiveFile {
         }
     }
 
-    /// Keeps a change, or both versions of a conflict.
+    /// Keeps the outside writer's text: a change as it landed, a conflict's other version. Cmd-Return.
     func keep(_ change: UInt64) {
-        decide(change, changes[change]?.conflict == true ? .both : .keep)
+        decide(change, changes[change]?.conflict == true ? .other : .keep)
     }
 
-    /// Reverts a change, or keeps your version of a conflict.
+    /// Keeps your text: a change's text before it landed, your version of a conflict. Option-Cmd-Delete.
     func revert(_ change: UInt64) {
         decide(change, changes[change]?.conflict == true ? .keep : .other)
     }
