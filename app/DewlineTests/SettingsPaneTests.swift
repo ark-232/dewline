@@ -16,7 +16,7 @@ struct SettingsPaneTests {
         withDefaults { defaults in
             let home = URL(filePath: "/Users/someone", directoryHint: .isDirectory)
             let preferences = Preferences(defaults: defaults, home: home)
-            #expect(preferences.onLaunch == .lastFiles)
+            #expect(preferences.launchBehavior == .lastFiles)
             #expect(preferences.newFileFolder.path == "/Users/someone/Documents")
             #expect(!preferences.showsIgnored)
             #expect(preferences.attachments == .beside)
@@ -28,7 +28,7 @@ struct SettingsPaneTests {
     @Test func preferencesKeepWhatIsSetUnderTheirKeys() {
         withDefaults { defaults in
             let preferences = Preferences(defaults: defaults)
-            preferences.onLaunch = .launchWindow
+            preferences.launchBehavior = .launchWindow
             preferences.newFileFolder = URL(filePath: "/tmp/notes", directoryHint: .isDirectory)
             preferences.showsIgnored = true
             preferences.attachments = .subfolder
@@ -41,13 +41,13 @@ struct SettingsPaneTests {
             #expect(defaults.string(forKey: Preferences.inboxKey) == "/tmp/notes/Inbox.md")
 
             let reread = Preferences(defaults: defaults)
-            #expect(reread.onLaunch == .launchWindow)
+            #expect(reread.launchBehavior == .launchWindow)
             #expect(reread.newFileFolder.path == "/tmp/notes")
             #expect(reread.showsIgnored)
             #expect(reread.attachments == .subfolder)
             #expect(reread.inbox.path == "/tmp/notes/Inbox.md")
 
-            reread.onLaunch = .lastFiles
+            reread.launchBehavior = .lastFiles
             #expect(defaults.object(forKey: "NSQuitAlwaysKeepsWindows") as? Bool == true)
         }
     }
@@ -58,7 +58,7 @@ struct SettingsPaneTests {
             defaults.set("relative/folder", forKey: "DewlineNewFileFolder")
             defaults.set("cloud", forKey: "DewlineAttachments")
             let preferences = Preferences(defaults: defaults, home: URL(filePath: "/Users/someone", directoryHint: .isDirectory))
-            #expect(preferences.onLaunch == .lastFiles)
+            #expect(preferences.launchBehavior == .lastFiles)
             #expect(preferences.newFileFolder.path == "/Users/someone/Documents")
             #expect(preferences.attachments == .beside)
         }

@@ -15,15 +15,14 @@ struct AppearancePane: View {
         SettingsPage {
             SettingsSection(
                 title: "Theme", trailing: "\(Theme.all.count) + dev pack",
-                note: "Click a theme to use it in \(dark ? "Dark" : "Light"); Control-click to pick the slot. The dev themes port each editor's own palette, and Nord is dark only."
+                note: "Click to use it in \(dark ? "Dark" : "Light"). Control-click for the other."
             ) {
                 LazyVGrid(columns: columns, alignment: .leading, spacing: 18) {
                     ForEach(Theme.all) { ThemeCard(theme: $0, store: store, dark: dark) }
                 }
                 Text("Dev pack")
                     .font(Station.section)
-                    .kerning(Chrome.sectionKern)
-                    .foregroundStyle(Station.color(.ink3))
+                    .foregroundStyle(Station.color(.ink2))
                     .padding(.top, 22)
                     .padding(.bottom, 10)
                 LazyVGrid(columns: columns, alignment: .leading, spacing: 18) {
@@ -42,7 +41,7 @@ struct AppearancePane: View {
                 }
             }
             FontSlots(store: store, library: library, installing: $installing)
-            SettingsSection(title: "The page", note: "Line width counts characters per line at this size; a narrower window fills its width.") {
+            SettingsSection(title: "The page", note: "Line width is in characters at this size.") {
                 SettingsRow(label: "Text size") {
                     KeyStepper(label: "Text size", value: $store.bodySize, range: ThemeStore.bodySizes, step: 1,
                                text: { "\(Int($0)) pt" }, spoken: { "\(Int($0)) points" })
@@ -91,14 +90,14 @@ private struct ThemeCard: View {
             if dark { store.darkTheme = theme } else { store.lightTheme = theme }
         } label: {
             VStack(alignment: .leading, spacing: 8) {
-                MiniWindow(theme: theme, dark: dark, claude: Writer.claude.colors(store.writerHues[.claude]))
+                MiniWindow(theme: theme, dark: dark)
                     .aspectRatio(1.55, contentMode: .fit)
                     .clipShape(card)
                     .overlay(card.strokeBorder(Station.stroke, lineWidth: 1 / scale))
                     .padding(3.5)
                     .overlay(
                         RoundedRectangle(cornerRadius: 12.5, style: .continuous)
-                            .strokeBorder(selected ? Station.color(.signal) : .clear, lineWidth: 1.5)
+                            .strokeBorder(selected ? Station.color(.accent) : .clear, lineWidth: 1.5)
                     )
                 HStack(alignment: .firstTextBaseline) {
                     Text(theme.name)
@@ -126,48 +125,36 @@ private struct ThemeCard: View {
     }
 }
 
-/// The Station window drawn small in a theme's colors: the tinted frame, a sidebar island, and an editor island with
-/// its horizon (the lit segment and a Claude bead) over a title and two lines.
+/// The main window drawn small in a theme's colors: the sidebar on the chrome, a hairline, and the page with a title,
+/// two lines, and one outside change underlined in the accent.
 private struct MiniWindow: View {
     let theme: Theme
     let dark: Bool
-    let claude: (light: OKLCH, dark: OKLCH)
 
     var body: some View {
         let colors = dark ? theme.darkColors : theme.lightColors
-        let bead = Color(nsColor: (dark ? claude.dark : claude.light).color)
         let titleFont = Station.brand(11, weight: 600)
-        let glowOpacity = Double(Chrome.glowOpacity(dark: dark))
         Canvas { context, size in
             func color(_ token: Token) -> Color {
                 Color(nsColor: colors[token] ?? colors[.ink2]!)
             }
-            context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(color(.frame)))
-            let inset: CGFloat = 6
-            let top: CGFloat = 12
-            let side = CGRect(x: inset, y: top, width: (size.width * 0.27).rounded(), height: size.height - top - inset)
-            let editor = CGRect(x: side.maxX + 4, y: top, width: size.width - side.maxX - 4 - inset, height: side.height)
-            context.fill(Path(roundedRect: side, cornerRadius: 4, style: .continuous), with: .color(color(.islandSide)))
-            context.fill(Path(roundedRect: editor, cornerRadius: 4, style: .continuous), with: .color(color(.islandEditor)))
+            context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(color(.paper)))
+            let side = CGRect(x: 0, y: 0, width: (size.width * 0.28).rounded(), height: size.height)
+            context.fill(Path(side), with: .color(color(.chrome)))
+            context.fill(Path(CGRect(x: side.maxX, y: 0, width: 1, height: size.height)), with: .color(color(.rule)))
             for (index, width) in [0.62, 0.44, 0.7].enumerated() {
-                let bar = CGRect(x: side.minX + 7, y: side.minY + 10 + CGFloat(index) * 7, width: (side.width - 14) * width, height: 2)
+                let bar = CGRect(x: side.minX + 8, y: 12 + CGFloat(index) * 7, width: (side.width - 16) * width, height: 2)
                 context.fill(Path(roundedRect: bar, cornerRadius: 1), with: .color(color(.ink2).opacity(0.55)))
             }
-            let line = editor.minY + 6
-            context.fill(Path(CGRect(x: editor.minX, y: line, width: editor.width, height: 1)), with: .color(color(.hairline)))
-            let lit = CGRect(x: editor.minX + 8, y: line - 0.5, width: (editor.width * 0.3).rounded(), height: 2)
-            var glow = context
-            glow.addFilter(.shadow(color: color(.glow).opacity(glowOpacity), radius: 2))
-            glow.fill(Path(roundedRect: lit, cornerRadius: 1), with: .color(color(.signal)))
-            let dot = CGRect(x: lit.minX + lit.width * 0.66 - 3, y: line + 0.5 - 3, width: 6, height: 6)
-            context.fill(Path(ellipseIn: dot.insetBy(dx: -1, dy: -1)), with: .color(color(.islandEditor)))
-            context.fill(Path(ellipseIn: dot), with: .color(bead))
+            let page = CGRect(x: side.maxX + 1, y: 0, width: size.width - side.maxX - 1, height: size.height)
             let title = context.resolve(Text("Field notes").font(titleFont).foregroundStyle(color(.heading)))
-            context.draw(title, at: CGPoint(x: editor.minX + 10, y: editor.minY + 14), anchor: .topLeading)
+            context.draw(title, at: CGPoint(x: page.minX + 10, y: page.minY + 12), anchor: .topLeading)
             for (index, width) in [0.72, 0.5].enumerated() {
-                let bar = CGRect(x: editor.minX + 10, y: editor.minY + 34 + CGFloat(index) * 7, width: (editor.width - 20) * width, height: 2)
+                let bar = CGRect(x: page.minX + 10, y: page.minY + 32 + CGFloat(index) * 7, width: (page.width - 20) * width, height: 2)
                 context.fill(Path(roundedRect: bar, cornerRadius: 1), with: .color(color(.ink2).opacity(0.5)))
             }
+            let mark = CGRect(x: page.minX + 10, y: page.minY + 37, width: (page.width - 20) * 0.3, height: 1)
+            context.fill(Path(mark), with: .color(color(.accent)))
         }
         .accessibilityHidden(true)
     }

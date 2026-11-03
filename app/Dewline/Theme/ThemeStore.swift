@@ -37,7 +37,6 @@ final class ThemeStore {
     @ObservationIgnored private var traited: [NSFont: [UInt32: NSFont]] = [:]
     @ObservationIgnored private var lines: [CGFloat: NSParagraphStyle] = [:]
     @ObservationIgnored private var quote: NSParagraphStyle?
-    @ObservationIgnored private var writerColors: [Writer: NSColor] = [:]
 
     var appearance: Appearance {
         didSet {
@@ -61,10 +60,6 @@ final class ThemeStore {
     var spellCheck: Bool { didSet { save(spellCheck, "SpellCheck") } }
     /// The spaces Tab inserts outside a list, or 0 for a tab character.
     var tabWidth: Int { didSet { save(tabWidth, "TabWidth") } }
-    /// The hues the owner picked, by writer, as chroma and hue; a writer without one keeps its default.
-    var writerHues: [Writer: OKLCH] {
-        didSet { save(Dictionary(uniqueKeysWithValues: writerHues.map { ($0.key.rawValue, [$0.value.c, $0.value.h]) }), "WriterHues") }
-    }
 
     init(defaults: UserDefaults) {
         self.defaults = defaults
@@ -87,11 +82,6 @@ final class ThemeStore {
         smartPunctuation = defaults.bool(forKey: "DewlineSmartPunctuation")
         spellCheck = defaults.object(forKey: "DewlineSpellCheck") as? Bool ?? true
         tabWidth = [2, 4].contains(defaults.integer(forKey: "DewlineTabWidth")) ? defaults.integer(forKey: "DewlineTabWidth") : 0
-        let hues = defaults.dictionary(forKey: "DewlineWriterHues") as? [String: [Double]] ?? [:]
-        writerHues = hues.reduce(into: [:]) { picks, entry in
-            guard let writer = Writer(rawValue: entry.key), entry.value.count == 2 else { return }
-            picks[writer] = OKLCH(l: writer.standard.light.l, c: entry.value[0], h: entry.value[1])
-        }
     }
 
     private func save(_ value: Any, _ key: String) {
@@ -103,7 +93,6 @@ final class ThemeStore {
         traited = [:]
         lines = [:]
         quote = nil
-        writerColors = [:]
         NotificationCenter.default.post(name: Self.didChange, object: self)
     }
 
@@ -116,7 +105,7 @@ final class ThemeStore {
     }
 
     /// The token in the light slot's theme under a light appearance and the dark slot's under a dark one, raised under
-    /// Increase Contrast. The sky falls back to `sidebarTint` in themes without one.
+    /// Increase Contrast.
     func color(_ token: Token) -> NSColor {
         if let color = colors[token] { return color }
         func pick(_ colors: [Token: NSColor]) -> NSColor {
@@ -138,56 +127,9 @@ final class ThemeStore {
         return color
     }
 
-    /// The writer's mark color under the window's appearance (D21): the owner's hue when there is one.
+    /// The writer's mark color: the accent for every outside writer, ink2 for collaborators and you.
     func writerColor(_ writer: Writer) -> NSColor {
-        // Read on a cache hit too, so a view that shows the color observes it.
-        let pick = writerHues[writer]
-        if let color = writerColors[writer] { return color }
-        let colors = writer.colors(pick)
-        let (light, dark) = (colors.light.color, colors.dark.color)
-        let color = NSColor(name: nil) { $0.isDark ? dark : light }
-        writerColors[writer] = color
-        return color
-    }
-
-    /// The theme color within ΔE 8 of `writer`'s, nearest first, across the light slot's light tokens and the dark
-    /// slot's dark ones. A gray token never clashes with a gray writer: their shapes tell them apart.
-    func clash(_ writer: Writer) -> WriterClash? {
-        let colors = writer.colors(writerHues[writer])
-        func nearest(_ colors: (light: OKLCH, dark: OKLCH)) -> (theme: Theme, token: Token, dark: Bool, deltaE: Double)? {
-            var best: (theme: Theme, token: Token, dark: Bool, deltaE: Double)?
-            for (theme, dark, color) in [(lightTheme, false, colors.light), (darkTheme, true, colors.dark)] {
-                for (token, value) in dark ? theme.dark : theme.light where !Token.station.contains(token) && (value.c >= 0.03 || color.c >= 0.03) {
-                    let deltaE = value.deltaE(color)
-                    if deltaE < best?.deltaE ?? .infinity { best = (theme, token, dark, deltaE) }
-                }
-            }
-            return best
-        }
-        guard let near = nearest(colors), near.deltaE < WriterClash.distance else { return nil }
-        var clear: OKLCH?
-        if colors.light.c >= 0.03 {
-            search: for step in 1...180 {
-                for hue in [colors.light.h + Double(step), colors.light.h - Double(step)] {
-                    let candidate = OKLCH(l: colors.light.l, c: colors.light.c, h: (hue + 360).truncatingRemainder(dividingBy: 360))
-                    if let other = nearest(writer.colors(candidate)), other.deltaE >= WriterClash.distance {
-                        clear = candidate
-                        break search
-                    }
-                }
-            }
-        }
-        return WriterClash(theme: near.theme, token: near.token, dark: near.dark, deltaE: near.deltaE, clearHue: clear)
-    }
-
-    /// The backdrop of the slot's theme for a light or dark appearance, under the system's accessibility settings.
-    func backdrop(dark: Bool) -> (tint: OKLCH, sky: [OKLCH]) {
-        let workspace = NSWorkspace.shared
-        return (dark ? darkTheme : lightTheme).backdrop(
-            dark: dark,
-            increasedContrast: workspace.accessibilityDisplayShouldIncreaseContrast,
-            reducedTransparency: workspace.accessibilityDisplayShouldReduceTransparency
-        )
+        color(writer == .collaborator || writer == .you ? .ink2 : .accent)
     }
 
     var bodyFont: NSFont {
@@ -287,9 +229,12 @@ final class ThemeStore {
             return NSFont(descriptor: font.fontDescriptor.addingAttributes([.featureSettings: features]), size: font.pointSize)!
         }
         func display(_ size: CGFloat, _ weight: CGFloat, opticalSize: CGFloat? = nil) -> NSFont {
-            headingFace == Chrome.brandFamily
-                ? Chrome.brand(size, weight: weight, opticalSize: opticalSize)
-                : Faces.font(headingFace, size: size, weight: .semibold)
+            guard headingFace == "Bricolage Grotesque" else { return Faces.font(headingFace, size: size, weight: .semibold) }
+            // The variable font's default instance is 96 pt ExtraBold, so every axis is set.
+            let axes: [String: CGFloat] = ["wght": weight, "opsz": min(max(opticalSize ?? size, 12), 96), "wdth": 100]
+            let variation = Dictionary(uniqueKeysWithValues: axes.map { (NSNumber(value: $0.key.utf8.reduce(0) { $0 << 8 | Int($1) }), $0.value) })
+            return NSFont(descriptor: NSFontDescriptor(fontAttributes: [.family: headingFace, .variation: variation]), size: size)
+                ?? Faces.font(headingFace, size: size, weight: .semibold)
         }
         let heading = switch (level, headingStyle) {
         case (1, .editorial):

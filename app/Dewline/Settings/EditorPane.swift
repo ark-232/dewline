@@ -2,33 +2,35 @@ import SwiftUI
 
 struct EditorPane: View {
     @Bindable var store: ThemeStore
+    @Bindable var preferences: Preferences = .shared
     @AppStorage("DewlineMotion") private var motion = Motion.calm
 
     var body: some View {
         SettingsPage {
-            SettingsSection(note: "Normal, insert and visual modes, with the mode at the window's lower right. :w saves and :q closes. Source mode is View > Show Source (⌥⌘U); General sets which mode windows open in.") {
+            SettingsSection {
+                SettingsRow(label: "Link previews", detail: "Fetches a page's title and picture when a link is shown.") {
+                    OnOff(label: "Link previews", isOn: $preferences.linkPreviews)
+                }
                 SettingsRow(label: "Vim mode") {
                     OnOff(label: "Vim mode", isOn: $store.vimMode)
                 }
             }
-            SettingsSection(title: "Live rendering", note: "Editorial sets the first heading as a display title and section heads in small caps; the file stays plain Markdown. Calm streaks the caret to where a jump such as Find Next lands; Lively does it for clicks and long moves too. With Reduce Motion on, Dewline uses Off.") {
-                SettingsRow(label: "Heading style") {
+            SettingsSection(title: "Live rendering") {
+                SettingsRow(label: "Heading style", detail: "Editorial sets section heads in small caps.") {
                     TextChoice(label: "Heading style", selection: $store.headingStyle, options: [("Standard", .standard), ("Editorial", .editorial)])
                 }
-                SettingsRow(label: "Motion") {
+                SettingsRow(label: "Motion", detail: "Reduce Motion in System Settings turns it off.") {
                     TextChoice(label: "Motion", selection: $motion, options: [("Off", .off), ("Calm", .calm), ("Lively", .lively)])
                 }
-            }
-            SettingsSection(title: "Indentation", note: "In a list, Tab and Shift-Tab indent and outdent the item either way.") {
                 SettingsRow(label: "Tab key inserts") {
                     TextChoice(label: "Tab key inserts", selection: $store.tabWidth, options: [("A tab", 0), ("2 spaces", 2), ("4 spaces", 4)])
                 }
             }
-            SettingsSection(title: "Typing", note: "Smart Punctuation turns straight quotes into curly ones and double hyphens into dashes as you type. Code is left alone.") {
+            SettingsSection(title: "Typing") {
                 SettingsRow(label: "Check spelling as you type") {
                     OnOff(label: "Check spelling as you type", isOn: $store.spellCheck)
                 }
-                SettingsRow(label: "Smart Punctuation") {
+                SettingsRow(label: "Smart Punctuation", detail: "Curly quotes and dashes as you type, outside code.") {
                     OnOff(label: "Smart Punctuation", isOn: $store.smartPunctuation)
                 }
             }
@@ -39,6 +41,7 @@ struct EditorPane: View {
                 store.tabWidth = factory.tabWidth
                 store.spellCheck = factory.spellCheck
                 store.smartPunctuation = factory.smartPunctuation
+                preferences.linkPreviews = Preferences.factory.linkPreviews
                 motion = .calm
             }
         }

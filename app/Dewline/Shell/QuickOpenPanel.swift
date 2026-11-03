@@ -40,24 +40,26 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
         case line(Int)
         case prefix(String, title: String)
         case choice(Int, positions: [Int])
+        /// A note to make in the folder when no file matches.
+        case create(String)
 
         var selectable: Bool {
             if case .header = self { return false }
             return true
         }
 
-        /// Headers 30 pt; every result one line at 40.
+        /// Headers 26 pt; every result one line at 32.
         var height: CGFloat {
-            if case .header = self { return 30 }
-            return 40
+            if case .header = self { return 26 }
+            return 32
         }
     }
 
-    private static let width: CGFloat = 680
+    private static let width: CGFloat = 600
     /// The input row, the horizon under it and the list's padding above and below.
     private static let chromeHeight: CGFloat = 56 + 1 + 6 + 6
-    /// About seven and a half rows show, so a longer list reads as one that scrolls.
-    private static let listMax: CGFloat = 340
+    /// Nine rows show; a longer list scrolls.
+    private static let listMax: CGFloat = 9 * 32 + 8
     private static let prefixes: [(String, String)] = [
         (">", "Commands and settings"),
         ("@", "Headings in this file"),
@@ -72,11 +74,6 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
         "newWindowForTab:", "openFolder:", "findInFiles:", "toggleSource:", "toggleFocusMode:", "toggleTypewriterMode:",
         "goToLine:", "showSettings:",
     ]
-    /// The Agent changes group, by action, in this order.
-    private static let agentActions = [
-        "keepChange:", "revertChange:", "keepAllChanges:", "revertAllChanges:", "nextChange:", "previousChange:", "toggleReview:",
-    ]
-
     private let field = NSTextField()
     private let mark = DewMark()
     private let chip = ScopeChip()
@@ -152,7 +149,8 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
         field.cell?.isScrollable = true
         field.delegate = self
         field.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let input = NSStackView(views: [mark, chip, field])
+        mark.isHidden = true
+        let input = NSStackView(views: [chip, field])
         input.spacing = 12
         input.alignment = .centerY
         let column = NSTableColumn(identifier: .init("row"))
@@ -162,7 +160,7 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
         table.style = .plain
         table.backgroundColor = .clear
         table.intercellSpacing = .zero
-        table.rowHeight = 40
+        table.rowHeight = 32
         table.refusesFirstResponder = true
         table.allowsTypeSelect = false
         table.dataSource = self
@@ -408,7 +406,7 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
         }
         switch Self.mode(of: query) {
         case .commands(let text):
-            chrome("Command Palette", placeholder: "Run a command or change a setting")
+            chrome("Command Palette", placeholder: "Type a command")
             show(commandRows(text))
         case .help:
             chrome("Palette Prefixes", placeholder: "Pick a prefix")
@@ -432,7 +430,7 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
                 return ranked.map { .heading($0.heading, positions: $0.positions) }
             }
         case .files(let text):
-            chrome("Quick Open", placeholder: "Open a file, or type > for commands")
+            chrome("Quick Open", placeholder: "Find a note. Type > for commands.")
             if text.allSatisfy(\.isWhitespace) {
                 show(restingFileRows())
             } else {
@@ -442,10 +440,10 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
                 }
             }
         case .fileLine(let text, let line):
-            chrome("Go to Line in File", placeholder: "Open a file, or type > for commands")
+            chrome("Go to Line in File", placeholder: "Find a note. Type > for commands.")
             run { panel in await Self.ranked(text, in: panel.files)?.map { .file($0, line: line) } }
         case .fileHeadings(let text, let heading):
-            chrome("Go to Heading in File", placeholder: "Open a file, or type > for commands")
+            chrome("Go to Heading in File", placeholder: "Find a note. Type > for commands.")
             run { panel in
                 guard let top = await Self.ranked(text, in: panel.files)?.first else { return nil }
                 let headings = await panel.headings(of: top.file)
@@ -461,7 +459,6 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
         let word = word ?? scope.flatMap { Self.scopes[$0] }
         chip.title = word ?? ""
         chip.isHidden = word == nil
-        mark.isHidden = word != nil
         placeholder(text)
         updateHorizon()
     }
@@ -477,13 +474,7 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
     /// With nothing typed: files with an agent's changes (three at most), then recents, then pins.
     private func restingFileRows() -> [Row] {
         var rows: [Row] = []
-        let agent = touched.values.sorted { $0.url.lastPathComponent < $1.url.lastPathComponent }.prefix(3)
-        if !agent.isEmpty {
-            rows.append(.header("Agent files"))
-            rows += agent.map { .file(QuickOpenResult(file: QuickOpenFile($0.url, in: folder), positions: []), line: nil) }
-        }
-        let shown = Set(agent.map(\.url.path))
-        let rest = (QuickOpen.rank("", in: files) ?? []).filter { !shown.contains($0.file.url.path) }
+        let rest = QuickOpen.rank("", in: files) ?? []
         let recent = rest.filter { ($0.file.boost ?? 0) < recentCount }
         let pinned = rest.filter { ($0.file.boost ?? 0) >= recentCount }
         if !recent.isEmpty { rows += [.header("Recent")] + recent.map { .file($0, line: nil) } }
@@ -491,15 +482,12 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
         return rows
     }
 
-    /// An unprefixed search's groups: files with an agent's changes, the other files, then the three best commands
-    /// whose titles hold the letters. A lone group shows without its header.
+    /// An unprefixed search's groups: the files, then the three best commands whose titles hold the letters. A lone
+    /// group shows without its header.
     private func mixedRows(_ found: [QuickOpenResult], commands hits: [PaletteHit]) -> [Row] {
-        let agent = found.filter { touched[$0.file.url.path] != nil }
-        let other = found.filter { touched[$0.file.url.path] == nil }
         let commands = hits.filter { !$0.positions.isEmpty }.prefix(3)
         let groups: [(String, [Row])] = [
-            ("Agent files", agent.map { .file($0, line: nil) }),
-            ("Files", other.map { .file($0, line: nil) }),
+            ("Notes", found.map { .file($0, line: nil) }),
             ("Commands", commands.map(Row.command)),
         ].filter { !$0.1.isEmpty }
         guard groups.count > 1 else { return groups.first?.1 ?? [] }
@@ -516,7 +504,7 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
         }
     }
 
-    /// The commands matching `query`; before you type, the agent changes waiting, then the recent and the suggested.
+    /// The commands matching `query`; before you type, the recent ones, then the suggested.
     private func commandRows(_ query: String) -> [Row] {
         func hit(_ command: PaletteCommand) -> Row {
             .command(PaletteHit(command: command, positions: [], alias: nil, aliasPositions: []))
@@ -533,14 +521,9 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
             rows += fresh.map(hit)
             shown.formUnion(fresh.map(\.id))
         }
-        let pending = Review.files(in: target ?? returnTo).reduce(0) { $0 + $1.changes.values.count(where: \.marked) }
-        if pending > 0 {
-            let actions = Self.agentActions.compactMap { action in commands.first { $0.selector.map(NSStringFromSelector) == action } }
-            group("Agent changes · \(pending) pending", actions)
-        }
         group("Recent", PaletteHistory.recent.compactMap { id in commands.first { $0.id == id } })
         let suggested = Self.suggested.compactMap { action in commands.first { $0.selector.map(NSStringFromSelector) == action } }
-        group("Suggested", suggested + commands.filter { $0.id == "settings:theme" })
+        group("Commands", suggested + commands.filter { $0.id == "settings:theme" })
         return rows
     }
 
@@ -570,6 +553,10 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
     }
 
     private func show(_ rows: [Row]) {
+        var rows = rows
+        if rows.isEmpty, folder != nil, index?.files != nil, case .files(let text) = Self.mode(of: query), !text.allSatisfy(\.isWhitespace) {
+            rows = [.create(text.trimmingCharacters(in: .whitespaces))]
+        }
         self.rows = rows
         table.deselectAll(nil)
         table.reloadData()
@@ -577,7 +564,9 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
         empty.isHidden = !rows.isEmpty
         if rows.isEmpty {
             announce(empty.stringValue)
-        } else if let first = rows.firstIndex(where: { isCurrentChoice($0) }) ?? rows.firstIndex(where: \.selectable) {
+        } else if let first = rows.firstIndex(where: { isCurrentChoice($0) }) ?? rows.firstIndex(where: { $0.selectable && !Self.isDestructive($0) })
+            ?? rows.firstIndex(where: \.selectable)
+        {
             select(first)
         }
         place()
@@ -585,6 +574,12 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
             pendingChoice = nil
             choose(table.selectedRow, newTab: newTab)
         }
+    }
+
+    /// Keep All and Revert All never take the selection on their own.
+    private static func isDestructive(_ row: Row) -> Bool {
+        guard case .command(let hit) = row, let action = hit.command.selector.map(NSStringFromSelector) else { return false }
+        return ["keepAllChanges:", "revertAllChanges:"].contains(action)
     }
 
     private func isCurrentChoice(_ row: Row) -> Bool {
@@ -602,11 +597,17 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
         case .folderHeadings: return folder == nil ? "Open a folder to find headings across it." : "No headings match."
         case .fileHeadings: return "No heading matches in that file."
         case .files(let text) where text.allSatisfy(\.isWhitespace):
-            if let folder { return "Type a name to find a file in \(FileManager.default.displayName(atPath: folder.url.path))." }
-            return "Type a name to find a file you opened or pinned."
+            if let folder { return "Type a name to find a note in \(FileManager.default.displayName(atPath: folder.url.path))." }
+            return "Type a name to find a note you opened or pinned."
         case .files(let text), .fileLine(let text, _):
-            return index != nil && index?.files == nil ? "Listing files…" : "No files match \(Self.quoted(text))."
+            return index != nil && index?.files == nil ? "Listing notes…" : "No notes match \(Self.quoted(text))."
         }
+    }
+
+    /// "plan" as "plan.md"; a name with its own Markdown extension keeps it.
+    static func noteName(_ text: String) -> String {
+        let name = text.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
+        return ["md", "markdown"].contains((name as NSString).pathExtension.lowercased()) ? name : name + ".md"
     }
 
     private static func quoted(_ text: String) -> String {
@@ -694,6 +695,10 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
             } else if let controller {
                 reveal(controller)
             }
+        case .create(let name):
+            guard let folder else { return NSSound.beep() }
+            dismiss()
+            FileCommand.send(FileCommand.newNamedNote, NewNoteRequest(folder: folder.url, name: Self.noteName(name)), from: nil)
         case .line(let line):
             dismiss()
             guard let textView = controller?.textView else { return NSSound.beep() }
@@ -908,9 +913,10 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
             let writer = touched[result.file.url.path]?.writer
             let detail = line.map { "line \($0)" } ?? recents[result.file.url.path].map { relativeTime($0) } ?? (result.file.boost != nil ? "pinned" : "")
             let positions = result.positions.compactMap { $0 >= text.nameStart ? $0 - text.nameStart : nil }
-            content.lead = writer.map { .dot($0.color) } ?? .none
+            content.lead = writer.map { _ in .dot(Chrome.color(.accent)) } ?? .none
             content.title = [.init(name, positions: positions, dimUnmatched: !positions.isEmpty)]
-            content.subtitle = [folderPath.isEmpty ? "" : folderPath + "/", writer?.name ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
+            let folderName = (folderPath as NSString).lastPathComponent
+            content.subtitle = folderName
             content.trailing = .text(detail)
             content.hints = [("↩", "open"), ("⌘↩", "new tab")]
             content.spoken = spoken([name, folderPath, writer.map { "changed by \($0.name)" }, detail])
@@ -919,8 +925,7 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
             let value = command.value?()
             content.title = [.init(command.title, positions: hit.positions)]
             if let alias = hit.alias { content.title.append(.init("(\(alias))", positions: hit.aliasPositions.map { $0 + 1 }, style: .aside)) }
-            content.title.append(.init(command.group, style: .aside))
-            content.trailing = value.map { .text($0) } ?? command.keys.map { .keys($0.caps) } ?? .empty
+            content.trailing = value.map { .text($0) } ?? command.keys.map { .text($0.caps.joined()) } ?? .empty
             content.hints = switch command.action {
             case .menu: [("↩", "run")]
             case .toggle: [("↩", "switch")]
@@ -946,9 +951,14 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
             content.trailing = .text(lines.map { "of \($0)" } ?? "")
             content.hints = [("↩", "go")]
             content.spoken = "Go to line \(line)"
+        case .create(let name):
+            let where_ = folder.map { FileManager.default.displayName(atPath: $0.url.path) } ?? ""
+            content.title = [.init("Create \u{201C}\(Self.noteName(name))\u{201D} in \(where_)")]
+            content.hints = [("↩", "create")]
+            content.spoken = "Create \(Self.noteName(name)) in \(where_)"
         case .prefix(let prefix, let title):
             content.title = [.init(title)]
-            content.trailing = .keys(prefix.isEmpty ? [] : [prefix])
+            content.trailing = .text(prefix)
             content.hints = [("↩", "use")]
             content.spoken = title
         case .choice(let index, let positions):
@@ -1086,7 +1096,7 @@ private final class PaletteCell: NSView, ChromeSelectable {
         case .empty:
             break
         case .text(let text) where !text.isEmpty && !hinting:
-            let string = NSAttributedString(string: text, attributes: [.font: Chrome.mono(11), .foregroundColor: Chrome.color(.ink3)])
+            let string = NSAttributedString(string: text, attributes: [.font: Chrome.label, .foregroundColor: Chrome.color(.ink2)])
             let size = string.size()
             string.draw(at: NSPoint(x: right - size.width, y: titleY - size.height / 2))
             right -= ceil(size.width) + 12
@@ -1113,7 +1123,7 @@ private final class PaletteCell: NSView, ChromeSelectable {
         let line = NSMutableParagraphStyle()
         line.lineBreakMode = .byTruncatingMiddle
         let subtitle = NSAttributedString(string: content.subtitle, attributes: [
-            .font: Chrome.mono(11.5), .foregroundColor: Chrome.color(.ink3), .paragraphStyle: line,
+            .font: Chrome.label, .foregroundColor: Chrome.color(.ink2), .paragraphStyle: line,
         ])
         // The title keeps at least 60% of the room; the subtitle takes what is left and gives up its middle first.
         let wanted = ceil(subtitle.size().width)
@@ -1207,11 +1217,11 @@ private final class PaletteCell: NSView, ChromeSelectable {
     /// "↩ open   ⌘↩ new tab": keys in `ink2`, words in `ink3`, mono 11.
     private static func hints(_ hints: [(key: String, word: String)]) -> NSAttributedString {
         let result = NSMutableAttributedString()
-        let font = Chrome.mono(11)
+        let font = Chrome.status
         for (index, hint) in hints.enumerated() {
             if index > 0 { result.append(NSAttributedString(string: "   ", attributes: [.font: font])) }
             result.append(NSAttributedString(string: hint.key, attributes: [.font: font, .foregroundColor: Chrome.color(.ink2)]))
-            result.append(NSAttributedString(string: " " + hint.word, attributes: [.font: font, .foregroundColor: Chrome.color(.ink3)]))
+            result.append(NSAttributedString(string: " " + hint.word, attributes: [.font: font, .foregroundColor: Chrome.color(.ink2)]))
         }
         return result
     }
@@ -1247,8 +1257,7 @@ private final class PaletteHeader: NSView {
     }
 }
 
-/// The selected row: a `signal` wash at 8 pt radius and a 2 x 16 pt signal tick 6 pt in from its left edge, 3 pt wide
-/// under Increase Contrast. No fill above the wash, no hover.
+/// The selected row: an ink wash at 8 pt radius. No hover.
 private final class PaletteRowView: NSTableRowView {
     override var isSelected: Bool {
         didSet {
@@ -1268,10 +1277,6 @@ private final class PaletteRowView: NSTableRowView {
     override func drawSelection(in dirtyRect: NSRect) {
         Chrome.wash.setFill()
         NSBezierPath(roundedRect: bounds, xRadius: 8, yRadius: 8).fill()
-        let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
-        let tick = NSRect(x: 6, y: bounds.midY - 8, width: contrast ? 3 : 2, height: 16)
-        Chrome.color(.signal).setFill()
-        NSBezierPath(roundedRect: tick, xRadius: 1, yRadius: 1).fill()
     }
 
     override func didAddSubview(_ subview: NSView) {
@@ -1417,9 +1422,8 @@ private final class PaletteHorizon: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        for sublayer in [rule, glowing, bead] {
-            layer?.addSublayer(sublayer)
-        }
+        // Only the rule draws; the lit stretch and its bead are gone.
+        layer?.addSublayer(rule)
         glowing.startPoint = CGPoint(x: 0, y: 0.5)
         glowing.endPoint = CGPoint(x: 1, y: 0.5)
         glowing.shadowOffset = .zero
@@ -1473,7 +1477,7 @@ private final class ScopeChip: NSView {
     }
 
     private var string: NSAttributedString {
-        NSAttributedString(string: title, attributes: [.font: Chrome.mono(11, weight: .medium), .foregroundColor: Chrome.color(.signal)])
+        NSAttributedString(string: title, attributes: [.font: Chrome.section, .foregroundColor: Chrome.color(.ink2)])
     }
 
     override init(frame: NSRect) {
