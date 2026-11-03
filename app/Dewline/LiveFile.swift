@@ -435,12 +435,12 @@ final class LiveFile {
         }
     }
 
-    /// Keeps a change, or both versions of a conflict.
+    /// Keeps the outside writer's text: a change as it landed, a conflict's other version. Cmd-Return.
     func keep(_ change: UInt64) {
-        decide(change, changes[change]?.conflict == true ? .both : .keep)
+        decide(change, changes[change]?.conflict == true ? .other : .keep)
     }
 
-    /// Reverts a change, or keeps your version of a conflict.
+    /// Keeps your text: a change's text before it landed, your version of a conflict. Option-Cmd-Delete.
     func revert(_ change: UInt64) {
         decide(change, changes[change]?.conflict == true ? .keep : .other)
     }

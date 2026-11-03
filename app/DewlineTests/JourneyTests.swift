@@ -405,6 +405,28 @@ struct JourneyTests {
         #expect(tab.live.changes.isEmpty)
     }
 
+    /// On a conflict the change keys mean what they mean everywhere: Cmd-Return keeps the outside writer's text, here
+    /// git's version, and Option-Cmd-Delete keeps yours.
+    @Test(arguments: [true, false])
+    func j5TheChangeKeysOnAConflict(_ keep: Bool) async throws {
+        let ours = "# Plan\n\nShip on Friday.\n"
+        let theirs = "# Plan\n\nShip on Sunday.\n"
+        let vault = try Vault(["plan.md": ours])
+        defer { vault.remove() }
+        let tab = try Tab(vault.url("plan.md"), engine: vault.engine)
+        defer { tab.close() }
+        tab.textView.insertText("Monday", replacementRange: NSRange(location: tab.location(of: "Friday"), length: 6))
+        try vault.write("plan.md", theirs)
+        try await Self.until { tab.live.changes.values.contains(where: \.conflict) }
+        let conflict = try #require(tab.live.changes.values.first { $0.conflict })
+        tab.textView.setSelectedRange(NSRange(location: conflict.range.location + 1, length: 0))
+        if keep { tab.textView.keepChange(nil) } else { tab.textView.revertChange(nil) }
+        let expected = keep ? theirs : "# Plan\n\nShip on Monday.\n"
+        #expect(tab.textView.string == expected)
+        #expect(tab.live.changes.isEmpty)
+        try await Self.until { vault.text("plan.md") == expected }
+    }
+
     // MARK: J6 Snapshots
 
     /// Every outside write leaves the version it replaced in File > Snapshots, and the buffer you hadn't saved when one
