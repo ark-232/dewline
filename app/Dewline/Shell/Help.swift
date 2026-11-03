@@ -4,9 +4,9 @@ import SwiftUI
 /// The Help menu's links and windows, and the About panel's acknowledgements.
 @MainActor
 final class Help: NSObject {
-    static let docs = URL(string: "https://github.com/ark-232/dewline/tree/main/docs")!
+    static let docs = URL(string: "https://dewline.arkwerx.com/docs/")!
     static let releases = URL(string: "https://github.com/ark-232/dewline/releases")!
-    static let cliSetup = URL(string: "https://github.com/ark-232/dewline/blob/main/docs/hooks.md")!
+    static let cliSetup = URL(string: "https://dewline.arkwerx.com/docs/cli/")!
     private static var shortcuts: NSWindowController?
 
     @objc static func openDocs(_ sender: Any?) {

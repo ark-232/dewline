@@ -151,6 +151,34 @@ impl From<core::Origin> for Origin {
     }
 }
 
+impl From<Origin> for core::Origin {
+    fn from(origin: Origin) -> Self {
+        match origin {
+            Origin::User => core::Origin::User,
+            Origin::Agent { vendor, session } => core::Origin::Agent {
+                vendor: match vendor {
+                    Vendor::Claude => claims::Vendor::Claude,
+                    Vendor::Codex => claims::Vendor::Codex,
+                    Vendor::Cursor => claims::Vendor::Cursor,
+                    Vendor::Demo => claims::Vendor::Demo,
+                },
+                session,
+            },
+            Origin::Git { action } => core::Origin::Git { action },
+            Origin::External => core::Origin::External,
+            Origin::Collaborator { peer, name } => core::Origin::Collaborator { peer, name },
+        }
+    }
+}
+
+/// A file an agent wrote while no document had it open.
+#[derive(Debug, uniffi::Record)]
+pub struct ClosedChange {
+    pub path: String,
+    pub origin: Origin,
+    pub time: SystemTime,
+}
+
 /// Replaces the UTF-16 range `start..end` with `text`.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct Edit {
@@ -180,6 +208,9 @@ pub enum Contents {
 #[derive(Debug, uniffi::Record)]
 pub struct Opened {
     pub doc: u64,
+    /// An agent wrote the file while it was closed: the text is what the
+    /// write replaced, and the next landing brings the write in, marked.
+    pub closed: bool,
     pub contents: Contents,
     /// The realpath the engine keys the file by.
     pub path: String,
@@ -359,6 +390,7 @@ impl Engine {
         let opened = self.0.open(Path::new(&path))?;
         Ok(Opened {
             doc: opened.doc.0,
+            closed: opened.closed,
             contents: match opened.contents {
                 text::Opened::Utf8 { bom, .. } => Contents::Text { bom },
                 text::Opened::Other(bytes) => Contents::Bytes { bytes },
@@ -369,6 +401,33 @@ impl Engine {
                 .gitdir
                 .map(|gitdir| gitdir.to_string_lossy().into_owned()),
         })
+    }
+
+    /// `origin` is about to write the file at `path`, which holds `before`.
+    /// Unless the file is open, it is listed in `closed_changes` until it
+    /// opens, and opening it lands the write as marked changes.
+    pub fn closed_write(
+        &self,
+        path: String,
+        origin: Origin,
+        before: Vec<u8>,
+    ) -> Result<(), EngineError> {
+        Ok(self
+            .0
+            .closed_write(Path::new(&path), origin.into(), &before)?)
+    }
+
+    /// Files written while closed, oldest first.
+    pub fn closed_changes(&self) -> Vec<ClosedChange> {
+        self.0
+            .closed_changes()
+            .into_iter()
+            .map(|change| ClosedChange {
+                path: change.path.to_string_lossy().into_owned(),
+                origin: change.origin.into(),
+                time: change.time,
+            })
+            .collect()
     }
 
     /// Whether the file differs from the base. Off the main thread.

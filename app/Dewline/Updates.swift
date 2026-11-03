@@ -13,8 +13,10 @@ import Sparkle
 @Observable
 final class Updates: NSObject, NSMenuItemValidation, SPUUpdaterDelegate, SPUStandardUserDriverDelegate {
     static let shared = Updates(defaults: .standard)
-    static let lineText = "Dewline checks dewline.arkwerx.com for updates once a day and downloads them from GitHub."
+    static let lineText = "Check for updates once a day?"
     static let lineShownKey = "DewlineUpdateLineShown"
+    /// Launches so far; the update question waits for the second, so the first is only about notes.
+    static let launchesKey = "DewlineLaunches"
     static let betaKey = "DewlineBetaUpdates"
     static let stagedVersionKey = "DewlineUpdateStagedVersion"
     static let stagedDateKey = "DewlineUpdateStagedDate"
@@ -111,6 +113,7 @@ final class Updates: NSObject, NSMenuItemValidation, SPUUpdaterDelegate, SPUStan
         NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.checkBundleOnDisk() }
         }
+        defaults.set(defaults.integer(forKey: Self.launchesKey) + 1, forKey: Self.launchesKey)
         guard Self.isDeveloperIDSigned else { return }
         let updater = SPUUpdater(
             hostBundle: .main, applicationBundle: .main,
@@ -145,10 +148,10 @@ final class Updates: NSObject, NSMenuItemValidation, SPUUpdaterDelegate, SPUStan
     /// first-run line and What's New on the first such window, the update line on every one.
     func windowDidShow(_ window: NSWindow) {
         guard updater != nil else { return }
-        if line == nil, !defaults.bool(forKey: Self.lineShownKey) {
+        if line == nil, !defaults.bool(forKey: Self.lineShownKey), defaults.integer(forKey: Self.launchesKey) >= 2 {
             let line = UpdateLine(Self.lineText, buttons: [
-                ("Check daily", { [weak self] in self?.choose(checksDaily: true) }),
-                ("Don\u{2019}t check", { [weak self] in self?.choose(checksDaily: false) }),
+                ("Check Daily", { [weak self] in self?.choose(checksDaily: true) }),
+                ("Don\u{2019}t Check", { [weak self] in self?.choose(checksDaily: false) }),
             ])
             window.addTitlebarAccessoryViewController(line)
             self.line = line

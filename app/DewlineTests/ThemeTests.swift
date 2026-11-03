@@ -34,12 +34,10 @@ struct ThemeTests {
                 for token in Token.required {
                     #expect(tokens[token] != nil, "\(theme.name) \(appearance) has no \(token)")
                 }
-                #expect((tokens[.sky1] == nil) == (tokens[.sky2] == nil), "\(theme.name) \(appearance) has half a sky")
             }
             #expect(Set(theme.light.keys) == Set(theme.dark.keys), "\(theme.name)")
             #expect(Set(theme.lightColors.keys) == Set(theme.light.keys) && Set(theme.darkColors.keys) == Set(theme.dark.keys))
         }
-        #expect(Theme.all.filter(\.hasSky).map(\.name) == ["Dusk", "Nightwatch"])
     }
 
     @Test func textMeetsContrastInEveryVariant() {
@@ -59,39 +57,33 @@ struct ThemeTests {
         }
     }
 
-    @Test func backdropIsTheTintUnderASkyOnlyInDuskAndNightwatch() {
-        func same(_ a: OKLCH, _ b: OKLCH) -> Bool {
-            abs(a.l - b.l) < 1e-9 && abs(a.c - b.c) < 1e-9 && abs(a.h - b.h) < 1e-6
-        }
-        for theme in Theme.all {
+    @Test func theDefaultsAreNeutralWithOneAccent() {
+        for theme in [Theme.tidewater, .nightwatch] {
             for (dark, tokens) in [(false, theme.light), (true, theme.dark)] {
                 let label = "\(theme.name) \(dark ? "dark" : "light")"
-                let backdrop = theme.backdrop(dark: dark)
-                #expect(backdrop.tint == tokens[.sidebarTint], "\(label)")
-                if let zenith = tokens[.sky1], let horizon = tokens[.sky2] {
-                    #expect(backdrop.sky.count == 8, "\(label)")
-                    #expect(same(backdrop.sky.first!, zenith) && same(backdrop.sky.last!, horizon), "\(label)")
-                } else {
-                    #expect(backdrop.sky.isEmpty, "\(label)")
+                for token in [Token.paper, .chrome, .ink, .ink2, .rule, .codeBackground, .heading, .link, .selection, .syntax, .quoteRule] {
+                    #expect(tokens[token]!.c <= 0.006, "\(label) \(token)")
                 }
-                for flat in [theme.backdrop(dark: dark, increasedContrast: true), theme.backdrop(dark: dark, reducedTransparency: true)] {
-                    #expect(flat.tint == tokens[.sidebarTint] && flat.sky.isEmpty, "\(label) flattened")
+                #expect(tokens[.accent] == (dark ? Brand.accent.dark : Brand.accent.light), "\(label)")
+                for token in [Token.signal, .glow] {
+                    #expect(tokens[token] == tokens[.accent], "\(label) \(token)")
                 }
             }
         }
     }
 
-    @Test func skyMixesInOKLab() {
-        // Dusk's indigo zenith meets its green afterglow through a grayer middle instead of turning through teal.
-        let zenith = Theme.dusk.dark[.sky1]!
-        let horizon = Theme.dusk.dark[.sky2]!
-        let middle = zenith.mixed(with: horizon, by: 0.5)
-        #expect(abs(middle.l - (zenith.l + horizon.l) / 2) < 1e-9)
-        #expect(middle.c < min(zenith.c, horizon.c) * 0.7)
-        #expect(abs(zenith.mixed(with: horizon, by: 0).h - zenith.h) < 1e-6)
-        // A mix of two grays stays gray.
+    @Test func mixingInOKLabKeepsGraysGray() {
         let gray = OKLCH(l: 0.2, c: 0, h: 0).mixed(with: OKLCH(l: 0.8, c: 0, h: 0), by: 0.25)
         #expect(abs(gray.l - 0.35) < 1e-9 && gray.c == 0)
+    }
+
+    @MainActor @Test func everyOutsideWriterMarksInTheAccent() {
+        let store = ThemeStore.shared
+        for writer in Writer.allCases where writer != .you && writer != .collaborator {
+            #expect(store.writerColor(writer) == store.color(.accent), "\(writer)")
+        }
+        #expect(store.writerColor(.collaborator) == store.color(.ink2))
+        #expect(Writer.unknown.name == "Another app")
     }
 
     @Test func thumbnailWordsKeepToTheirSideOfTheDiagonal() {

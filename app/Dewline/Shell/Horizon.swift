@@ -293,248 +293,34 @@ final class HorizonView: NSView {
     }
 }
 
-/// Keep and Revert, docked along the bottom of the editor island while the open file has changes waiting: the
-/// writer's dot and name, "changed 2 places in plan.md", the change's place among them with previous and next, then
-/// Revert and Keep with their keys. Keep is filled with ink, never signal. A 3 pt segment in the writer's color on
-/// the bar's top edge sits under the focused change's bead on the horizon.
-final class KeepBar: NSView {
-    static let height: CGFloat = 44
+/// What MainWindowController still calls while it lays out the horizon. Horizon.swift goes once it doesn't.
+extension KeepBar {
+    func attach(_ textView: EditorTextView?, live: LiveFile?) {
+        attach(to: textView)
+    }
 
-    /// The bead's x on the horizon for a change, which the bar's segment matches.
-    var beadX: (UInt64) -> CGFloat? = { _ in nil }
+    var beadX: (UInt64) -> CGFloat? {
+        get { { _ in nil } }
+        set {}
+    }
 
-    private weak var textView: EditorTextView?
-    private weak var live: LiveFile?
-    private let dot = Dot(diameter: 6)
-    private let name = NSTextField(labelWithString: "")
-    private let summary = NSTextField(labelWithString: "")
-    private let counter = NSTextField(labelWithString: "")
-    private let previous = GlyphButton(.up, label: "Previous change", target: nil, action: nil)
-    private let next = GlyphButton(.down, label: "Next change", target: nil, action: nil)
-    private let rule = NSView()
-    private let segment = CALayer()
-    private let topRule = CALayer()
-    private var focused: UInt64?
-    private var order: [UInt64] = []
-    private var observed: [(AnyObject, Notification.Name)] = []
-    private var height: NSLayoutConstraint!
-    private(set) var shown = false
+    func placeSegment() {}
+}
+
+/// MainWindowController's slot for the finished line, which the Keep bar replaced; it never shows.
+final class FinishedLine: NSView {
+    static let height: CGFloat = 0
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        wantsLayer = true
-        layer?.masksToBounds = true
-        layer?.addSublayer(topRule)
-        layer?.addSublayer(segment)
-        setAccessibilityElement(true)
-        setAccessibilityRole(.group)
-        name.font = Chrome.labelStrong
-        summary.font = Chrome.label
-        summary.lineBreakMode = .byTruncatingMiddle
-        summary.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        counter.font = Chrome.mono(12)
-        previous.target = self
-        previous.action = #selector(goPrevious)
-        next.target = self
-        next.action = #selector(goNext)
-        rule.wantsLayer = true
-        let revert = ChromeButton("Revert", keys: ["⌥", "⌘", "⌫"], label: "Revert this change") { [weak self] in self?.decide(keep: false) }
-        let keep = ChromeButton("Keep", keys: ["⌘", "↩"], style: .filled, label: "Keep this change") { [weak self] in self?.decide(keep: true) }
-        let left = NSStackView(views: [dot, name, summary])
-        left.spacing = 8
-        left.setCustomSpacing(6, after: name)
-        left.setClippingResistancePriority(.defaultLow, for: .horizontal)
-        let pager = NSStackView(views: [previous, counter, next])
-        pager.spacing = 2
-        let right = NSStackView(views: [pager, rule, revert, keep])
-        right.spacing = 12
-        right.setCustomSpacing(6, after: revert)
-        for view in [left, right] {
-            view.translatesAutoresizingMaskIntoConstraints = false
-            addSubview(view)
-        }
-        rule.translatesAutoresizingMaskIntoConstraints = false
-        height = heightAnchor.constraint(equalToConstant: 0)
-        NSLayoutConstraint.activate([
-            height,
-            rule.widthAnchor.constraint(equalToConstant: 1),
-            rule.heightAnchor.constraint(equalToConstant: 16),
-            left.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
-            left.centerYAnchor.constraint(equalTo: topAnchor, constant: Self.height / 2 + 0.5),
-            left.trailingAnchor.constraint(lessThanOrEqualTo: right.leadingAnchor, constant: -16),
-            right.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-            right.centerYAnchor.constraint(equalTo: left.centerYAnchor),
-        ])
         isHidden = true
-        NotificationCenter.default.addObserver(self, selector: #selector(themeDidChange), name: ThemeStore.didChange, object: nil)
-        themeDidChange()
     }
 
     required init?(coder: NSCoder) {
-        fatalError("KeepBar is built in code")
+        fatalError("FinishedLine is built in code")
     }
 
-    override var isFlipped: Bool { true }
+    func show(_ origin: ChangeEngine.Origin) {}
 
-    func attach(_ textView: EditorTextView?, live: LiveFile?) {
-        for (object, name) in observed { NotificationCenter.default.removeObserver(self, name: name, object: object) }
-        observed = []
-        self.textView = textView
-        self.live = live
-        focused = nil
-        if let live {
-            NotificationCenter.default.addObserver(self, selector: #selector(changesChanged), name: LiveFile.changesDidChange, object: live)
-            observed.append((live, LiveFile.changesDidChange))
-        }
-        if let textView {
-            NotificationCenter.default.addObserver(self, selector: #selector(caretMoved), name: NSTextView.didChangeSelectionNotification, object: textView)
-            observed.append((textView, NSTextView.didChangeSelectionNotification))
-        }
-        changesChanged()
-    }
-
-    private var pending: [UInt64: LiveFile.Change] {
-        live?.changes.filter { $0.value.marked && !$0.value.conflict } ?? [:]
-    }
-
-    @objc private func changesChanged() {
-        let changes = pending
-        order = changes.sorted { $0.value.range.location < $1.value.range.location }.map(\.key)
-        if focused.map({ changes[$0] == nil }) ?? true { focused = atCaret ?? order.first }
-        show(!order.isEmpty)
-        refresh()
-    }
-
-    /// The change holding the caret becomes the focused one.
-    @objc private func caretMoved() {
-        guard let id = atCaret, id != focused else { return }
-        focused = id
-        refresh()
-    }
-
-    private var atCaret: UInt64? {
-        guard let caret = textView?.selectedRange().location else { return nil }
-        return order.first { id in
-            guard let range = pending[id]?.range else { return false }
-            return NSLocationInRange(caret, range) || caret == NSMaxRange(range)
-        }
-    }
-
-    private func refresh() {
-        guard let focused, let change = pending[focused], let index = order.firstIndex(of: focused) else { return }
-        let writer = MarkWriter(change.origin)
-        let writers = Set(pending.values.map { MarkWriter($0.origin).name })
-        let places = order.count
-        let file = live?.url.lastPathComponent ?? "this file"
-        dot.color = writer.color
-        name.stringValue = writer.name
-        name.textColor = writer.color
-        summary.stringValue = (writers.count > 1 ? "and \(writers.count - 1) more changed " : "changed ")
-            + "\(places) \(places == 1 ? "place" : "places") in \(file)"
-        counter.stringValue = "\(index + 1) / \(places)"
-        previous.isEnabled = places > 1
-        next.isEnabled = places > 1
-        setAccessibilityLabel("\(writer.name) \(summary.stringValue), change \(index + 1) of \(places)")
-        placeSegment()
-    }
-
-    /// The bar's segment under the focused change's bead.
-    func placeSegment() {
-        let appearance = effectiveAppearance
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        let scale = window?.backingScaleFactor ?? 2
-        topRule.frame = NSRect(x: 0, y: 0, width: bounds.width, height: 1 / scale)
-        topRule.backgroundColor = Chrome.color(.hairline).resolved(for: appearance).cgColor
-        if let focused, let change = pending[focused], let x = beadX(focused) {
-            segment.isHidden = false
-            segment.frame = NSRect(x: min(max(x - 16, 0), max(bounds.width - 32, 0)), y: 0, width: 32, height: 3)
-            segment.backgroundColor = MarkWriter(change.origin).color.resolved(for: appearance).cgColor
-        } else {
-            segment.isHidden = true
-        }
-        CATransaction.commit()
-    }
-
-    @objc private func goPrevious() {
-        step(-1)
-    }
-
-    @objc private func goNext() {
-        step(1)
-    }
-
-    private func step(_ delta: Int) {
-        guard let focused, let index = order.firstIndex(of: focused), !order.isEmpty else { return }
-        let target = order[(index + delta + order.count) % order.count]
-        self.focused = target
-        refresh()
-        live?.reveal(target, caret: true)
-    }
-
-    private func decide(keep: Bool) {
-        guard let focused else { return }
-        if keep { live?.keep(focused) } else { live?.revert(focused) }
-    }
-
-    /// Rises 8 pt with a fade in 160 ms, and falls in 120 ms; under Reduce Motion it only fades.
-    private func show(_ visible: Bool) {
-        guard visible != shown else { return }
-        shown = visible
-        let reduce = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        guard window?.isVisible == true, let layer else {
-            height.constant = visible ? Self.height : 0
-            isHidden = !visible
-            return
-        }
-        // The page gives up its room at once on the way in and takes it back once the bar has faded.
-        if visible { height.constant = Self.height }
-        isHidden = false
-        let fade = CABasicAnimation(keyPath: "opacity")
-        fade.fromValue = visible ? 0 : 1
-        fade.toValue = visible ? 1 : 0
-        let curve = visible ? CAMediaTimingFunction(controlPoints: 0.16, 1, 0.3, 1) : CAMediaTimingFunction(name: .easeIn)
-        let duration = visible ? 0.16 : 0.12
-        var animations: [CAAnimation] = [fade]
-        if !reduce {
-            let rise = CABasicAnimation(keyPath: "sublayerTransform.translation.y")
-            rise.fromValue = visible ? 8 : 0
-            rise.toValue = visible ? 0 : 8
-            animations.append(rise)
-        }
-        let group = CAAnimationGroup()
-        group.animations = animations
-        group.duration = duration
-        group.timingFunction = curve
-        group.fillMode = .forwards
-        group.isRemovedOnCompletion = visible
-        CATransaction.begin()
-        CATransaction.setCompletionBlock { [weak self] in
-            guard let self, !self.shown else { return }
-            self.isHidden = true
-            self.height.constant = 0
-        }
-        layer.add(group, forKey: "show")
-        CATransaction.commit()
-    }
-
-    override var wantsUpdateLayer: Bool { true }
-
-    override func updateLayer() {
-        layer?.backgroundColor = Chrome.color(.sunken).resolved(for: effectiveAppearance).cgColor
-        rule.layer?.backgroundColor = Chrome.color(.hairline).resolved(for: effectiveAppearance).cgColor
-        placeSegment()
-    }
-
-    override func layout() {
-        super.layout()
-        placeSegment()
-    }
-
-    @objc private func themeDidChange() {
-        summary.textColor = Chrome.color(.ink2)
-        counter.textColor = Chrome.color(.ink2)
-        needsDisplay = true
-        refresh()
-    }
+    func dismiss() {}
 }

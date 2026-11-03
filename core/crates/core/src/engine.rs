@@ -130,6 +130,9 @@ impl Origin {
 
 pub struct Opened {
     pub doc: DocId,
+    /// An agent wrote the file while it was closed: `contents` is the text
+    /// it replaced, and the next landing brings the write in, marked.
+    pub closed: bool,
     /// The file as read. `Other` is not UTF-8 and opens read-only.
     pub contents: text::Opened,
     /// The realpath the engine keys the file by.
@@ -140,6 +143,17 @@ pub struct Opened {
     /// The gitdir of the repository the file is in, to watch for
     /// `git_changed`.
     pub gitdir: Option<PathBuf>,
+}
+
+/// An agent's write to a file no document had open (B5): who, and the
+/// bytes it replaced, which the store keeps. Opening the file lands the
+/// write against those bytes as marked changes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClosedChange {
+    pub path: PathBuf,
+    pub origin: Origin,
+    pub before: Hash,
+    pub time: SystemTime,
 }
 
 /// A file's new version merged into the buffer at `version`. Offsets are
@@ -329,6 +343,8 @@ struct Doc {
     drafted: bool,
     /// When `collaborate` last snapshotted the buffer.
     collaborated: Option<Instant>,
+    /// Opened over a closed write: the writer of a landing from this base.
+    closed: Option<(Hash, Origin)>,
     /// Bumped whenever the base or the disk changes.
     generation: u64,
 }
@@ -346,6 +362,7 @@ struct State {
     docs: HashMap<DocId, Doc>,
     serial: HashMap<DocId, Arc<Mutex<()>>>,
     claims: Claims,
+    closed: HashMap<PathBuf, ClosedChange>,
     next: u64,
 }
 
@@ -399,8 +416,14 @@ impl Engine {
     pub fn open(&self, path: &Path) -> io::Result<Opened> {
         let real = fs::canonicalize(path)?;
         let bytes = read(&real)?;
-        let (now, _) = (self.clock)();
-        let base_hash = blake3::hash(&bytes);
+        let (now, wall) = (self.clock)();
+        let disk_hash = blake3::hash(&bytes);
+        let disk: Arc<[u8]> = bytes.as_slice().into();
+        let closed = self.closed_base(&real, disk_hash, &bytes, wall)?;
+        let (base_hash, bytes) = match &closed {
+            Some((change, before)) => (change.before, before.clone()),
+            None => (disk_hash, bytes),
+        };
         let base: Arc<[u8]> = bytes.as_slice().into();
         let contents = text::Opened::new(bytes);
         let (read_only, bom) = match &contents {
@@ -418,13 +441,13 @@ impl Engine {
             head,
             read_only,
             bom,
-            base: base.clone(),
+            base,
             base_hash,
             base_origin: Origin::External,
-            base_kept: false,
+            base_kept: closed.is_some(),
             disk: Disk::Seen {
-                hash: base_hash,
-                bytes: base,
+                hash: disk_hash,
+                bytes: disk,
                 seen: now,
             },
             landing: None,
@@ -433,6 +456,9 @@ impl Engine {
             wait_from: None,
             drafted: false,
             collaborated: None,
+            closed: closed
+                .as_ref()
+                .map(|(change, _)| (change.before, change.origin.clone())),
             generation: 0,
         };
         let mut state = self.state();
@@ -441,6 +467,7 @@ impl Engine {
         state.serial.insert(id, Arc::default());
         Ok(Opened {
             doc: id,
+            closed: closed.is_some(),
             contents,
             path: real,
             agent_file,
@@ -589,6 +616,14 @@ impl Engine {
                 d.generation,
             )
         };
+        let closed = {
+            let state = self.state();
+            let d = state.docs.get(&doc).ok_or(EngineError::Closed)?;
+            d.closed
+                .clone()
+                .filter(|(before, _)| *before == base_hash)
+                .map(|(_, origin)| origin)
+        };
         let text::Opened::Utf8 {
             bom: theirs_bom,
             text: theirs,
@@ -635,13 +670,14 @@ impl Engine {
             }
             None => (None, false, head),
         };
-        let origin = match (&chain, git) {
-            (Some(chain), _) => Origin::Agent {
+        let origin = match (&chain, closed, git) {
+            (Some(chain), _, _) => Origin::Agent {
                 vendor: chain.vendor,
                 session: chain.session.as_str().to_owned(),
             },
-            (None, Some(action)) => Origin::Git { action },
-            (None, None) => Origin::External,
+            (None, Some(origin), _) => origin,
+            (None, None, Some(action)) => Origin::Git { action },
+            (None, None, None) => Origin::External,
         };
         if origin != Origin::External && !private {
             self.store.relabel(&path, &to, UNKNOWN, &origin.label())?;
@@ -1177,6 +1213,72 @@ impl Engine {
             }
         }
         Ok(updates)
+    }
+
+    /// Notes that `origin` is about to write the file at `path`, which holds
+    /// `before`. Unless a document has the file open, `before` goes into the
+    /// store and the file is in `closed_changes` until it opens; a second
+    /// write before then keeps the first one's `before`.
+    pub fn closed_write(&self, path: &Path, origin: Origin, before: &[u8]) -> io::Result<()> {
+        let real = fs::canonicalize(path)?;
+        if private(path) || private(&real) {
+            return Ok(());
+        }
+        {
+            let state = self.state();
+            if state.closed.contains_key(&real) || state.docs.values().any(|d| d.path == real) {
+                return Ok(());
+            }
+        }
+        let (_, wall) = (self.clock)();
+        self.store.put(&real, before, UNKNOWN, wall)?;
+        let change = ClosedChange {
+            path: real.clone(),
+            origin,
+            before: blake3::hash(before),
+            time: wall,
+        };
+        self.state().closed.entry(real).or_insert(change);
+        Ok(())
+    }
+
+    /// Files written while closed that still differ from what the write
+    /// replaced, oldest first.
+    pub fn closed_changes(&self) -> Vec<ClosedChange> {
+        let mut closed: Vec<ClosedChange> = self.state().closed.values().cloned().collect();
+        closed.retain(|change| {
+            read(&change.path).is_ok_and(|bytes| blake3::hash(&bytes) != change.before)
+        });
+        closed.sort_by_key(|change| change.time);
+        closed
+    }
+
+    /// Takes the closed write to `real`, if one changed it and its `before`
+    /// is in the store as UTF-8 text, and returns it with those bytes; the
+    /// disk's bytes go into the store, as `observe` would put them.
+    fn closed_base(
+        &self,
+        real: &Path,
+        disk: Hash,
+        bytes: &[u8],
+        wall: SystemTime,
+    ) -> io::Result<Option<(ClosedChange, Vec<u8>)>> {
+        let Some(change) = self.state().closed.remove(real) else {
+            return Ok(None);
+        };
+        if change.before == disk {
+            return Ok(None);
+        }
+        let Ok(before) = self.store.get(&change.before) else {
+            return Ok(None);
+        };
+        let text =
+            |bytes: &[u8]| matches!(text::Opened::new(bytes.to_vec()), text::Opened::Utf8 { .. });
+        if !text(&before) || !text(bytes) {
+            return Ok(None);
+        }
+        self.store.put(real, bytes, UNKNOWN, wall)?;
+        Ok(Some((change, before)))
     }
 
     /// Notes an event in a gitdir, and returns the documents in its
@@ -2978,4 +3080,70 @@ mod tests {
 
     /// Nightly sets PROPTEST_CASES.
     const CASES: u32 = 256;
+
+    /// B5: an agent's write to a closed file is listed, opens against the
+    /// bytes it replaced, and lands marked with the agent's name.
+    #[test]
+    fn a_write_to_a_closed_file_lands_marked_when_it_opens() {
+        let f = fixture();
+        let path = f.file("a.md", "# A\n\nOld a.\n");
+        let claude = Origin::Agent {
+            vendor: Vendor::Claude,
+            session: "s1".into(),
+        };
+        f.engine
+            .closed_write(&path, claude.clone(), b"# A\n\nOld a.\n")
+            .unwrap();
+        assert!(f.engine.closed_changes().is_empty(), "not written yet");
+        f.tick(10);
+        f.replace(&path, "# A\n\nNew a.\n");
+        // A second write in the same turn keeps the first one's before.
+        f.engine
+            .closed_write(&path, claude.clone(), b"# A\n\nNew a.\n")
+            .unwrap();
+        let closed = f.engine.closed_changes();
+        assert_eq!(closed.len(), 1);
+        assert_eq!(
+            (closed[0].path.as_path(), &closed[0].origin),
+            (path.as_path(), &claude)
+        );
+
+        let opened = f.engine.open(&path).unwrap();
+        assert!(opened.closed);
+        let text::Opened::Utf8 { text, .. } = opened.contents else {
+            panic!("not text");
+        };
+        assert_eq!(text, "# A\n\nOld a.\n");
+        assert!(
+            f.engine.closed_changes().is_empty(),
+            "open files leave the list"
+        );
+        let (landing, applied) = f.land(opened.doc, &text, 0);
+        assert_eq!(landing.origin, claude);
+        assert!(landing.marked && landing.clean);
+        assert_eq!(applied, "# A\n\nNew a.\n");
+        let origins: Vec<_> = f
+            .origins(&path)
+            .into_iter()
+            .map(|(_, origin)| origin)
+            .collect();
+        assert_eq!(origins, [UNKNOWN.to_owned(), claude.label()]);
+    }
+
+    /// A file opened before the write it was warned of keeps its own bytes;
+    /// the open document sees the write as it lands.
+    #[test]
+    fn a_closed_write_that_has_not_happened_opens_as_the_file() {
+        let f = fixture();
+        let path = f.file("a.md", "# A\n");
+        let codex = Origin::Agent {
+            vendor: Vendor::Codex,
+            session: "s2".into(),
+        };
+        f.engine.closed_write(&path, codex, b"# A\n").unwrap();
+        let (doc, text) = opened(&f.engine, &path);
+        assert_eq!(text, "# A\n");
+        assert!(!f.engine.observe(doc).unwrap());
+        assert!(f.engine.closed_changes().is_empty());
+    }
 }

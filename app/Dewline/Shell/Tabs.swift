@@ -32,6 +32,7 @@ final class TabSet {
             window.setFrame(leaving.frame, display: false)
         }
         selected = tab
+        tab.adoptPane(from: old)
         window.isExcludedFromWindowsMenu = false
         leaving.isExcludedFromWindowsMenu = true
         // The window goes after the new one is in front, so the screen never shows neither.
@@ -66,12 +67,11 @@ final class TabSet {
     }
 }
 
-/// The tab row along the top of the editor island, 34 pt: each tab sized to its name, at most 200 pt, Bricolage 13,
-/// the selected one in `ink` and the rest in `ink3`, with no backgrounds or separators. A tab's dot shows an agent's
-/// pending changes in the writer's color, or unsaved edits in `ink2`. The close glyph shows under the pointer. The
-/// horizon runs along the row's bottom edge.
+/// The tab row along the top of the editor column, 30 pt, shown with two tabs or more: each tab 120 to 220 pt wide.
+/// The selected tab takes the page's paper and joins it, its name in `ink` 13 medium; the others sit on the chrome in
+/// `ink2`. A tab in back shows an accent dot while outside changes in it wait. The close glyph shows under the pointer.
 final class TabRow: NSView {
-    static let height: CGFloat = 34
+    static let height: CGFloat = 30
 
     weak var tabs: TabSet? {
         didSet {
@@ -87,16 +87,23 @@ final class TabRow: NSView {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
+        wantsLayer = true
         stack.orientation = .horizontal
-        stack.spacing = 4
-        stack.alignment = .centerY
+        stack.spacing = 0
+        stack.alignment = .bottom
         stack.translatesAutoresizingMaskIntoConstraints = false
+        let rule = RuleLine()
+        rule.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(rule)
         addSubview(stack)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -12),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
             stack.topAnchor.constraint(equalTo: topAnchor),
             stack.bottomAnchor.constraint(equalTo: bottomAnchor),
+            rule.leadingAnchor.constraint(equalTo: leadingAnchor),
+            rule.trailingAnchor.constraint(equalTo: trailingAnchor),
+            rule.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
         setAccessibilityElement(true)
         setAccessibilityRole(.tabGroup)
@@ -110,13 +117,20 @@ final class TabRow: NSView {
     }
 
     override var mouseDownCanMoveWindow: Bool { false }
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        layer?.backgroundColor = Chrome.color(.chrome).resolved(for: effectiveAppearance).cgColor
+    }
 
     @objc func reload() {
         for view in stack.arrangedSubviews { view.removeFromSuperview() }
         dots = tabs?.tabs.map(\.tabDot) ?? []
+        needsDisplay = true
         guard let tabs else { return }
         for tab in tabs.tabs {
-            stack.addArrangedSubview(TabButton(tab, selected: tab === tabs.selected))
+            let selected = tab === tabs.selected
+            stack.addArrangedSubview(TabButton(tab, selected: selected, dot: selected ? nil : tab.tabDot))
         }
     }
 
@@ -127,7 +141,7 @@ final class TabRow: NSView {
     }
 }
 
-/// One tab: its name, a dot for pending changes or unsaved edits, and a close glyph under the pointer.
+/// One tab: its name, a dot for outside changes waiting in a tab in back, and a close glyph under the pointer.
 private final class TabButton: NSView {
     private weak var tab: MainWindowController?
     private let selected: Bool
@@ -138,23 +152,24 @@ private final class TabButton: NSView {
         didSet { close.isHidden = !hovering }
     }
 
-    init(_ tab: MainWindowController, selected: Bool) {
+    init(_ tab: MainWindowController, selected: Bool, dot: NSColor?) {
         self.tab = tab
         self.selected = selected
         name = tab.tabName
-        dot = tab.tabDot
+        self.dot = dot
         super.init(frame: .zero)
+        wantsLayer = true
         translatesAutoresizingMaskIntoConstraints = false
         close.target = self
         close.action = #selector(closeTab)
         close.isHidden = true
         addSubview(close)
         let text = ceil((name as NSString).size(withAttributes: [.font: Self.font(selected)]).width)
-        let width = min(text + (dot == nil ? 0 : 11) + 24 + 20, 200)
+        let width = min(max(text + (dot == nil ? 0 : 11) + 24 + 24, 120), 220)
         NSLayoutConstraint.activate([
             widthAnchor.constraint(equalToConstant: width),
-            heightAnchor.constraint(equalToConstant: TabRow.height),
-            close.trailingAnchor.constraint(equalTo: trailingAnchor, constant: 2),
+            heightAnchor.constraint(equalToConstant: selected ? TabRow.height : TabRow.height - 1),
+            close.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
             close.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self))
@@ -173,18 +188,26 @@ private final class TabButton: NSView {
     }
 
     override var mouseDownCanMoveWindow: Bool { false }
+    override var wantsUpdateLayer: Bool { false }
 
     override func draw(_ dirtyRect: NSRect) {
-        let attributes: [NSAttributedString.Key: Any] = [.font: Self.font(selected), .foregroundColor: Chrome.color(selected ? .ink : .ink3)]
+        if selected {
+            Chrome.color(.paper).setFill()
+            bounds.fill()
+            Chrome.color(.rule).setFill()
+            NSRect(x: 0, y: 0, width: 1, height: bounds.height).fill()
+            NSRect(x: bounds.maxX - 1, y: 0, width: 1, height: bounds.height).fill()
+        }
+        let attributes: [NSAttributedString.Key: Any] = [.font: Self.font(selected), .foregroundColor: Chrome.color(selected ? .ink : .ink2)]
         let line = NSMutableParagraphStyle()
         line.lineBreakMode = .byTruncatingMiddle
         let string = NSAttributedString(string: name, attributes: attributes.merging([.paragraphStyle: line]) { $1 })
         let size = string.size()
-        let room = bounds.width - 24 - (dot == nil ? 0 : 11)
-        string.draw(with: NSRect(x: 0, y: bounds.midY - ceil(size.height) / 2, width: room, height: ceil(size.height)), options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+        let room = bounds.width - 24 - 24 - (dot == nil ? 0 : 11)
+        string.draw(with: NSRect(x: 12, y: bounds.midY - ceil(size.height) / 2, width: room, height: ceil(size.height)), options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
         if let dot {
             dot.setFill()
-            NSBezierPath(ovalIn: NSRect(x: min(ceil(size.width), room) + 6, y: bounds.midY - 2.5, width: 5, height: 5)).fill()
+            NSBezierPath(ovalIn: NSRect(x: 12 + min(ceil(size.width), room) + 6, y: bounds.midY - 2.5, width: 5, height: 5)).fill()
         }
     }
 
@@ -205,7 +228,7 @@ private final class TabButton: NSView {
         return true
     }
 
-    /// A tab closes as its window would, asking first about unsaved edits; a tab in back comes forward to ask.
+    /// A tab closes as its window would; a tab in back comes forward first.
     @objc private func closeTab() {
         guard let tab else { return }
         tab.showWindow(nil)

@@ -17,7 +17,7 @@ struct MarkWriter: Equatable {
         case .agent(.acp, let session): (AgentWrites.name(session), AgentWrites.writer(session))
         case .collaborator(_, let name): (name, .collaborator)
         case .git: ("git", .git)
-        case .external: ("Unknown app", .unknown)
+        case .external: ("Another app", .unknown)
         case .user: ("You", .you)
         }
     }
@@ -27,7 +27,7 @@ struct MarkWriter: Equatable {
         ThemeStore.shared.writerColor(writer)
     }
 
-    /// "Claude's"; "the other" for Unknown app.
+    /// "Claude's"; "the other" for another app.
     var possessive: String {
         dashed ? "the other" : "\(name)'s"
     }
@@ -50,8 +50,8 @@ struct MarkWriter: Equatable {
 }
 
 /// Paints marked changes over the text at render time, never as text edits: a wash in the writer's hue under
-/// inserted text with an underline in the writer's style, a 3 pt tick in the left gutter, the writer's dot, name and
-/// time right of the measure on the change's first line where the room there holds them, and the name on hover. Short
+/// inserted text with an underline in the writer's style, a 3 pt tick in the left gutter, and the writer's name and
+/// time on hover. Short
 /// removed text reads inline at its deletion point as a struck ghost, in a gap the styler opens just before the
 /// change; longer removed text and a conflict's other version hang under the paragraph, in space the styler reserves
 /// below it. The marks sit under the text; ghosts and cards sit over it.
@@ -65,7 +65,7 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
     private(set) var painted: [UInt64: NSRange] = [:]
     /// When each marked change's fade began.
     private var shown: [UInt64: CFTimeInterval] = [:]
-    /// When each marked change landed here, for its margin label.
+    /// When each marked change landed here, for its tooltip.
     private var landed: [UInt64: Date] = [:]
     /// Ghosts and cards by change, with the offset of the character whose paragraph they hang under.
     private(set) var hangers: [UInt64: (anchor: Int, view: NSView)] = [:]
@@ -75,13 +75,6 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
 
     static let fade: CFTimeInterval = 0.2
     private static let gap: CGFloat = 6
-
-    /// The time on a margin label, 09:41.
-    private static let clock: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-        return formatter
-    }()
 
     override var isFlipped: Bool { true }
 
@@ -241,8 +234,6 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
         let motion = Motion.current != .off
         let storage = textView.textStorage!
         var hung: [UInt64: CGFloat] = [:]
-        let right = left + columnWidth + 32
-        var labeled: Set<CGFloat> = []
         // Hangers under one paragraph stack in change order; each change in it anchors at its own offset.
         func paragraph(_ anchor: Int) -> NSRange {
             storage.mutableString.paragraphRange(for: NSRange(location: min(anchor, storage.length), length: 0))
@@ -301,23 +292,6 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
             tick.backgroundColor = color.cgColor
             group.addSublayer(tick)
             tips.append((tick.frame.insetBy(dx: -6, dy: 0), id))
-            if let first = lines.first.map({ ($0.frame.minY, $0.frame.minY + $0.baseline) })
-                ?? lineRect(at: change.range.location).map({ ($0.minY, $0.minY + ($0.height * 0.78).rounded()) }),
-                labeled.insert(first.0).inserted
-            {
-                let label = marginLabel(writer, color: color, at: landed[id] ?? .now)
-                let size = label.preferredFrameSize()
-                if right + 10 + size.width <= bounds.width - 8 {
-                    let font = Chrome.mono(11)
-                    label.frame = NSRect(x: right + 10, y: (first.1 - font.ascender).rounded(), width: ceil(size.width), height: ceil(size.height))
-                    let dot = CALayer()
-                    dot.frame = NSRect(x: right, y: (first.1 - font.xHeight / 2 - 3).rounded(), width: 6, height: 6)
-                    dot.cornerRadius = 3
-                    dot.backgroundColor = color.cgColor
-                    group.addSublayer(dot)
-                    group.addSublayer(label)
-                }
-            }
             if motion, let start = shown[id], now - start < Self.fade {
                 let fade = CABasicAnimation(keyPath: "opacity")
                 fade.fromValue = 0
@@ -332,18 +306,6 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
         }
         CATransaction.commit()
         for tip in tips { addToolTip(tip.rect, owner: self, userData: nil) }
-    }
-
-    /// "Claude 09:41" in mono 11: the name in the writer's color, the time in `ink3`.
-    private func marginLabel(_ writer: MarkWriter, color: NSColor, at date: Date) -> CATextLayer {
-        let ink3 = Chrome.color(.ink3).resolved(for: effectiveAppearance)
-        let foreground = NSAttributedString.Key(kCTForegroundColorAttributeName as String)
-        let text = NSMutableAttributedString(string: writer.name, attributes: [.font: Chrome.mono(11), foreground: color.cgColor])
-        text.append(NSAttributedString(string: " " + Self.clock.string(from: date), attributes: [.font: Chrome.mono(11), foreground: ink3.cgColor]))
-        let layer = CATextLayer()
-        layer.string = text
-        layer.contentsScale = window?.backingScaleFactor ?? 2
-        return layer
     }
 
     private struct Segment {
@@ -397,7 +359,8 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
 
     func view(_ view: NSView, stringForToolTip tag: NSView.ToolTipTag, point: NSPoint, userData data: UnsafeMutableRawPointer?) -> String {
         guard let tip = tips.first(where: { $0.rect.contains(point) }), let change = changes[tip.change] else { return "" }
-        return change.conflict ? "\(MarkWriter(change.origin).name) · two versions" : MarkWriter(change.origin).name
+        let time = (landed[tip.change] ?? .now).formatted(date: .omitted, time: .shortened)
+        return change.conflict ? "\(MarkWriter(change.origin).name) \u{00B7} two versions" : "\(MarkWriter(change.origin).name) \u{00B7} \(time)"
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -430,15 +393,20 @@ final class ChangeMarks: NSView, NSViewToolTipOwner {
         return holding.first { $0.value.conflict }?.key ?? holding.keys.min()
     }
 
-    /// Cmd-Return: keeps the change under the caret, or both versions of a conflict.
+    /// The change ⌘↩ and ⌥⌘⌫ decide: the one under the caret, else the one the Keep bar shows.
+    var focusedChange: UInt64? {
+        changeAtCaret ?? KeepBar.focusedChange(for: live)
+    }
+
+    /// Cmd-Return: keeps the focused change, or both versions of a conflict.
     func keepAtCaret() {
-        guard let id = changeAtCaret else { return }
+        guard let id = focusedChange else { return }
         live?.keep(id)
     }
 
-    /// Option-Cmd-Delete: reverts the change under the caret, or keeps your version of a conflict.
+    /// Option-Cmd-Delete: reverts the focused change, or keeps your version of a conflict.
     func revertAtCaret() {
-        guard let id = changeAtCaret else { return }
+        guard let id = focusedChange else { return }
         live?.revert(id)
     }
 

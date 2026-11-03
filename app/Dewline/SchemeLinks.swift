@@ -1,7 +1,7 @@
 import AppKit
 import MdCore
 
-/// `dewline://open?path=…&line=…` and `dewline://export?path=…&to=pdf&out=…`. Every path goes through the core's
+/// `dewline://open?path=…&line=…`, `dewline://export?path=…&to=pdf&out=…` and `dewline://demo`, Welcome.md's link. Every path goes through the core's
 /// jail: inside the home folder, never inside ~/Library or a `.ssh` folder. An export writes only a file named for
 /// its format, so a link can't overwrite anything else.
 @MainActor
@@ -20,7 +20,7 @@ enum SchemeLinks {
             items.first { $0.name == name }?.value
         }
         func path(_ name: String) throws(Refused) -> URL {
-            guard let path = value(name), !path.isEmpty else { throw Refused("The link has no \(name).") }
+            guard let path = value(name), !path.isEmpty else { throw Refused(name == "out" ? "This link doesn\u{2019}t say where to export." : "This link doesn\u{2019}t say which note to open.") }
             return URL(fileURLWithPath: try jailedPath((path as NSString).expandingTildeInPath))
         }
         switch url.host() {
@@ -28,6 +28,8 @@ enum SchemeLinks {
             let line = value("line").flatMap(Int.init).flatMap { $0 > 0 ? $0 : nil }
             guard let delegate = NSApp.delegate as? AppDelegate else { return }
             try delegate.show(try path("path"), line: line, column: nil)
+        case "demo":
+            (NSApp.delegate as? AppDelegate)?.playDemo(at: Welcome.url())
         case "export":
             let to = value("to")?.lowercased() ?? "pdf"
             // A link exports what the CLI hands the app; DOCX the CLI writes itself.
@@ -51,7 +53,7 @@ enum SchemeLinks {
                 }
             }
         default:
-            throw Refused("Dewline doesn’t know the link \(url.absoluteString).")
+            throw Refused("Dewline can\u{2019}t open this kind of link.")
         }
     }
 }

@@ -70,15 +70,3 @@ struct Session: Codable, Equatable {
         defaults.set(try? JSONEncoder().encode(self), forKey: Self.key)
     }
 }
-
-/// The folders from `root` down to `file`, then the file. A file outside `root` shows under its own folder.
-func breadcrumbs(of file: URL?, in root: URL?) -> [URL] {
-    let root = root?.standardizedFileURL
-    guard let file = file?.standardizedFileURL else { return root.map { [$0] } ?? [] }
-    guard let root, file.path.hasPrefix(root.path + "/") else { return [file.deletingLastPathComponent(), file] }
-    var folders = [root]
-    for name in file.deletingLastPathComponent().path.dropFirst(root.path.count).split(separator: "/") {
-        folders.append(folders.last!.appending(path: String(name), directoryHint: .isDirectory))
-    }
-    return folders + [file]
-}
