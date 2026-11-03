@@ -60,6 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         RightPane.makeChanges = { ReviewViewController(for: $0) }
+        RightPane.makeAgent = { AgentPanel.makeViewController(window: $0) }
         Review.closedNotes = {
             ClosedChanges.all.map { ClosedNote(url: $0.url, origin: $0.origin, time: $0.time) }.sorted { $0.time > $1.time }
         }
