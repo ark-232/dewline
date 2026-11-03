@@ -55,23 +55,55 @@ struct MainMenuTests {
         }
     }
 
-    /// DEWLINE_KEYBOARD_DOC (TEST_RUNNER_DEWLINE_KEYBOARD_DOC through xcodebuild) writes the file before comparing.
+    /// DEWLINE_KEYBOARD_DOC (TEST_RUNNER_DEWLINE_KEYBOARD_DOC through xcodebuild) writes both files before comparing.
     @Test func keyboardDocListsTheMenuBar() throws {
-        let rows = shortcuts().map { "| \($0.title) | \($0.path) | \($0.key.glyphs) |" }
+        let all = shortcuts()
+        let rows = all.map { "| \($0.title) | \($0.path) | \($0.key.glyphs) |" }
         let text = ([
             "# Keyboard shortcuts", "",
             "The shortcuts `app/Dewline/MainMenu.swift` puts in the menu bar, written here by `MainMenuTests`.", "",
             "| Command | Menu | Shortcut |", "| --- | --- | --- |",
         ] + rows).joined(separator: "\n") + "\n"
-        let doc = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().appending(path: "docs/keyboard.md")
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let doc = root.appending(path: "docs/keyboard.md")
+        let page = root.appending(path: "site/docs/keyboard/index.html")
+        let html = try String(contentsOf: page, encoding: .utf8)
+        let start = try #require(html.range(of: "<!-- menu-bar: written by MainMenuTests -->\n"))
+        let end = try #require(html.range(of: "<!-- /menu-bar -->", range: start.upperBound..<html.endIndex))
+        let written = html.replacingCharacters(in: start.upperBound..<end.lowerBound, with: Self.tables(all))
         if ProcessInfo.processInfo.environment["DEWLINE_KEYBOARD_DOC"] != nil {
             try text.write(to: doc, atomically: true, encoding: .utf8)
+            try written.write(to: page, atomically: true, encoding: .utf8)
         }
-        #expect((try? String(contentsOf: doc, encoding: .utf8)) == text, """
-            docs/keyboard.md differs from the menu bar. Rewrite it with
+        let rewrite = """
+            Rewrite it with
             TEST_RUNNER_DEWLINE_KEYBOARD_DOC=1 xcodebuild test -project app/Dewline.xcodeproj -scheme Dewline \
             -destination 'platform=macOS' -only-testing:DewlineTests/MainMenuTests CODE_SIGNING_ALLOWED=NO
-            """)
+            """
+        #expect((try? String(contentsOf: doc, encoding: .utf8)) == text, "docs/keyboard.md differs from the menu bar. \(rewrite)")
+        #expect((try? String(contentsOf: page, encoding: .utf8)) == written, "The site's keyboard page differs from the menu bar. \(rewrite)")
+    }
+
+    /// The site's keyboard page between its markers: a heading and a table per menu, one keycap per key.
+    private static func tables(_ all: [(path: String, title: String, key: KeyEquivalent)]) -> String {
+        func escape(_ text: String) -> String {
+            text.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;")
+        }
+        var menus: [(name: String, rows: [String])] = []
+        for item in all {
+            let menu = String(item.path.split(separator: " › ").first ?? "")
+            let keys = item.key.caps.map { "<kbd>\(escape($0))</kbd>" }.joined()
+            let row = "            <tr><td>\(escape(item.title))</td><td>\(keys)</td></tr>"
+            if menus.last?.name == menu { menus[menus.count - 1].rows.append(row) } else { menus.append((menu, [row])) }
+        }
+        return menus.map { menu in
+            ([
+                "      <h2 id=\"\(menu.name.lowercased())\">\(escape(menu.name))</h2>",
+                "      <div class=\"table\" tabindex=\"0\" role=\"region\" aria-label=\"\(escape(menu.name)) menu\">",
+                "        <table>",
+                "          <thead><tr><th scope=\"col\">Command</th><th scope=\"col\">Shortcut</th></tr></thead>",
+                "          <tbody>",
+            ] + menu.rows + ["          </tbody>", "        </table>", "      </div>", ""]).joined(separator: "\n")
+        }.joined() + "      "
     }
 }
