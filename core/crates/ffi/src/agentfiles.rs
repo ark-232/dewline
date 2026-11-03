@@ -1,7 +1,10 @@
 use std::path::Path;
+use std::sync::Arc;
 use std::time::UNIX_EPOCH;
 
 use dewline_core::{divergence, links, loads};
+
+use crate::markdown::Text;
 
 /// One file an agent loads in a folder.
 #[derive(uniffi::Record)]
@@ -82,8 +85,9 @@ pub struct BrokenLink {
 
 /// The broken links and imports of `text`, the file at `path`.
 #[uniffi::export]
-pub fn broken_links(path: String, text: String, home: Option<String>) -> Vec<BrokenLink> {
+pub fn broken_links(path: String, text: Arc<Text>, home: Option<String>) -> Vec<BrokenLink> {
     let file = Path::new(&path);
+    let text = text.lock();
     let utf16 = |byte: usize| text[..byte].encode_utf16().count() as u64;
     links::broken(file, &text, home.as_deref().map(Path::new))
         .into_iter()

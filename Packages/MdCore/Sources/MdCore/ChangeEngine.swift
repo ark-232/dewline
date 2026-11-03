@@ -132,10 +132,10 @@ public final class ChangeEngine: Sendable {
     public func open(_ url: URL) throws(Failure) -> Opened {
         let opened = try Self.call { try engine.open(path: url.path) }
         let gitdir = opened.gitdir.map { URL(fileURLWithPath: $0, isDirectory: true) }
-        guard case .text(let text, let bom) = opened.contents else {
+        guard case .text(let bom) = opened.contents else {
             return Opened(doc: opened.doc, text: nil, bom: false, gitdir: gitdir)
         }
-        return Opened(doc: opened.doc, text: text, bom: bom, gitdir: gitdir)
+        return Opened(doc: opened.doc, text: try Self.call { try engine.text(doc: opened.doc) }, bom: bom, gitdir: gitdir)
     }
 
     /// Whether the file differs from the base.

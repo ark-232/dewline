@@ -169,14 +169,10 @@ impl From<merge::Edit> for Edit {
 
 #[derive(Debug, uniffi::Enum)]
 pub enum Contents {
-    Text {
-        text: String,
-        bom: bool,
-    },
+    /// Read with `Engine::text`: a String in a record crosses into Swift through two copies of it.
+    Text { bom: bool },
     /// Not UTF-8: shown read-only, never written.
-    Bytes {
-        bytes: Vec<u8>,
-    },
+    Bytes { bytes: Vec<u8> },
 }
 
 #[derive(Debug, uniffi::Record)]
@@ -362,7 +358,7 @@ impl Engine {
         Ok(Opened {
             doc: opened.doc.0,
             contents: match opened.contents {
-                text::Opened::Utf8 { bom, text } => Contents::Text { text, bom },
+                text::Opened::Utf8 { bom, .. } => Contents::Text { bom },
                 text::Opened::Other(bytes) => Contents::Bytes { bytes },
             },
             path: opened.path.to_string_lossy().into_owned(),
@@ -413,6 +409,11 @@ impl Engine {
             .into_iter()
             .map(Edit::from)
             .collect())
+    }
+
+    /// The text of the file as opened, last saved or last landed.
+    pub fn text(&self, doc: u64) -> Result<String, EngineError> {
+        Ok(self.0.text(DocId(doc))?)
     }
 
     /// Whether `buffer` is the file as opened, last saved or last landed.
@@ -622,9 +623,10 @@ mod tests {
         std::fs::write(&path, "\u{feff}one 🙂\n").unwrap();
         let engine = Engine::new(root.join("snapshots").to_string_lossy().into()).unwrap();
         let opened = engine.open(path.to_string_lossy().into()).unwrap();
-        let Contents::Text { text, bom: true } = opened.contents else {
+        let Contents::Text { bom: true } = opened.contents else {
             panic!("{:?}", opened.contents);
         };
+        let text = engine.text(opened.doc).unwrap();
         assert_eq!(text, "one 🙂\n");
         std::fs::write(&path, "\u{feff}one 🙂 two\n").unwrap();
         assert!(engine.observe(opened.doc).unwrap());

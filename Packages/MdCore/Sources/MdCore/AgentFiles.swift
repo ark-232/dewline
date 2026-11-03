@@ -73,8 +73,8 @@ public struct BrokenTarget: Sendable {
 }
 
 /// The broken relative links and CLAUDE.md `@imports` of `text`, the file at `path`.
-public func brokenTargets(in text: String, path: String, home: String?) -> [BrokenTarget] {
-    brokenLinks(path: path, text: text, home: home).map {
+public func brokenTargets(in text: TextCopy, path: String, home: String?) -> [BrokenTarget] {
+    brokenLinks(path: path, text: text.text, home: home).map {
         BrokenTarget(range: NSRange(location: Int($0.location), length: Int($0.length)), target: $0.target, problem: $0.problem)
     }
 }

@@ -10,7 +10,7 @@ public final class MarkdownParser: Sendable {
 
     /// The whole document. Its labels replace the ones windows use.
     public func parse(_ text: String) throws -> MarkdownParse {
-        MarkdownParse(try markdown.parse(text: utf8(text)))
+        MarkdownParse(try markdown.parse(text: TextCopy(text).text))
     }
 
     /// A window cut from the document (see `core::md::Window`), or nil when `text` and `next` are over 4 KB of UTF-8.
@@ -34,13 +34,20 @@ extension String {
     /// conversion takes 2, sizing included. Foundation's stops at a lone surrogate, which Swift's makes one U+FFFD, so
     /// UTF-16 offsets still match.
     public init(utf8Of text: NSString) {
-        let capacity = text.lengthOfBytes(using: String.Encoding.utf8.rawValue)
+        self.init(
+            utf8Of: text, range: NSRange(location: 0, length: text.length),
+            capacity: text.lengthOfBytes(using: String.Encoding.utf8.rawValue)
+        )
+    }
+
+    /// The UTF-8 of `range` of `text`, in a buffer of `capacity` bytes, enough for it.
+    fileprivate init(utf8Of text: NSString, range: NSRange, capacity: Int) {
         var remaining = NSRange()
         let converted = String(unsafeUninitializedCapacity: capacity) { buffer in
             var used = 0
             text.getBytes(
                 buffer.baseAddress, maxLength: capacity, usedLength: &used, encoding: String.Encoding.utf8.rawValue,
-                options: [], range: NSRange(location: 0, length: text.length), remaining: &remaining
+                options: [], range: range, remaining: &remaining
             )
             return used
         }
@@ -48,8 +55,54 @@ extension String {
             self = converted
             return
         }
-        self = text as String
+        self = text.substring(with: range)
         makeContiguousUTF8()
+    }
+}
+
+/// A text in the UTF-8 the parser and the link check take, copied into Rust a piece at a time. A String argument
+/// crosses into Rust through a Swift copy of all of it, and memory Swift frees stays in the app's footprint.
+public struct TextCopy: Sendable {
+    /// UTF-8 bytes of a String's piece, UTF-16 units of an NSString's.
+    private static let piece = 1 << 16
+
+    let text: Text
+
+    public init(_ text: String) {
+        self.text = text.isContiguousUTF8 ? Self.copy(text) : Self.copy(text as NSString)
+    }
+
+    /// Copies `text` as it is now; it may change once this returns.
+    public init(_ text: NSString) {
+        self.text = Self.copy(text)
+    }
+
+    private static func copy(_ text: String) -> Text {
+        let copy = Text(capacity: UInt64(text.utf8.count))
+        text.utf8.withContiguousStorageIfAvailable { bytes in
+            var start = 0
+            while start < bytes.count {
+                var end = min(start + piece, bytes.count)
+                while end < bytes.count, bytes[end] & 0xC0 == 0x80 { end -= 1 }
+                copy.push(piece: String(decoding: UnsafeBufferPointer(rebasing: bytes[start..<end]), as: UTF8.self))
+                start = end
+            }
+        }
+        return copy
+    }
+
+    private static func copy(_ text: NSString) -> Text {
+        let copy = Text(capacity: UInt64(text.length))
+        var location = 0
+        while location < text.length {
+            var range = NSRange(location: location, length: min(piece, text.length - location))
+            if NSMaxRange(range) < text.length, UTF16.isLeadSurrogate(text.character(at: NSMaxRange(range) - 1)) {
+                range.length -= 1
+            }
+            copy.push(piece: String(utf8Of: text, range: range, capacity: 3 * range.length))
+            location = NSMaxRange(range)
+        }
+        return copy
     }
 }
 
