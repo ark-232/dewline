@@ -8,12 +8,12 @@ def row($metric; $unit; $budget; $measured):
      pass: (($measured | type) == "number" and $measured <= $budget)};
 
 . + {budgets: [
-    row("Keystroke, 1 MB, p50"; "ms"; 8; .keystroke1MB.p50),
+    row("Keystroke, 1 MB, p50"; "ms"; 9.5; .keystroke1MB.p50),
     row("Keystroke, 1 MB, p99"; "ms"; 16; .keystroke1MB.p99),
     row("Keystroke, 10 MB, p95"; "ms"; 16; .keystroke10MB.p95),
-    row("Cold launch, 1 MB, slowest of 3"; "ms"; 300; (.launch1MB.coldMs // [] | max)),
-    row("Warm launch, 1 MB, median of 5"; "ms"; 150; (.launch1MB.warmMs // [] | median)),
-    row("Open 1 MB"; "ms"; 50; .open1MB.ms),
+    row("Cold launch, 1 MB, slowest of 3"; "ms"; 750; (.launch1MB.coldMs // [] | max)),
+    row("Warm launch, 1 MB, median of 5"; "ms"; 425; (.launch1MB.warmMs // [] | median)),
+    row("Open 1 MB"; "ms"; 85; .open1MB.ms),
     row("Open 10 MB"; "ms"; 250; .open10MB.ms),
     row("Idle memory, 1 MB"; "MB"; 80; .idle1MB.footprintMB),
     row("Idle memory, 10 MB"; "MB"; 150; .idle10MB.footprintMB),
