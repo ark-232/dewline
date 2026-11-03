@@ -239,10 +239,9 @@ struct JourneyTests {
         #expect(tab.marked.map { tab.live.excerpt($0.id) } == Array(repeating: ", revised", count: 4))
         #expect(tab.marked.map { tab.live.line($0.id) } == [3, 7, 11, 15])
 
-        // The turn ends: one quiet line under the tab bar.
+        // The turn ends. No finished line shows under the toolbar; the Keep bar carries the count (app-flows).
         Self.claim(.turnEnd, vault.engine)
-        try await Self.until { !tab.controller.finished.isHidden }
-        #expect(tab.controller.finished.accessibilityLabel() == "Claude finished · 4 places in 1 file · Review")
+        #expect(tab.controller.finished.isHidden)
 
         // Keep the first, Revert the second, from the caret as Cmd-Return and Option-Cmd-Delete do.
         let changes = tab.marked
