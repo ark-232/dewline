@@ -1,5 +1,5 @@
 use std::panic::{self, AssertUnwindSafe};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use dewline_core::md::{self, BlockKind, TokenKind};
 
@@ -9,6 +9,29 @@ use dewline_core::md::{self, BlockKind, TokenKind};
 pub enum ParseError {
     #[error("{message}")]
     Panic { message: String },
+}
+
+/// A text Swift hands over in pieces. A String argument crosses through a Swift copy of all of it, and memory Swift
+/// frees stays in the app's footprint.
+#[derive(uniffi::Object)]
+pub struct Text(Mutex<String>);
+
+#[uniffi::export]
+impl Text {
+    #[uniffi::constructor]
+    pub fn new(capacity: u64) -> Self {
+        Text(Mutex::new(String::with_capacity(capacity as usize)))
+    }
+
+    pub fn push(&self, piece: String) {
+        self.lock().push_str(&piece);
+    }
+}
+
+impl Text {
+    pub fn lock(&self) -> MutexGuard<'_, String> {
+        self.0.lock().unwrap()
+    }
 }
 
 /// One document's parser. It keeps the link and footnote labels of the document's last whole parse, which its
@@ -26,7 +49,8 @@ impl Markdown {
     }
 
     /// The whole document as records. Its labels replace the ones windows use.
-    pub fn parse(&self, text: String) -> Result<Vec<u8>, ParseError> {
+    pub fn parse(&self, text: Arc<Text>) -> Result<Vec<u8>, ParseError> {
+        let text = text.lock();
         let (records, labels) = unwound(|| {
             let parse = md::parse(&text);
             (records(&parse), parse.labels)
@@ -159,11 +183,19 @@ mod tests {
             .collect()
     }
 
+    fn text(pieces: &[&str]) -> Arc<Text> {
+        let text = Arc::new(Text::new(0));
+        for piece in pieces {
+            text.push(piece.to_string());
+        }
+        text
+    }
+
     // MdCore's decoder reads this layout; MarkdownParseTests decodes the same document.
     #[test]
     fn records_golden() {
-        let text = "# Café 🙂\n\n- [x] **done** [a]\n\n[a]: /u\n";
-        let records = Markdown::new().parse(text.into()).unwrap();
+        let text = text(&["# Café 🙂\n", "\n- [x] **done** [a]\n\n[a]: /u\n"]);
+        let records = Markdown::new().parse(text).unwrap();
         #[rustfmt::skip]
         assert_eq!(words(&records), [
             1, 3, 6,
@@ -186,7 +218,7 @@ mod tests {
             panic!("the panic was not an error");
         };
         assert_eq!(message, "a test asked for a panic");
-        assert!(markdown.parse("# a\n".into()).is_ok());
+        assert!(markdown.parse(text(&["# a\n"])).is_ok());
     }
 
     #[test]
@@ -200,9 +232,9 @@ mod tests {
             words(&records)
         };
         assert_eq!(window(), [1, 1, 0, 0, 0, 9]);
-        markdown.parse("[a]: /u\n\nSee [a].\n".into()).unwrap();
+        markdown.parse(text(&["[a]: /u\n\nSee [a].\n"])).unwrap();
         assert_eq!(window(), [1, 1, 1, 0, 0, 9, 5, 4, 5, 6, 7]);
-        markdown.parse("See [a].\n".into()).unwrap();
+        markdown.parse(text(&["See [a].\n"])).unwrap();
         assert_eq!(window(), [1, 1, 0, 0, 0, 9]);
         let over = "a".repeat(md::WINDOW_LIMIT);
         assert_eq!(

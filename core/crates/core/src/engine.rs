@@ -787,6 +787,18 @@ impl Engine {
         Ok(strip(&d.base, d.bom) == Some(buffer))
     }
 
+    /// The base's text: the file as opened, last saved or last landed.
+    pub fn text(&self, doc: DocId) -> Result<String, EngineError> {
+        let (base, bom) = {
+            let state = self.state();
+            let d = state.docs.get(&doc).ok_or(EngineError::Closed)?;
+            (d.base.clone(), d.bom)
+        };
+        strip(&base, bom)
+            .map(str::to_owned)
+            .ok_or(EngineError::NotText)
+    }
+
     /// Moves the base to the landing's disk version and keeps its changes.
     /// Call it on the main thread with the buffer still at the landing's
     /// version, and apply the landing in the same step only if it succeeds.

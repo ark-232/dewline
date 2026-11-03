@@ -28,11 +28,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let isTestHost = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
     /// The last session, until it reopens.
     private var session: Session?
-    /// True while launching to open a file, which then draws before the last session reopens behind it. Finder and
-    /// open(1) hand the file over before launch finishes, and AppKit opens a path on the command line right after;
-    /// the dewline command sets DEWLINE_OPENS_FILE and sends the file over the control socket once the app listens.
+    /// True while launching to open a file, which then draws before the last session reopens behind it. Folders,
+    /// links and files of other types come to application(_:open:) before launch finishes. AppKit hands a Markdown
+    /// file from Finder or open(1) to NSDocumentController just after, and a path on the command line too. The dewline
+    /// command sets DEWLINE_OPENS_FILE and sends the file over the control socket once the app listens.
     private var opensFile = ProcessInfo.processInfo.environment["DEWLINE_OPENS_FILE"] != nil || AppDelegate.namesFile(CommandLine.arguments.dropFirst())
     private var launched = false
+    /// Whether application(_:open:) was handed anything before launch finished.
+    private var openedBeforeLaunch = false
 
     /// Whether `arguments` hold a path besides `-Key value` pairs, which are defaults.
     private nonisolated static func namesFile(_ arguments: ArraySlice<String>) -> Bool {
@@ -85,9 +88,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         launched = true
+        // A launch to open something that application(_:open:) never saw is a Markdown file on its way.
+        if notification.userInfo?[NSApplication.launchIsDefaultUserInfoKey] as? Bool == false, !openedBeforeLaunch { opensFile = true }
         // Before AppKit decides whether to show the launch window, which it shows only when nothing reopened.
         if opensFile, session != nil {
-            // The dewline command gives up after 10 s; then the session reopens anyway.
+            // A file that never shows (the dewline command gives up after 10 s) leaves the session to reopen then.
             DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
                 guard let self, session != nil else { return }
                 resume()
@@ -225,6 +230,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
+        if !launched { openedBeforeLaunch = true }
         for url in urls {
             if url.scheme == "dewline" {
                 if url.host == "join" {
