@@ -392,10 +392,16 @@ final class ChangeRow: NSTableCellView {
         revert = FlowButton("Revert", style: .plain) { decide?(false) }
         decides = decide != nil
         super.init(frame: .zero)
-        let label = NSTextField(labelWithAttributedString: title)
+        let truncated = NSMutableAttributedString(attributedString: title)
+        let style = NSMutableParagraphStyle()
+        style.lineBreakMode = .byTruncatingTail
+        truncated.addAttribute(.paragraphStyle, value: style, range: NSRange(location: 0, length: truncated.length))
+        let label = NSTextField(labelWithAttributedString: truncated)
+        label.maximumNumberOfLines = 1
+        label.cell?.truncatesLastVisibleLine = true
         label.lineBreakMode = .byTruncatingTail
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        label.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        label.setContentHuggingPriority(NSLayoutConstraint.Priority(1), for: .horizontal)
         detail.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
         detail.textColor = ThemeStore.shared.color(.ink2)
         detail.setContentHuggingPriority(.required, for: .horizontal)

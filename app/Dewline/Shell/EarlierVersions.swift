@@ -77,7 +77,7 @@ final class EarlierVersions: NSObject, NSTableViewDataSource, NSTableViewDelegat
         NSLayoutConstraint.activate([
             list.topAnchor.constraint(equalTo: root.topAnchor, constant: 16),
             list.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 16),
-            list.widthAnchor.constraint(equalToConstant: 260),
+            list.widthAnchor.constraint(equalToConstant: 300),
             list.bottomAnchor.constraint(equalTo: buttons.topAnchor, constant: -16),
             pane.topAnchor.constraint(equalTo: list.topAnchor),
             pane.leadingAnchor.constraint(equalTo: list.trailingAnchor, constant: 12),
@@ -120,7 +120,7 @@ final class EarlierVersions: NSObject, NSTableViewDataSource, NSTableViewDelegat
         pin.tag = row
         pin.toolTip = "A pinned version is kept until you unpin it."
         let cell = NSTableCellView()
-        let stack = NSStackView(views: [title, pin])
+        let stack = NSStackView(views: [title, NSView(), pin])
         stack.translatesAutoresizingMaskIntoConstraints = false
         cell.addSubview(stack)
         NSLayoutConstraint.activate([
@@ -225,8 +225,12 @@ extension EarlierVersions {
     /// What restoring `old` over `current` does, line by line: lines it brings back in ink, lines it removes struck
     /// in ink 2, and two unchanged lines of context around each, the rest elided.
     static func difference(from current: String, to old: String) -> NSAttributedString {
-        let now = current.components(separatedBy: "\n")
-        let then = old.components(separatedBy: "\n")
+        func lines(_ text: String) -> [String] {
+            let lines = text.components(separatedBy: "\n")
+            return text.hasSuffix("\n") ? Array(lines.dropLast()) : lines
+        }
+        let now = lines(current)
+        let then = lines(old)
         let steps = then.difference(from: now)
         func offset(_ change: CollectionDifference<String>.Change) -> Int {
             switch change {
