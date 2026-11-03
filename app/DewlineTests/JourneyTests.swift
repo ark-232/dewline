@@ -489,11 +489,11 @@ struct JourneyTests {
         second.window.displayIfNeeded()
         #expect(second.textView.string == saved)
         #expect(second.textView.selectedRange() == NSRange(location: target + 4, length: 0))
-        let reopened = try #require(second.textView.enclosingScrollView?.contentView)
-        withKnownIssue("restore scrolls once to TextKit 2's estimated baseline, so the page settles paragraphs from its place") {
-            #expect(abs(reopened.bounds.minY - top) < 1)
-            #expect(second.controller.place?.top == place.top)
-        }
+        // The same line at the top of the page, at the same height. The clip view's own position is no measure:
+        // TextKit 2 places text it has not laid out at estimated heights, which differ between the two tabs.
+        let reopened = try #require(second.controller.place)
+        #expect(reopened.top == place.top)
+        #expect(abs(reopened.offset - place.offset) < 1)
 
         let third = try Tab(vault.url("odd.md"), engine: vault.engine)
         defer { third.close() }
