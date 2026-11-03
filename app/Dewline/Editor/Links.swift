@@ -15,7 +15,8 @@ enum LinkTarget: Equatable {
 }
 
 enum Links {
-    static let schemes: Set<String> = ["http", "https", "mailto"]
+    /// `dewline:` links run in the app (SchemeLinks), as Welcome.md's "Show me a change" does.
+    static let schemes: Set<String> = ["http", "https", "mailto", "dewline"]
 
     /// A markdown link's destination: an address, a relative path to a note with an optional `#heading`, or a heading
     /// here. Relative paths resolve from `folder`, the document's.
@@ -157,6 +158,8 @@ extension EditorTextView {
 
     private func follow(_ target: LinkTarget) {
         switch target {
+        case .web(let url) where url.scheme?.lowercased() == "dewline":
+            SchemeLinks.handle(url)
         case .web(let url):
             NSWorkspace.shared.open(url)
         case .note(let url, let heading):
