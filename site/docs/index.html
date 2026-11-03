@@ -3,12 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Docs · Dewline</title>
-<meta name="description" content="How to install and use Dewline, a native Markdown editor for Mac: the app, the command line, the MCP server and how it is built.">
+<title>Docs · Dewline docs</title>
+<meta name="description" content="Every page of the Dewline docs, by what you want to do.">
+<meta name="doc-type" content="reference">
 <link rel="canonical" href="https://dewline.arkwerx.com/docs/">
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#F7FBF9" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#091110" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F9FAFA" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E100F" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preload" href="/fonts/newsreader-var.v1.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/ibm-plex-sans-var-latin1.v3.woff2" as="font" type="font/woff2" crossorigin>
@@ -16,7 +17,6 @@
 <link rel="stylesheet" href="/docs/docs.css">
 <script src="/docs/docs.js" defer></script>
 <script src="/docs/search.js" defer></script>
-<script src="/site.js" defer></script>
 </head>
 <body class="docs">
 <a class="skip" href="#main">Skip to content</a>
@@ -45,8 +45,8 @@
     <a class="dtop-label" href="/docs/">Docs</a>
     <button type="button" class="search-open" aria-keyshortcuts="Meta+K /"><span>Search</span><kbd>⌘K</kbd></button>
     <nav class="dtop-links" aria-label="Site">
-      <a href="https://github.com/ark-232/dewline/releases/latest">Download</a>
       <a href="https://github.com/ark-232/dewline">Source</a>
+      <a class="dtop-get" href="https://github.com/ark-232/dewline/releases/latest">Download</a>
     </nav>
   </div>
 </header>
@@ -61,127 +61,104 @@
       </ul>
     </div>
     <div class="dnav-group">
-      <p class="dnav-title">Guide</p>
+      <p class="dnav-title">Write</p>
       <ul>
         <li><a href="/docs/editing/">Editing</a></li>
         <li><a href="/docs/markdown/">Markdown</a></li>
-        <li><a href="/docs/files/">Files and saves</a></li>
-        <li><a href="/docs/collaboration/">Collaboration</a></li>
+        <li><a href="/docs/keyboard/">Keyboard</a></li>
         <li><a href="/docs/themes-and-fonts/">Themes and fonts</a></li>
-        <li><a href="/docs/keyboard/">Keyboard shortcuts</a></li>
         <li><a href="/docs/export/">Export</a></li>
       </ul>
     </div>
     <div class="dnav-group">
-      <p class="dnav-title">Reference</p>
+      <p class="dnav-title">Files and changes</p>
       <ul>
-        <li><a href="/docs/cli/">Command line</a></li>
-        <li><a href="/docs/mcp/">MCP server</a></li>
-        <li><a href="/docs/agents/">Agents and changes</a></li>
+        <li><a href="/docs/files/">Files</a></li>
+        <li><a href="/docs/agents/">Agents</a></li>
+        <li><a href="/docs/collaboration/">Collaboration</a></li>
+      </ul>
+    </div>
+    <div class="dnav-group">
+      <p class="dnav-title">Developers</p>
+      <ul>
+        <li><a href="/docs/cli/">CLI</a></li>
+        <li><a href="/docs/mcp/">MCP</a></li>
         <li><a href="/docs/url-scheme/">URL scheme</a></li>
       </ul>
     </div>
     <div class="dnav-group">
-      <p class="dnav-title">Technical</p>
+      <p class="dnav-title">About</p>
       <ul>
-        <li><a href="/docs/architecture/">Architecture</a></li>
-        <li><a href="/docs/performance/">Performance</a></li>
         <li><a href="/docs/security/">Security and privacy</a></li>
+        <li><a href="/docs/performance/">Performance</a></li>
+        <li><a href="/docs/architecture/">Architecture</a></li>
       </ul>
     </div>
   </nav>
 
   <main class="dmain" id="main">
     <article class="prose">
-      <p class="eyebrow">Dewline docs</p>
-      <h1>Your notes are already files.</h1>
-      <p class="lead">Dewline is a native Markdown editor for Mac. It opens the .md files you already keep, in any folder or Obsidian vault, and a save changes only the bytes you edited. Links, embeds, math, diagrams, export and live collaboration are built in, with no account and no telemetry.</p>
+      <h1>Dewline docs</h1>
+      <p class="lead">How to write in Dewline, keep your notes as files, and work with the tools that change them.</p>
+      <p class="start">Get started: <a href="/docs/first-steps/">First steps</a></p>
 
-      <h2 id="install">Install</h2>
-      <div class="install">
-        <div>
-          <h3>Download</h3>
-          <p>A signed, notarized disk image. Open it and drag Dewline into Applications.</p>
-          <a class="btn" href="https://github.com/ark-232/dewline/releases/latest">Download for macOS 26</a>
-        </div>
-        <div>
-          <h3>Homebrew</h3>
-          <p>The cask installs the app and puts <code>dewline</code> on your PATH.</p>
-          <div class="brew">
-            <code id="brew-docs">brew install --cask ark-232/tap/dewline</code>
-            <button type="button" class="copy" data-copy="brew-docs" aria-label="Copy the Homebrew command">Copy</button>
-          </div>
-        </div>
+      <div class="index">
+        <h2 id="start">Start</h2>
+        <dl>
+          <dt><a href="/docs/first-steps/">First steps</a></dt>
+          <dd>Install, write a note, keep or revert a change, open your own folder.</dd>
+        </dl>
+
+        <h2 id="write">Write</h2>
+        <dl>
+          <dt><a href="/docs/editing/">Editing</a></dt>
+          <dd>Live Markdown, Preview, links, lists, find, Vim mode and Settings.</dd>
+          <dt><a href="/docs/markdown/">Markdown</a></dt>
+          <dd>Every syntax Dewline renders, with the source to type.</dd>
+          <dt><a href="/docs/keyboard/">Keyboard</a></dt>
+          <dd>Every shortcut in the menu bar.</dd>
+          <dt><a href="/docs/themes-and-fonts/">Themes and fonts</a></dt>
+          <dd>Pick a theme, fonts and the width of the text.</dd>
+          <dt><a href="/docs/export/">Export</a></dt>
+          <dd>PDF, HTML and Word, from the app or the command line.</dd>
+        </dl>
+
+        <h2 id="files-and-changes">Files and changes</h2>
+        <dl>
+          <dt><a href="/docs/files/">Files</a></dt>
+          <dd>Make, find, rename and move notes. Saving, conflicts and earlier versions.</dd>
+          <dt><a href="/docs/agents/">Agents</a></dt>
+          <dd>Keep or revert a change, and chat with your coding agent beside a note.</dd>
+          <dt><a href="/docs/collaboration/">Collaboration</a></dt>
+          <dd>Edit one note with another person, Mac to Mac.</dd>
+        </dl>
+
+        <h2 id="developers">Developers</h2>
+        <dl>
+          <dt><a href="/docs/cli/">CLI</a></dt>
+          <dd>The <code>dewline</code> command: open, export, capture, mcp, doctor.</dd>
+          <dt><a href="/docs/mcp/">MCP</a></dt>
+          <dd>Serve a folder of notes to an agent.</dd>
+          <dt><a href="/docs/url-scheme/">URL scheme</a></dt>
+          <dd><code>dewline://</code> links that open, export or join.</dd>
+        </dl>
+
+        <h2 id="about">About</h2>
+        <dl>
+          <dt><a href="/docs/security/">Security and privacy</a></dt>
+          <dd>What Dewline reads, writes and sends.</dd>
+          <dt><a href="/docs/performance/">Performance</a></dt>
+          <dd>The budgets each release is held to.</dd>
+          <dt><a href="/docs/architecture/">Architecture</a></dt>
+          <dd>How the Swift app and the Rust engine fit together.</dd>
+          <dt>Project</dt>
+          <dd><a href="https://github.com/ark-232/dewline/blob/main/CHANGELOG.md">Changelog</a> · <a href="https://github.com/ark-232/dewline/blob/main/LICENSE.md">License (FSL-1.1-ALv2)</a> · <a href="https://github.com/ark-232/dewline/blob/main/THIRD_PARTY_NOTICES.md">Third-party notices</a></dd>
+        </dl>
       </div>
-      <p>Dewline updates itself after that.</p>
-
-      <h3 id="requirements">Requirements</h3>
-      <ul>
-        <li>macOS 26 or later.</li>
-        <li>An Apple Silicon or Intel Mac. The download is one universal app.</li>
-      </ul>
-
-      <h2 id="command">The command</h2>
-      <p>The app carries a command-line tool at <code>Dewline.app/Contents/Helpers/dewline</code>. It opens files at a line, waits for the window to close, exports without a window, and serves a folder's notes to an agent over MCP. Check that your shell finds it:</p>
-      <div class="code" data-lang="Shell">
-        <pre tabindex="0"><code><span class="p">$ </span>dewline --version
-dewline 0.1.0</code></pre>
-      </div>
-      <p><a href="/docs/cli/">Command line</a> covers every subcommand.</p>
-
-      <h2 id="sections">The docs</h2>
-      <div class="sections">
-        <section aria-labelledby="g-start">
-          <h3 id="g-start">Start</h3>
-          <ul>
-            <li><a href="/docs/first-steps/"><b>First steps</b><span>Open a folder, write a note and find your way around.</span></a></li>
-          </ul>
-        </section>
-        <section aria-labelledby="g-guide">
-          <h3 id="g-guide">Guide</h3>
-          <ul>
-            <li><a href="/docs/editing/"><b>Editing</b><span>Live rendering, the Source view, Vim mode, focus and typewriter modes.</span></a></li>
-            <li><a href="/docs/markdown/"><b>Markdown</b><span>Every syntax Dewline renders, with examples.</span></a></li>
-            <li><a href="/docs/files/"><b>Files and saves</b><span>Folders and vaults, how a save works, snapshots and outside changes.</span></a></li>
-            <li><a href="/docs/collaboration/"><b>Collaboration</b><span>Edit a file live with someone by invite link, peer to peer.</span></a></li>
-            <li><a href="/docs/themes-and-fonts/"><b>Themes and fonts</b><span>Six themes, a pack of four more, and fonts you install from Settings.</span></a></li>
-            <li><a href="/docs/keyboard/"><b>Keyboard shortcuts</b><span>Every shortcut in the app.</span></a></li>
-            <li><a href="/docs/export/"><b>Export</b><span>HTML, PDF and DOCX, from the app or the command line.</span></a></li>
-          </ul>
-        </section>
-        <section aria-labelledby="g-reference">
-          <h3 id="g-reference">Reference</h3>
-          <ul>
-            <li><a href="/docs/cli/"><b>Command line</b><span>The <code>dewline</code> subcommands: open, notify, changes, capture, export, mcp and doctor.</span></a></li>
-            <li><a href="/docs/mcp/"><b>MCP server</b><span>Serve a folder's notes to an agent: read, search, backlinks, decisions and an inbox.</span></a></li>
-            <li><a href="/docs/agents/"><b>Agents and changes</b><span>Hooks for Claude Code, Codex and Cursor, and how a change carries its agent's name.</span></a></li>
-            <li><a href="/docs/url-scheme/"><b>URL scheme</b><span><code>dewline://</code> links that open a file, export it, or join a shared session.</span></a></li>
-          </ul>
-        </section>
-        <section aria-labelledby="g-technical">
-          <h3 id="g-technical">Technical</h3>
-          <ul>
-            <li><a href="/docs/architecture/"><b>Architecture</b><span>AppKit and TextKit 2 over a Rust engine, and how the parts fit.</span></a></li>
-            <li><a href="/docs/performance/"><b>Performance</b><span>Measured numbers for 0.1.0 and the budgets they are held to.</span></a></li>
-            <li><a href="/docs/security/"><b>Security and privacy</b><span>What Dewline reads, writes and sends, and how to report a flaw.</span></a></li>
-          </ul>
-        </section>
-      </div>
-
-      <h2 id="more">More</h2>
-      <ul class="links">
-        <li><a href="https://github.com/ark-232/dewline/blob/main/CHANGELOG.md">Changelog</a></li>
-        <li><a href="https://github.com/ark-232/dewline/releases">Releases</a></li>
-        <li><a href="https://github.com/ark-232/dewline">Source code</a></li>
-        <li><a href="https://github.com/ark-232/dewline/issues">Report a bug</a></li>
-        <li><a href="https://github.com/ark-232/dewline/blob/main/SECURITY.md">Security policy</a></li>
-        <li><a href="https://github.com/ark-232/dewline/blob/main/LICENSE.md">License (FSL-1.1-ALv2)</a></li>
-        <li><a href="https://github.com/ark-232/dewline/blob/main/THIRD_PARTY_NOTICES.md">Third-party notices</a></li>
-      </ul>
     </article>
 
     <nav class="pager" aria-label="Previous and next page">
-      <a class="next" href="/docs/first-steps/"><span>Next</span><b>First steps</b></a>
+      <a class="next" href="/docs/first-steps/">Next: First steps</a>
     </nav>
   </main>
 
@@ -192,13 +169,13 @@ dewline 0.1.0</code></pre>
 
 <footer class="foot">
   <div class="foot-in wrap">
-    <p>Free, source-available under <a class="text-link" href="https://github.com/ark-232/dewline/blob/main/LICENSE.md">FSL-1.1-ALv2</a>. Published by ArkWerx LLC.</p>
+    <p>© 2026 ArkWerx LLC</p>
     <nav aria-label="Project">
-      <a href="/">Home</a>
+      <a href="/docs/">Docs</a>
+      <a href="https://github.com/ark-232/dewline/releases">Releases</a>
       <a href="https://github.com/ark-232/dewline">Source</a>
-      <a href="https://github.com/ark-232/dewline/releases/latest">Releases</a>
-      <a href="https://github.com/ark-232/dewline/issues">Issues</a>
-      <a href="https://github.com/ark-232/dewline/blob/main/SECURITY.md">Security</a>
+      <a href="/docs/security/">Security</a>
+      <a href="https://github.com/ark-232/dewline/issues/new">Report an issue</a>
     </nav>
   </div>
 </footer>

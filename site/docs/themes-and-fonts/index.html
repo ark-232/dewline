@@ -4,11 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Themes and fonts · Dewline docs</title>
-<meta name="description" content="Dewline's ten themes, the fonts it bundles and installs, the page settings and the colors that mark each writer.">
+<meta name="description" content="Pick a theme, fonts and the size and width of the text.">
+<meta name="doc-type" content="how-to">
 <link rel="canonical" href="https://dewline.arkwerx.com/docs/themes-and-fonts/">
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#F7FBF9" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#091110" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F9FAFA" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E100F" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preload" href="/fonts/newsreader-var.v1.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/ibm-plex-sans-var-latin1.v3.woff2" as="font" type="font/woff2" crossorigin>
@@ -44,8 +45,8 @@
     <a class="dtop-label" href="/docs/">Docs</a>
     <button type="button" class="search-open" aria-keyshortcuts="Meta+K /"><span>Search</span><kbd>⌘K</kbd></button>
     <nav class="dtop-links" aria-label="Site">
-      <a href="https://github.com/ark-232/dewline/releases/latest">Download</a>
       <a href="https://github.com/ark-232/dewline">Source</a>
+      <a class="dtop-get" href="https://github.com/ark-232/dewline/releases/latest">Download</a>
     </nav>
   </div>
 </header>
@@ -60,62 +61,66 @@
       </ul>
     </div>
     <div class="dnav-group">
-      <p class="dnav-title">Guide</p>
+      <p class="dnav-title">Write</p>
       <ul>
         <li><a href="/docs/editing/">Editing</a></li>
         <li><a href="/docs/markdown/">Markdown</a></li>
-        <li><a href="/docs/files/">Files and saves</a></li>
-        <li><a href="/docs/collaboration/">Collaboration</a></li>
+        <li><a href="/docs/keyboard/">Keyboard</a></li>
         <li><a href="/docs/themes-and-fonts/" aria-current="page">Themes and fonts</a></li>
-        <li><a href="/docs/keyboard/">Keyboard shortcuts</a></li>
         <li><a href="/docs/export/">Export</a></li>
       </ul>
     </div>
     <div class="dnav-group">
-      <p class="dnav-title">Reference</p>
+      <p class="dnav-title">Files and changes</p>
       <ul>
-        <li><a href="/docs/cli/">Command line</a></li>
-        <li><a href="/docs/mcp/">MCP server</a></li>
-        <li><a href="/docs/agents/">Agents and changes</a></li>
+        <li><a href="/docs/files/">Files</a></li>
+        <li><a href="/docs/agents/">Agents</a></li>
+        <li><a href="/docs/collaboration/">Collaboration</a></li>
+      </ul>
+    </div>
+    <div class="dnav-group">
+      <p class="dnav-title">Developers</p>
+      <ul>
+        <li><a href="/docs/cli/">CLI</a></li>
+        <li><a href="/docs/mcp/">MCP</a></li>
         <li><a href="/docs/url-scheme/">URL scheme</a></li>
       </ul>
     </div>
     <div class="dnav-group">
-      <p class="dnav-title">Technical</p>
+      <p class="dnav-title">About</p>
       <ul>
-        <li><a href="/docs/architecture/">Architecture</a></li>
-        <li><a href="/docs/performance/">Performance</a></li>
         <li><a href="/docs/security/">Security and privacy</a></li>
+        <li><a href="/docs/performance/">Performance</a></li>
+        <li><a href="/docs/architecture/">Architecture</a></li>
       </ul>
     </div>
   </nav>
 
   <main class="dmain" id="main">
     <article class="prose">
-      <p class="eyebrow">Guide</p>
       <h1>Themes and fonts</h1>
-      <p class="lead">Settings &gt; Appearance sets how the page looks: a theme for light and one for dark, three fonts, and the size and measure of the text. Changes apply as you pick them.</p>
+      <p class="lead">Settings &gt; Appearance sets how a note looks: themes for light and dark, three fonts, and the size of the text.</p>
+
+      <h2 id="choose">Choose a theme</h2>
+      <ol class="steps">
+        <li><b>Open Settings &gt; Appearance</b> <span class="keys">(<kbd>⌘</kbd><kbd>,</kbd>)</span>.</li>
+        <li><b>Click a theme</b> to use it in the mode you are in now. Control-click it for Use in Light or Use in Dark.</li>
+        <li><b>Set Mode</b> to Light, Dark or Match system, the default.</li>
+      </ol>
+      <p>The command palette has Theme… and Appearance… too. Changes apply as you pick them.</p>
 
       <h2 id="themes">Themes</h2>
-      <p>Dewline has ten themes: six of its own and a dev pack of four ported from popular editor palettes. Every theme has a light and a dark version except Nord, which is dark only and fills both.</p>
+      <p>Ten themes are built in, each with a light and a dark version. Nord is dark only and fills both. Every theme also colors code, diagrams and exports.</p>
       <div class="table" tabindex="0" role="region" aria-label="Built-in themes">
         <table>
           <thead><tr><th scope="col">Theme</th><th scope="col">What it looks like</th></tr></thead>
           <tbody>
-            <tr><td>Tidewater</td><td>Cool white paper, cobalt for what you can act on, deep-cobalt headings. The default light theme.</td></tr>
+            <tr><td>Tidewater</td><td>Near-white paper, near-black ink, one sea-green accent. The default light theme.</td></tr>
+            <tr><td>Nightwatch</td><td>Near-black paper and light ink, the same accent. The default dark theme.</td></tr>
             <tr><td>Aurora</td><td>Sage paper by day; polar-night navy with green links after dark.</td></tr>
-            <tr><td>Dawnline</td><td>A blush of dawn in the paper, ultramarine ink and accents; warm ink on indigo at night.</td></tr>
-            <tr><td>Dusk</td><td>Blue hour: indigo above a green afterglow, mint accents, periwinkle links.</td></tr>
-            <tr><td>Nightwatch</td><td>Dark-first: deep navy, sky-blue accents; overcast steel by day. The default dark theme.</td></tr>
+            <tr><td>Dawnline</td><td>A blush of dawn in the paper, ultramarine ink; warm ink on indigo at night.</td></tr>
+            <tr><td>Dusk</td><td>Indigo above a green afterglow, mint accents, periwinkle links.</td></tr>
             <tr><td>Carbon</td><td>Onionskin and carbon ink, the manuscript.</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p>The dev pack:</p>
-      <div class="table" tabindex="0" role="region" aria-label="Dev pack themes">
-        <table>
-          <thead><tr><th scope="col">Theme</th><th scope="col">What it looks like</th></tr></thead>
-          <tbody>
             <tr><td>Solarized</td><td>Ethan Schoonover's sixteen colors: base3 paper by day, base03 at night.</td></tr>
             <tr><td>Gruvbox</td><td>Warm parchment by day, charcoal and cream at night.</td></tr>
             <tr><td>Nord</td><td>Polar Night paper, Snow Storm ink, Frost accents. Dark only.</td></tr>
@@ -123,90 +128,60 @@
           </tbody>
         </table>
       </div>
-      <p>The dev pack themes carry their originals' code colors too. Every theme colors code, diagrams and exports, and an HTML export keeps both of its versions.</p>
+      <p>The last four are ports of editor palettes and keep their code colors. Dewline has no theme files or plugins.</p>
 
-      <h3 id="choose">Choose a theme</h3>
-      <ul>
-        <li><strong>Click a theme</strong> in Settings &gt; Appearance to use it in the mode you are in now. Control-click it for Use in Light and Use in Dark.</li>
-        <li><strong>Mode</strong> is Light, Dark or Match system, the default. Match system follows macOS between your light theme and your dark one.</li>
-        <li><strong>The command palette</strong> has Theme… and Appearance…, so you can switch without opening Settings. See <a href="/docs/first-steps/#palette">The command palette</a>.</li>
-      </ul>
-      <p>Dewline has no theme files or theme plugins. The ten themes are built in.</p>
-
-      <h2 id="fonts">Fonts</h2>
-      <p>Three slots set the faces: Body, Headings and Code. Code is sized to the body font's x-height. The Source view sets the whole page in the Code font.</p>
-      <div class="table" tabindex="0" role="region" aria-label="Font slots">
+      <h2 id="fonts">Choose fonts</h2>
+      <ol class="steps">
+        <li><b>Pick a font for each slot:</b> Body, Headings and Code. Code is sized to the body font's x-height.</li>
+        <li><b>Or pick a pairing</b>, which sets all three and downloads what it needs first.</li>
+        <li><b>For more fonts, click Install Fonts…</b> Choose from the catalog, or drop font files on the sheet.</li>
+      </ol>
+      <div class="table" tabindex="0" role="region" aria-label="Font slots and pairings">
         <table>
-          <thead><tr><th scope="col">Slot</th><th scope="col">Default</th><th scope="col">Can use</th></tr></thead>
+          <thead><tr><th scope="col"></th><th scope="col">Body</th><th scope="col">Headings</th><th scope="col">Code</th></tr></thead>
           <tbody>
-            <tr><td>Body</td><td>New York</td><td rowspan="2">System fonts (New York, SF Pro, SF Pro Rounded, SF Mono), the two bundled fonts, fonts installed from the catalog or added from files, and any font on your Mac</td></tr>
-            <tr><td>Headings</td><td>Bricolage Grotesque</td></tr>
-            <tr><td>Code</td><td>JetBrains Mono</td><td>Monospaced fonts from the same places</td></tr>
+            <tr><th scope="row">Default</th><td>New York</td><td>Bricolage Grotesque</td><td>JetBrains Mono</td></tr>
+            <tr><th scope="row" id="pairings">Editorial</th><td>Newsreader</td><td>Bricolage Grotesque</td><td>JetBrains Mono</td></tr>
+            <tr><th scope="row">Manuscript</th><td>Courier Prime</td><td>Courier Prime</td><td>Courier Prime</td></tr>
+            <tr><th scope="row">Hyperlegible</th><td>Atkinson Hyperlegible Next</td><td>Atkinson Hyperlegible Next</td><td>Atkinson Hyperlegible Mono</td></tr>
           </tbody>
         </table>
       </div>
-      <p>Bricolage Grotesque and JetBrains Mono ship inside the app.</p>
+      <p>Any font on your Mac works in a slot; Code takes monospaced fonts. Bricolage Grotesque and JetBrains Mono ship inside the app.</p>
+      <details id="install-fonts">
+        <summary>The font catalog</summary>
+        <p>Twenty open-source families from Google Fonts. A font downloads only when you click Install, and every file must match the SHA-256 the catalog records. If a download fails, your fonts stay as they were.</p>
+        <div class="table" tabindex="0" role="region" aria-label="The font catalog">
+          <table>
+            <thead><tr><th scope="col">Kind</th><th scope="col">Families</th></tr></thead>
+            <tbody>
+              <tr><td>Serif</td><td>Newsreader, Literata, Source Serif 4, EB Garamond, Charis SIL</td></tr>
+              <tr><td>Sans</td><td>Atkinson Hyperlegible Next, IBM Plex Sans, Inter</td></tr>
+              <tr><td>Mono</td><td>IBM Plex Mono, Atkinson Hyperlegible Mono, Courier Prime, Fira Code, Source Code Pro, Cascadia Code, Victor Mono, Geist Mono, Inconsolata</td></tr>
+              <tr><td>Display</td><td>Fraunces, Recursive, Instrument Serif</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Installed fonts are for Dewline only, in <code>~/Library/Application Support/dev.arkwerx.dewline/Fonts</code>. Install for All Apps hands them to Font Book. Removing a font moves any slot that uses it to another font first.</p>
+      </details>
 
-      <h3 id="pairings">Typeface pairings</h3>
-      <p>A pairing sets all three slots at once and downloads any font it needs from the catalog first. If a download fails, your fonts stay as they were.</p>
-      <div class="table" tabindex="0" role="region" aria-label="Typeface pairings">
-        <table>
-          <thead><tr><th scope="col">Pairing</th><th scope="col">Body</th><th scope="col">Headings</th><th scope="col">Code</th></tr></thead>
-          <tbody>
-            <tr><td>Editorial</td><td>Newsreader</td><td>Bricolage Grotesque</td><td>JetBrains Mono</td></tr>
-            <tr><td>Manuscript</td><td>Courier Prime</td><td>Courier Prime</td><td>Courier Prime</td></tr>
-            <tr><td>Hyperlegible</td><td>Atkinson Hyperlegible Next</td><td>Atkinson Hyperlegible Next</td><td>Atkinson Hyperlegible Mono</td></tr>
-          </tbody>
-        </table>
-      </div>
-
-      <h3 id="install-fonts">Install fonts</h3>
-      <p>Settings &gt; Appearance &gt; Install Fonts… opens two lists.</p>
-      <dl>
-        <dt>Catalog</dt>
-        <dd>Twenty open-source families from Google Fonts, filtered by Serif, Sans, Mono, Display or Installed. A font downloads only when you click Install, and every file must match the SHA-256 the catalog records before anything is installed.</dd>
-        <dt>Added</dt>
-        <dd>Font files you drop on the sheet or choose from disk. Each is copied into Dewline's own folder.</dd>
-      </dl>
-      <div class="table" tabindex="0" role="region" aria-label="The font catalog">
-        <table>
-          <thead><tr><th scope="col">Kind</th><th scope="col">Families</th></tr></thead>
-          <tbody>
-            <tr><td>Serif</td><td>Newsreader, Literata, Source Serif 4, EB Garamond, Charis SIL</td></tr>
-            <tr><td>Sans</td><td>Atkinson Hyperlegible Next, IBM Plex Sans, Inter</td></tr>
-            <tr><td>Mono</td><td>IBM Plex Mono, Atkinson Hyperlegible Mono, Courier Prime, Fira Code, Source Code Pro, Cascadia Code, Victor Mono, Geist Mono, Inconsolata</td></tr>
-            <tr><td>Display</td><td>Fraunces, Recursive, Instrument Serif</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p>Fonts you install here are for Dewline only, kept in <code>~/Library/Application Support/dev.arkwerx.dewline/Fonts</code>. Other apps can't see them unless you choose Install for All Apps, which hands the files to Font Book. Removing a font moves any slot that uses it to another font first, and says so.</p>
-
-      <h2 id="page">The page</h2>
+      <h2 id="page">Set the size and width of the text</h2>
       <div class="table" tabindex="0" role="region" aria-label="Page settings">
         <table>
           <thead><tr><th scope="col">Setting</th><th scope="col" class="n">Range</th><th scope="col" class="n">Default</th></tr></thead>
           <tbody>
             <tr><td>Text size</td><td class="n">12 to 28 pt</td><td class="n">17 pt</td></tr>
             <tr><td>Line height</td><td class="n">1.25 to 1.80</td><td class="n">1.44</td></tr>
-            <tr><td>Line width</td><td class="n">50 to 90 ch</td><td class="n">68 ch</td></tr>
+            <tr><td>Line width</td><td class="n">50 to 90 characters</td><td class="n">68</td></tr>
           </tbody>
         </table>
       </div>
-      <p>Line width counts characters per line at the current size. A window narrower than that fills its width, with margins of at least 32 points.</p>
-
-      <h2 id="writer-colors">Writer colors</h2>
-      <p>Dewline marks each outside change in the color of whoever wrote it. Settings &gt; Agents &gt; Writers sets the colors for You, Claude, Codex, Cursor, Copilot, Gemini, git, Unknown app and Your other Mac. Settings &gt; Collaboration sets the collaborator's.</p>
-      <ul>
-        <li>A color well sets each writer's hue and strength. Dewline keeps the lightness, so text on a mark stays readable.</li>
-        <li>A hue within ΔE 8 of a color in your light or dark theme shows the clash, with the nearest hue that clears it.</li>
-        <li>Color is never the only signal: each change also carries the writer's name, and an unknown app's changes have a dashed underline and a hollow bead.</li>
-      </ul>
-      <p><a href="/docs/files/#keep-revert">Keep and Revert</a> shows how the marks look in the page.</p>
+      <p>A window narrower than the line width fills its width, with margins of at least 32 points.</p>
     </article>
 
     <nav class="pager" aria-label="Previous and next page">
-      <a class="prev" href="/docs/collaboration/"><span>Previous</span><b>Collaboration</b></a>
-      <a class="next" href="/docs/keyboard/"><span>Next</span><b>Keyboard shortcuts</b></a>
+      <a class="prev" href="/docs/keyboard/">Previous: Keyboard</a>
+      <a class="next" href="/docs/export/">Next: Export</a>
     </nav>
   </main>
 
@@ -217,13 +192,13 @@
 
 <footer class="foot">
   <div class="foot-in wrap">
-    <p>Free, source-available under <a class="text-link" href="https://github.com/ark-232/dewline/blob/main/LICENSE.md">FSL-1.1-ALv2</a>. Published by ArkWerx LLC.</p>
+    <p>© 2026 ArkWerx LLC</p>
     <nav aria-label="Project">
-      <a href="/">Home</a>
+      <a href="/docs/">Docs</a>
+      <a href="https://github.com/ark-232/dewline/releases">Releases</a>
       <a href="https://github.com/ark-232/dewline">Source</a>
-      <a href="https://github.com/ark-232/dewline/releases/latest">Releases</a>
-      <a href="https://github.com/ark-232/dewline/issues">Issues</a>
-      <a href="https://github.com/ark-232/dewline/blob/main/SECURITY.md">Security</a>
+      <a href="/docs/security/">Security</a>
+      <a href="https://github.com/ark-232/dewline/issues/new">Report an issue</a>
     </nav>
   </div>
 </footer>

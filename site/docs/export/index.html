@@ -4,11 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Export · Dewline docs</title>
-<meta name="description" content="Export a Markdown file as HTML, PDF or DOCX from Dewline or the dewline command, and preview .md files with Quick Look.">
+<meta name="description" content="Export a note as PDF, HTML or Word, from the app or the command line.">
+<meta name="doc-type" content="how-to">
 <link rel="canonical" href="https://dewline.arkwerx.com/docs/export/">
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#F7FBF9" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#091110" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F9FAFA" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E100F" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preload" href="/fonts/newsreader-var.v1.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/ibm-plex-sans-var-latin1.v3.woff2" as="font" type="font/woff2" crossorigin>
@@ -44,8 +45,8 @@
     <a class="dtop-label" href="/docs/">Docs</a>
     <button type="button" class="search-open" aria-keyshortcuts="Meta+K /"><span>Search</span><kbd>⌘K</kbd></button>
     <nav class="dtop-links" aria-label="Site">
-      <a href="https://github.com/ark-232/dewline/releases/latest">Download</a>
       <a href="https://github.com/ark-232/dewline">Source</a>
+      <a class="dtop-get" href="https://github.com/ark-232/dewline/releases/latest">Download</a>
     </nav>
   </div>
 </header>
@@ -60,78 +61,82 @@
       </ul>
     </div>
     <div class="dnav-group">
-      <p class="dnav-title">Guide</p>
+      <p class="dnav-title">Write</p>
       <ul>
         <li><a href="/docs/editing/">Editing</a></li>
         <li><a href="/docs/markdown/">Markdown</a></li>
-        <li><a href="/docs/files/">Files and saves</a></li>
-        <li><a href="/docs/collaboration/">Collaboration</a></li>
+        <li><a href="/docs/keyboard/">Keyboard</a></li>
         <li><a href="/docs/themes-and-fonts/">Themes and fonts</a></li>
-        <li><a href="/docs/keyboard/">Keyboard shortcuts</a></li>
         <li><a href="/docs/export/" aria-current="page">Export</a></li>
       </ul>
     </div>
     <div class="dnav-group">
-      <p class="dnav-title">Reference</p>
+      <p class="dnav-title">Files and changes</p>
       <ul>
-        <li><a href="/docs/cli/">Command line</a></li>
-        <li><a href="/docs/mcp/">MCP server</a></li>
-        <li><a href="/docs/agents/">Agents and changes</a></li>
+        <li><a href="/docs/files/">Files</a></li>
+        <li><a href="/docs/agents/">Agents</a></li>
+        <li><a href="/docs/collaboration/">Collaboration</a></li>
+      </ul>
+    </div>
+    <div class="dnav-group">
+      <p class="dnav-title">Developers</p>
+      <ul>
+        <li><a href="/docs/cli/">CLI</a></li>
+        <li><a href="/docs/mcp/">MCP</a></li>
         <li><a href="/docs/url-scheme/">URL scheme</a></li>
       </ul>
     </div>
     <div class="dnav-group">
-      <p class="dnav-title">Technical</p>
+      <p class="dnav-title">About</p>
       <ul>
-        <li><a href="/docs/architecture/">Architecture</a></li>
-        <li><a href="/docs/performance/">Performance</a></li>
         <li><a href="/docs/security/">Security and privacy</a></li>
+        <li><a href="/docs/performance/">Performance</a></li>
+        <li><a href="/docs/architecture/">Architecture</a></li>
       </ul>
     </div>
   </nav>
 
   <main class="dmain" id="main">
     <article class="prose">
-      <p class="eyebrow">Guide</p>
       <h1>Export</h1>
-      <p class="lead">Export a note as a web page, a PDF or a Word document. Export reads the text in the window, unsaved edits included, and never changes the Markdown file.</p>
+      <p class="lead">Export a note as a PDF, a web page or a Word document. Export reads the text in the window and never changes the Markdown file.</p>
 
-      <h2 id="from-the-app">From the app</h2>
-      <p>The File menu has Export as HTML…, Export as PDF… <span class="keys"><kbd>⇧</kbd><kbd>⌘</kbd><kbd>E</kbd></span> and Export as DOCX…. Each opens a save panel named after the note, with a Format menu that switches between the three.</p>
+      <h2 id="from-the-app">Export from the app</h2>
+      <ol class="steps">
+        <li><b>Choose File &gt; Export…</b> <span class="keys">(<kbd>⇧</kbd><kbd>⌘</kbd><kbd>E</kbd>)</span>. A save panel opens, named after the note.</li>
+        <li><b>Pick a format</b> in the panel's Format menu: PDF, HTML or Word.</li>
+        <li><b>Click Export.</b> The status bar says “Exported “Launch plan.pdf” · Show in Finder”.</li>
+      </ol>
+      <p>Unsaved edits are included. To print instead, choose File &gt; Print… <span class="keys">(<kbd>⌘</kbd><kbd>P</kbd>)</span>.</p>
       <div class="table" tabindex="0" role="region" aria-label="Export formats">
         <table>
           <thead><tr><th scope="col">Format</th><th scope="col">Look</th><th scope="col">Diagrams and math</th></tr></thead>
           <tbody>
-            <tr><td>HTML</td><td>Your theme and fonts, light and dark. The page follows the reader's appearance.</td><td>Diagrams as SVG, math as images</td></tr>
-            <tr><td>PDF</td><td>Your theme's light version and your fonts, on paper-sized pages.</td><td>Diagrams as SVG, math as images</td></tr>
-            <tr><td>DOCX</td><td>Plain document styles for headings, lists, quotes, tables, footnotes and code.</td><td>Their source, as text</td></tr>
+            <tr><td id="pdf">PDF</td><td>Your theme's light version and fonts, on your default paper size, 0.75-inch margins</td><td>Diagrams as SVG, math as images</td></tr>
+            <tr><td id="html">HTML</td><td>One standalone file in your theme, light and dark, following the reader's appearance</td><td>Diagrams as SVG, math as images</td></tr>
+            <tr><td id="docx">Word (DOCX)</td><td>Plain document styles for headings, lists, quotes, tables, footnotes and code</td><td>Their source, as text</td></tr>
           </tbody>
         </table>
       </div>
 
-      <h3 id="html">HTML</h3>
-      <p>One standalone file. Images from inside the note's folder are inlined as data, so the page needs nothing beside it. The page names your fonts but does not embed them; a reader without a font sees a fallback.</p>
-      <p>The page carries a Content Security Policy that allows no scripts and loads nothing from the network. HTML written in the note comes out as visible text, never as markup.</p>
-
-      <h3 id="pdf">PDF</h3>
-      <p>Dewline lays the HTML page out in a web view that runs no script and follows no link, then cuts it into pages of your default paper size with 0.75-inch margins. Page breaks fall between top-level blocks where one fits, so a paragraph, list or table is not split unless it is taller than a page.</p>
-
-      <h3 id="docx">DOCX</h3>
-      <p>A Word document with headings, emphasis, strikethrough, lists, task boxes, quotes, tables, images, footnotes and code. Images come only from files inside the note's folder, up to 20 MB each; any other image keeps its alt text. HTML tags in the note are dropped and the text between them kept.</p>
-
-      <h2 id="what-exports">What each construct becomes</h2>
-      <p>Export follows CommonMark and GitHub's tables, task lists and strikethrough. Obsidian's syntax has no equivalent in these formats, so it exports as written:</p>
+      <h2 id="what-exports">What each format keeps</h2>
       <ul>
-        <li>Highlights, comments, tags and callouts appear as their source text, such as <code>==one bag==</code>. A callout is a block quote that starts with its <code>[!type]</code> line.</li>
-        <li>Wikilinks become links in HTML and PDF, with the note's name as the address. In DOCX they stay as written.</li>
-        <li>Front matter is left out of HTML and PDF.</li>
-        <li>An image from the web, from an absolute path or from outside the note's folder is not inlined. HTML keeps its address. An image file over 20 MB is not inlined either.</li>
+        <li><strong>Images</strong> from inside the note's folder are embedded, up to 20 MB each. HTML takes PNG, JPEG, GIF, WebP and SVG; Word takes PNG, JPEG and GIF.</li>
+        <li><strong>Other images</strong>, from the web or outside the folder, are not embedded. HTML keeps their address; Word keeps their alt text.</li>
+        <li><strong>Wikilinks</strong> become links in HTML and PDF. In Word they stay as written.</li>
+        <li><strong>Highlights, comments, tags and callouts</strong> appear as their source text, such as <code>==one bag==</code>.</li>
+        <li><strong>Front matter</strong> is left out of HTML and PDF.</li>
+        <li><strong>HTML in a note</strong> shows as visible text in HTML and PDF. Word drops the tags and keeps the text between them.</li>
       </ul>
-      <p>HTML inlines PNG, JPEG, GIF, WebP and SVG images. DOCX takes PNG, JPEG and GIF.</p>
+      <details>
+        <summary>Page breaks, fonts and safety</summary>
+        <p>PDF page breaks fall between top-level blocks where one fits. A paragraph, list or table splits only when it is taller than a page.</p>
+        <p>HTML names your fonts without embedding them, so a reader without a font sees a fallback. The page carries a Content Security Policy that allows no scripts and loads nothing from the network.</p>
+        <p>PDF is laid out from the same page in a web view that runs no script and follows no link.</p>
+      </details>
 
-      <h2 id="command-line">From the command line</h2>
-      <p><code>dewline export</code> writes HTML and DOCX without opening the app. It prints nothing when it succeeds. <a href="/docs/cli/#export">Command line</a> lists its options and errors.</p>
-      <div class="code" data-lang="Shell">
+      <h2 id="command-line">Export from the command line</h2>
+      <div class="code" data-lang="Terminal">
 <pre tabindex="0"><code><span class="p">$ </span>dewline export --to html notes.md
 <span class="p">$ </span>ls
 ferry.png
@@ -139,15 +144,15 @@ notes.html
 notes.md
 <span class="p">$ </span>dewline export --to docx notes.md -o out/notes.docx</code></pre>
       </div>
-      <p>From the command line, HTML and DOCX differ from the app's in two ways: the page uses system fonts and a plain light and dark stylesheet instead of your theme, and diagrams and math keep their source. Images in the note's folder are inlined as in the app.</p>
+      <p><a href="/docs/cli/#export"><code>dewline export</code></a> writes HTML and Word without opening the app, and prints nothing on success. Its pages use system fonts and a plain stylesheet instead of your theme. Diagrams and math keep their source.</p>
 
-      <h2 id="quick-look">Quick Look</h2>
-      <p>With Dewline installed, pressing <kbd>Space</kbd> on a <code>.md</code> file in Finder previews it as a page in your theme's colors. The preview is the same HTML export makes, held as data: it runs no script and loads nothing from the network. Diagrams and math show their source in the preview.</p>
+      <h2 id="quick-look">Preview in Finder</h2>
+      <p>Select a <code>.md</code> file in Finder and press <kbd>Space</kbd>. Quick Look shows it as a page in your theme's colors. Like an HTML export, it runs no script and loads nothing from the network. Diagrams and math show their source.</p>
     </article>
 
     <nav class="pager" aria-label="Previous and next page">
-      <a class="prev" href="/docs/keyboard/"><span>Previous</span><b>Keyboard shortcuts</b></a>
-      <a class="next" href="/docs/cli/"><span>Next</span><b>Command line</b></a>
+      <a class="prev" href="/docs/themes-and-fonts/">Previous: Themes and fonts</a>
+      <a class="next" href="/docs/files/">Next: Files</a>
     </nav>
   </main>
 
@@ -158,13 +163,13 @@ notes.md
 
 <footer class="foot">
   <div class="foot-in wrap">
-    <p>Free, source-available under <a class="text-link" href="https://github.com/ark-232/dewline/blob/main/LICENSE.md">FSL-1.1-ALv2</a>. Published by ArkWerx LLC.</p>
+    <p>© 2026 ArkWerx LLC</p>
     <nav aria-label="Project">
-      <a href="/">Home</a>
+      <a href="/docs/">Docs</a>
+      <a href="https://github.com/ark-232/dewline/releases">Releases</a>
       <a href="https://github.com/ark-232/dewline">Source</a>
-      <a href="https://github.com/ark-232/dewline/releases/latest">Releases</a>
-      <a href="https://github.com/ark-232/dewline/issues">Issues</a>
-      <a href="https://github.com/ark-232/dewline/blob/main/SECURITY.md">Security</a>
+      <a href="/docs/security/">Security</a>
+      <a href="https://github.com/ark-232/dewline/issues/new">Report an issue</a>
     </nav>
   </div>
 </footer>
