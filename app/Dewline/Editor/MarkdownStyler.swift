@@ -3,7 +3,14 @@ import AppKit
 /// Styles markdown through attributes only and owns the editor's undo history.
 @MainActor
 final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate {
-    weak var textView: EditorTextView?
+    weak var textView: EditorTextView? {
+        didSet {
+            cards.textView = textView
+            hover?.removeFromSuperview()
+            hover = textView.map { LinkHover(textView: $0) }
+            if let hover { textView?.addSubview(hover) }
+        }
+    }
     let undoManager = UndoManager()
     let map: BlockMap
     let blocks: RenderedBlocks
@@ -12,6 +19,8 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
     let tasks: TaskBoxes
     let fences: CodeFences
     let math: InlineMath
+    let cards: LinkCards
+    private(set) var hover: LinkHover?
     private(set) var restyles = 0
     private(set) var showsSource = false
     /// Source line height: 22 pt, or prose's 24.5 pt pitch through `DewlineSourceLineHeight`, until the owner picks one.
@@ -44,7 +53,7 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
     static let hiddenFont = NSFont.systemFont(ofSize: 0.01)
     /// The attributes styling owns; restyling leaves every other attribute in the storage as it is.
     private static let keys = [
-        NSAttributedString.Key.font, .foregroundColor, .backgroundColor, .paragraphStyle, .underlineStyle, .strikethroughStyle, .kern,
+        NSAttributedString.Key.font, .foregroundColor, .backgroundColor, .paragraphStyle, .underlineStyle, .underlineColor, .strikethroughStyle, .kern, .toolTip,
         .dewlineMarkerFont, .dewlineBlock, .dewlineQuote, .baselineOffset, .dewlineCallout, .dewlineCode, .dewlineMath,
     ].map { $0.rawValue as NSString }
     /// The text a long restyle styles at once, which covers the view: several screens.
@@ -75,6 +84,7 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
         tasks = TaskBoxes(map: map)
         fences = CodeFences(map: map)
         math = InlineMath(map: map)
+        cards = LinkCards(map: map)
         super.init()
         map.merged = { [weak self] changed in self?.restyleLater(changed) }
         for name in [NSNotification.Name.NSUndoManagerDidUndoChange, .NSUndoManagerDidRedoChange] {
@@ -230,6 +240,7 @@ final class MarkdownStyler: NSObject, NSTextViewDelegate, NSTextStorageDelegate 
             tasks.textDidChange(edited: edit, delta: delta)
             fences.textDidChange(edited: edit, delta: delta)
             math.textDidChange(edited: edit, delta: delta)
+            cards.textDidChange(edited: edit, delta: delta)
             range = NSUnionRange(range, changed)
             if let unfolded { range = NSUnionRange(range, unfolded) }
             if textView!.defersStyling {
@@ -392,7 +403,7 @@ extension MarkdownStyler {
                 case .strikethrough:
                     styled.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: span.content)
                 case .link:
-                    styled.addAttributes([.underlineStyle: NSUnderlineStyle.single.rawValue, .foregroundColor: store.color(.link)], range: span.content)
+                    styled.addAttributes(Links.style, range: span.content)
                 case .inlineCode where !source:
                     styled.enumerateAttribute(.font, in: span.content) { value, run, _ in
                         styled.addAttribute(.font, value: Self.code(matching: value as! NSFont), range: run)
@@ -421,6 +432,7 @@ extension MarkdownStyler {
             tasks.style(styled, at: paragraphs.location, selection: selection)
             fences.style(styled, at: paragraphs.location, selection: selection, folds: folds)
             math.style(styled, at: paragraphs.location, selection: selection)
+            cards.style(styled, at: paragraphs.location, selection: selection)
         }
         for fold in folds {
             let hidden = NSIntersectionRange(fold, paragraphs)
@@ -504,7 +516,7 @@ extension MarkdownStyler {
         let show = now.subtracting(revealed)
         revealed = now
         let changedBlocks = blocks.revealChanges(selection) + tables.revealChanges(selection) + tasks.revealChanges(selection)
-            + fences.revealChanges(selection, in: storage.mutableString) + math.revealChanges(selection)
+            + fences.revealChanges(selection, in: storage.mutableString) + math.revealChanges(selection) + cards.revealChanges(selection)
         guard !hide.isEmpty || !show.isEmpty || !changedBlocks.isEmpty else { return }
         storage.beginEditing()
         // In document order, the storage's attribute writes stay linear in the span count.

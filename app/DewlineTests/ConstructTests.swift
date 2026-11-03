@@ -215,10 +215,10 @@ struct ConstructTests {
         let editor = Editor(text, caret: 0)
         #expect((4..<11).allSatisfy { editor.hidden($0) })
         #expect(editor.hidden(20) && editor.hidden(21))
-        #expect(editor.color(at: 12) == ThemeStore.shared.color(.link))
+        #expect(editor.color(at: 12) == ThemeStore.shared.color(.ink))
         #expect(editor.attribute(.underlineStyle, at: 12) as? Int == NSUnderlineStyle.single.rawValue)
         #expect(editor.hidden(27) && !editor.hidden(29))
-        #expect(editor.color(at: 29) == ThemeStore.shared.color(.link))
+        #expect(editor.color(at: 29) == ThemeStore.shared.color(.ink))
         let targets = editor.spans(.wikiLink).map { editor.view.wikilinkTarget(of: $0) }
         #expect(targets == ["Note", "Other#Part"])
         editor.place(12)
@@ -232,7 +232,7 @@ struct ConstructTests {
         let text = "Above ![[Some note]] here\n\n![[\(RenderedBlockTests.picturePath)]]\n\nBelow\n"
         let editor = Editor(text, caret: 0, folder: folder)
         #expect(editor.hidden(6) && editor.hidden(8))
-        #expect(editor.color(at: 10) == ThemeStore.shared.color(.link))
+        #expect(editor.color(at: 10) == ThemeStore.shared.color(.ink))
         #expect(editor.view.wikilinkTarget(of: editor.spans(.embed)[0]) == "Some note")
         let start = 27
         let deadline = ContinuousClock.now + .seconds(5)
