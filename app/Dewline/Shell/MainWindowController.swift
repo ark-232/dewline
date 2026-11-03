@@ -221,6 +221,20 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     @objc private func updatePresence() {
         let peers = (document as? NSDocument).flatMap { Collaboration.of($0)?.share.peers.count } ?? 0
         toolbar.showEditing(peers)
+        showRequest()
+    }
+
+    private static let requestMessage = "share-request"
+
+    /// "Ana asks to join · Approve · Deny" for this window's shared note, so a closed popover still shows the request.
+    private func showRequest() {
+        guard let document = document as? NSDocument,
+            let (collaboration, peer) = Collaboration.asking.first(where: { $0.collaboration.document === document })
+        else { return statusBar.clear(Self.requestMessage) }
+        statusBar.post(.init(id: Self.requestMessage, kind: .request, text: "\(peer.name) asks to join", actions: [
+            .init(title: "Approve") { _ in collaboration.share.approve(peer.id) },
+            .init(title: "Deny") { _ in collaboration.share.deny(peer.id) },
+        ]))
     }
 
     @objc private func changesChanged() {
@@ -507,7 +521,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         case #selector(findInFiles(_:)): folder != nil
         case #selector(showNextTab(_:)), #selector(showPreviousTab(_:)): tabs.tabs.count > 1
         case #selector(reopenClosedTab(_:)): !Self.closed.isEmpty
-        case #selector(shareDocument(_:)): (document as? NSDocument)?.fileURL != nil
+        case #selector(shareDocument(_:)), #selector(shareNote(_:)): (document as? NSDocument)?.fileURL != nil
         default: true
         }
     }
@@ -781,17 +795,23 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     }
 
     /// Shares the note live (D13): starts the share on first use, then shows the Share sheet.
+    /// Share: a popover under the toolbar button, where nothing is shared until Copy Invite Link.
     @objc func shareDocument(_ sender: Any?) {
-        guard let document = document as? MarkdownDocument, let textView, document.fileURL != nil else { return NSSound.beep() }
-        do {
-            let collaboration = try Collaboration.host(document, textView: textView)
-            window?.contentViewController?.presentAsSheet(ShareSheet(collaboration))
-        } catch {
-            let alert = NSAlert()
-            alert.messageText = "Dewline couldn’t start sharing."
-            alert.informativeText = error.message
-            alert.beginSheetModal(for: window!)
+        guard let document = document as? MarkdownDocument, document.fileURL != nil, let content = window?.contentView else { return NSSound.beep() }
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.contentViewController = Collaboration.sharePopover(for: document)
+        if let item = sender as? NSToolbarItem, window?.toolbar?.isVisible == true {
+            popover.show(relativeTo: item)
+        } else {
+            let corner = NSRect(x: content.bounds.maxX - 60, y: content.bounds.maxY - 1, width: 1, height: 1)
+            popover.show(relativeTo: corner, of: content, preferredEdge: .minY)
         }
+    }
+
+    /// File > Share….
+    @objc func shareNote(_ sender: Any?) {
+        shareDocument(sender)
     }
 }
 
