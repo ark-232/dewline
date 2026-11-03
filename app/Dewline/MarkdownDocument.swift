@@ -23,17 +23,31 @@ final class MarkdownDocument: NSDocument {
     private(set) var live: LiveFile?
 
     /// The app's engine, its snapshots in Application Support. The test host has none; tests make their own.
-    nonisolated static let sharedEngine: ChangeEngine? = {
+    nonisolated static var sharedEngine: ChangeEngine? {
+        try? started?.get()
+    }
+
+    /// Why files save without change tracking: the engine didn't start. The window says so (D15).
+    nonisolated static var engineFailure: String? {
+        guard case .failure(let error) = started else { return nil }
+        return "\(error)"
+    }
+
+    private nonisolated static let started: Result<ChangeEngine, ChangeEngine.Failure>? = {
         guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return nil }
         let support = URL.applicationSupportDirectory.appending(path: Bundle.main.bundleIdentifier ?? "dev.arkwerx.dewline")
-        do {
-            return try ChangeEngine(store: support.appending(path: "snapshots"))
-        } catch {
+        return startEngine(at: support.appending(path: "snapshots"))
+    }()
+
+    /// An engine whose snapshots live in `store`; a failure is logged too.
+    nonisolated static func startEngine(at store: URL) -> Result<ChangeEngine, ChangeEngine.Failure> {
+        let started = Result { () throws(ChangeEngine.Failure) in try ChangeEngine(store: store) }
+        if case .failure(let error) = started {
             Logger(subsystem: "dev.arkwerx.dewline", category: "engine")
                 .error("No change engine, so files save without it: \(String(describing: error), privacy: .public)")
-            return nil
         }
-    }()
+        return started
+    }
 
     /// Posted when a document closes.
     static let didCloseNotification = Notification.Name("MarkdownDocumentDidClose")

@@ -5,6 +5,20 @@ import Testing
 @MainActor
 struct MarkdownDocumentTests {
     private static let type = "net.daringfireball.markdown"
+    /// An engine that can't make its store says why, for the window to show, instead of only logging it (D15).
+    @Test func anEngineThatCannotStartSaysWhy() throws {
+        let file = URL(filePath: NSTemporaryDirectory()).appending(path: "dewline-not-a-folder-\(UUID().uuidString)")
+        try Data().write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        guard case .failure(let error) = MarkdownDocument.startEngine(at: file.appending(path: "snapshots")) else {
+            Issue.record("an engine started with its store under a file")
+            return
+        }
+        #expect(!"\(error)".isEmpty)
+        // The test host starts none, and nothing failed.
+        #expect(MarkdownDocument.sharedEngine == nil && MarkdownDocument.engineFailure == nil)
+    }
+
     @Test func readsUTF8Text() throws {
         let document = MarkdownDocument()
         try document.read(from: Data("# Notes\r\n- one\n".utf8), ofType: "net.daringfireball.markdown")
