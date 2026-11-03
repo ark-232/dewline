@@ -1,12 +1,13 @@
-Bricolage Grotesque (bricolage-grotesque-latin.v2.woff2): Latin subset, wght 500-700 and opsz, from @fontsource-variable/bricolage-grotesque 5.3.0.
-JetBrains Mono (jetbrains-mono-latin-400.v2.woff2, -500): Latin subset of the v2.304 webfonts.
+Newsreader (newsreader-var.v1.woff2): the opsz and wght variable roman from github.com/productiontype/Newsreader at cfcb4f7, fonts/variable/woff2.
+IBM Plex Sans (ibm-plex-sans-var-latin1.v3.woff2): the wght variable roman, Latin1 subset, from github.com/IBM/plex at 71f5589, packages/plex-sans-variable.
+IBM Plex Mono (ibm-plex-mono-400-latin1.v2.woff2): Regular, Latin1 subset, from github.com/IBM/plex at 71f5589, packages/plex-mono.
 
 ================================================================
-Copyright 2022 The Bricolage Grotesque Project Authors (https://github.com/ateliertriay/bricolage)
+Copyright 2020 The Newsreader Project Authors (http://github.com/productiontype/Newsreader)
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 This license is copied below, and is also available with a FAQ at:
-https://scripts.sil.org/OFL
+http://scripts.sil.org/OFL
 
 
 -----------------------------------------------------------
@@ -95,13 +96,12 @@ INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
 DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
-
 ================================================================
-Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono)
+Copyright © 2017 IBM Corp. with Reserved Font Name "Plex"
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
-This license is copied below, and is also available with a FAQ at:
-https://scripts.sil.org/OFL
+
+This license is copied below, and is also available with a FAQ at: http://scripts.sil.org/OFL
 
 
 -----------------------------------------------------------

@@ -1,13 +1,7 @@
-body.og { width: 1200px; height: 630px; overflow: hidden; display: grid; grid-template-columns: 500px 1fr; gap: 56px; align-items: center; padding: 0 0 0 80px; }
-.og-text { display: grid; gap: 40px; }
-.og .wordmark { font-size: 36px; }
-.og .mark { width: 26px; height: 9px; }
-.og .mark::before { top: 3.25px; height: 2.5px; }
-.og .mark::after { left: calc(70% - 4.5px); width: 9px; height: 9px; }
-.og-h { font: 620 64px/1.02 var(--display); font-variation-settings: "opsz" 96; letter-spacing: -0.03em; color: var(--ink); text-wrap: balance; }
-.og .win { margin-right: -60px; }
-.og .dew { margin-inline: 48px 96px; }
-.og .doc { margin: 0; padding: 40px 96px 48px 48px; font-size: 24px; }
-.og .tick { left: -24px; }
-.og .cbar { margin-top: 32px; font-size: 16px; }
-.og .k { height: 2.25rem; font-size: 16px; padding: 0 1rem; }
+body.og {
+  --paper: #F7FBF9; --ink: #111D1C; --slate: #687573; --sea: #2F7365;
+  width: 1200px; height: 630px; overflow: hidden; margin: 0; background: var(--paper);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 58px;
+}
+.og svg { width: 640px; height: auto; display: block; }
+.og-tag { font: 420 54px/1 var(--serif); font-variation-settings: "opsz" 36; color: var(--slate); }
