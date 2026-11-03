@@ -14,7 +14,6 @@
 <link rel="preload" href="/fonts/ibm-plex-sans-var-latin1.v3.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/styles.css">
 <link rel="stylesheet" href="/docs/docs.css">
-<link rel="stylesheet" href="/docs/technical.css">
 <script src="/docs/docs.js" defer></script>
 <script src="/docs/search.js" defer></script>
 </head>
@@ -114,7 +113,7 @@
       </aside>
 
       <h2 id="budgets">Budgets</h2>
-      <p>Each budget is a ceiling in <code>perf/budgets.jq</code>. A measurement that is missing misses it. The release workflow&#8217;s verify job refuses a <code>v*</code> tag whose perf file misses any budget.</p>
+      <p>Each budget is a ceiling in <code>perf/budgets.jq</code>. A measurement that is missing misses it. The release workflow's verify job refuses a <code>v*</code> tag whose perf file misses any budget.</p>
       <div class="table" tabindex="0" role="region" aria-label="Budgets and the 0.1.0 run">
         <table>
           <thead><tr><th scope="col">Budget</th><th scope="col" class="n">Ceiling</th><th scope="col" class="n">Measured</th><th scope="col">Result</th></tr></thead>
@@ -136,7 +135,7 @@
           </tbody>
         </table>
       </div>
-      <p>A megabyte here is 1,048,576 bytes, as <code>budgets.jq</code> counts it. Open 10 MB is faster than Open 1 MB because the 1 MB open is the process&#8217;s first text draw, which waits while Core Animation sets up Metal.</p>
+      <p>A megabyte here is 1,048,576 bytes, as <code>budgets.jq</code> counts it. Open 10 MB is faster than Open 1 MB because the 1 MB open is the process's first text draw, which waits while Core Animation sets up Metal.</p>
       <figure class="fig" id="figure-budgets">
         <div class="fig-frame" tabindex="0" role="region" aria-label="Figure 1: measured against each ceiling">
 <svg viewBox="0 0 680 480" role="img" aria-labelledby="pf1-t pf1-d">
@@ -203,7 +202,7 @@
         <dt>Keystroke</dt>
         <dd>The editor opens the document, puts the caret inside a styled span in the middle, and types <code>a</code> and then Delete, 150 times each: 300 samples. Each sample runs from the key down through layout, display and the Core Animation commit.</dd>
         <dt>Cold launch</dt>
-        <dd>A fresh copy of the app and the 1 MB document, both copied past the file cache with <code>ditto --nocache</code>, launched three times. The time runs from process start to the document window&#8217;s first display.</dd>
+        <dd>A fresh copy of the app and the 1 MB document, both copied past the file cache with <code>ditto --nocache</code>, launched three times. The time runs from process start to the document window's first display.</dd>
         <dt>Warm launch</dt>
         <dd>The built app opens the 1 MB document once unrecorded, then five more times. The median counts.</dd>
         <dt>Open</dt>
@@ -216,9 +215,9 @@
 
       <h2 id="how-perf-sh-runs">How perf.sh runs</h2>
       <p>The plan times a keystroke in the app being typed in, so <code>perf.sh</code> brings the app to the front for the tests, the keystrokes and idle. A run in which the app was not in front refuses to write a result. You start it from a terminal in front and leave the Mac alone until it ends.</p>
-      <p>The keystroke parts run three times. Right after each keystroke a fixed integer workload measures the clock. A run whose clock reads 1.5 times the fastest run&#8217;s, or whose probe landed on an efficiency core for more than 1 keystroke in 100, runs again, for up to three rounds. This run needed no reruns.</p>
+      <p>The keystroke parts run three times. Right after each keystroke a fixed integer workload measures the clock. A run whose clock reads 1.5 times the fastest run's, or whose probe landed on an efficiency core for more than 1 keystroke in 100, runs again, for up to three rounds. This run needed no reruns.</p>
       <div class="code" data-lang="Shell">
-<pre tabindex="0"><code><span class="c"># measures this Mac; writes perf/&lt;version&gt;.json with each budget&#8217;s result</span>
+<pre tabindex="0"><code><span class="c"># measures this Mac; writes perf/&lt;version&gt;.json with each budget's result</span>
 <span class="p">$ </span>scripts/perf.sh</code></pre>
       </div>
       <p>To judge a result against the current ceilings without measuring again, run the gate the release workflow runs:</p>
@@ -232,13 +231,13 @@ perf-gate.sh: perf/0.1.0.json holds every budget</code></pre>
       </aside>
 
       <h2 id="reset">The four reset budgets</h2>
-      <p>Four of the plan&#8217;s budgets were set before anything was measured. Three perf passes brought the other ten under budget. These four sit at what macOS and TextKit allow on this Mac, and the owner reset them after the third pass (<a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0010-perf-budgets.md">0010</a>). Each new ceiling sits slightly above that run, so a regression still fails.</p>
+      <p>Four of the plan's budgets were set before anything was measured. Three perf passes brought the other ten under budget. These four sit at what macOS and TextKit allow on this Mac, and the owner reset them after the third pass (<a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0010-perf-budgets.md">0010</a>). Each new ceiling sits slightly above that run, so a regression still fails.</p>
       <div class="table" tabindex="0" role="region" aria-label="Budgets reset by record 0010">
         <table>
           <thead><tr><th scope="col">Budget</th><th scope="col" class="n">Was</th><th scope="col" class="n">Now</th><th scope="col">Why</th></tr></thead>
           <tbody>
-            <tr><td>Keystroke, 1 MB, p50</td><td class="n">8 ms</td><td class="n">9.5 ms</td><td>Dewline&#8217;s own code is about 0.5 ms of a keystroke. The rest is TextKit 2 layout, the Core Animation commit and AppKit&#8217;s software glyph drawing into 64-bit pixels.</td></tr>
-            <tr><td>Cold launch</td><td class="n">300 ms</td><td class="n">750 ms</td><td>A near-empty AppKit app that opens a file takes about 315 ms cold here. A new copy&#8217;s first launch costs about 10 ms per MB of bundle, and the Rust library is 16.5 MB per architecture.</td></tr>
+            <tr><td>Keystroke, 1 MB, p50</td><td class="n">8 ms</td><td class="n">9.5 ms</td><td>Dewline's own code is about 0.5 ms of a keystroke. The rest is TextKit 2 layout, the Core Animation commit and AppKit's software glyph drawing into 64-bit pixels.</td></tr>
+            <tr><td>Cold launch</td><td class="n">300 ms</td><td class="n">750 ms</td><td>A near-empty AppKit app that opens a file takes about 315 ms cold here. A new copy's first launch costs about 10 ms per MB of bundle, and the Rust library is 16.5 MB per architecture.</td></tr>
             <tr><td>Warm launch</td><td class="n">150 ms</td><td class="n">425 ms</td><td>The same near-empty app takes about 240 ms warm. Dewline adds about 100 ms, in pieces of 3 to 13 ms.</td></tr>
             <tr><td>Open 1 MB</td><td class="n">50 ms</td><td class="n">85 ms</td><td>The first text draw in a process blocks 10 to 30 ms while Core Animation sets up Metal, and this open is that first draw.</td></tr>
           </tbody>
@@ -247,7 +246,7 @@ perf-gate.sh: perf/0.1.0.json holds every budget</code></pre>
       <p>The record reopens if the Rust library loses a large dependency (Mermaid, Loro or the sync stack), if TextKit or AppKit changes the keystroke path, or if a pass finds a piece of launch worth more than 20 ms.</p>
 
       <h2 id="keystroke">Where a keystroke goes</h2>
-      <p>A second test stamps each part of a keystroke, so each part&#8217;s own time counts toward one row and the rows add up to the frame. Parse, attributes and reveal are Dewline&#8217;s code: 0.49 ms together at the median. Everything else belongs to AppKit, TextKit 2 and Core Animation.</p>
+      <p>A second test stamps each part of a keystroke, so each part's own time counts toward one row and the rows add up to the frame. Parse, attributes and reveal are Dewline's code: 0.49 ms together at the median. Everything else belongs to AppKit, TextKit 2 and Core Animation.</p>
       <figure class="fig" id="figure-parts">
         <div class="fig-frame" tabindex="0" role="region" aria-label="Figure 2: the parts of a keystroke">
 <svg viewBox="0 0 680 324" role="img" aria-labelledby="pf2-t pf2-d">
@@ -297,7 +296,7 @@ perf-gate.sh: perf/0.1.0.json holds every budget</code></pre>
 <text class="f-v" x="548.6" y="292">2.17</text>
 </svg>
         </div>
-        <figcaption><b>Figure 2.</b> The median of each part of a keystroke in the 1 MB document, three runs pooled. Dewline&#8217;s own code is the three rows in bold. Medians of parts do not add up to the median frame, 8.65 ms in this test.</figcaption>
+        <figcaption><b>Figure 2.</b> The median of each part of a keystroke in the 1 MB document, three runs pooled. Dewline's own code is the three rows in bold. Medians of parts do not add up to the median frame, 8.65 ms in this test.</figcaption>
       </figure>
 
       <h2 id="also-measured">Also measured</h2>
@@ -309,7 +308,7 @@ perf-gate.sh: perf/0.1.0.json holds every budget</code></pre>
             <tr><td>Keystroke, 1 MB, p95 and max</td><td class="n">11.2 ms, 13.6 ms</td></tr>
             <tr><td>Keystroke, 10 MB, p50 and p99</td><td class="n">8.7 ms, 13.0 ms</td></tr>
             <tr><td>Parse a whole 1 MB document</td><td class="n">6.8 ms</td></tr>
-            <tr><td>Parse one paragraph&#8217;s window, through the FFI</td><td class="n">4.3 µs</td></tr>
+            <tr><td>Parse one paragraph's window, through the FFI</td><td class="n">4.3 µs</td></tr>
             <tr><td>Open and style all of 1 MB, 10 MB</td><td class="n">290 ms, 2,045 ms</td></tr>
             <tr><td>Reveal syntax by arrow key, p50 and p99</td><td class="n">7.2 ms, 11.8 ms</td></tr>
             <tr><td>Select all and deselect, 1 MB</td><td class="n">91.2 ms, 76.5 ms</td></tr>
@@ -348,7 +347,7 @@ perf-gate.sh: perf/0.1.0.json holds every budget</code></pre>
   </div>
 </footer>
 
-<dialog class="search" id="search" aria-label="Search the docs">
+<dialog class="search" id="docs-search" aria-label="Search the docs">
   <div class="search-field" role="search">
     <input id="search-q" type="search" placeholder="Search pages and headings" autocomplete="off" spellcheck="false"
       role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="search-results" aria-label="Search the docs">

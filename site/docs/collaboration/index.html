@@ -146,7 +146,7 @@
           </tbody>
         </table>
       </div>
-      <p>Edits travel peer to peer over iroh, end to end encrypted with QUIC. Every edit is also sealed with XChaCha20-Poly1305 under the session key and signed by the sender, and a Mac drops anything not signed by a current member. When the two Macs can't reach each other directly, the connection goes through a relay. The relay passes encrypted traffic and sees which devices connect, their network addresses and when; it never sees the text.</p>
+      <p>Edits travel peer to peer over iroh, end to end encrypted with QUIC. Every edit is also sealed with XChaCha20-Poly1305 under the document key and signed by the sender, and a Mac drops anything not signed by a current member. When the two Macs can't reach each other directly, the connection goes through a relay. The relay passes encrypted traffic and sees which devices connect, their network addresses and when; it never sees the text.</p>
       <p>In 0.1.0 the relay is one hosted by n0, iroh's developers. The keys live in your login Keychain under <code>dev.arkwerx.dewline.sync</code>. <a href="/docs/security/">Security and privacy</a> has the full model.</p>
 
       <h2 id="limits">Limits in 0.1.0</h2>
@@ -182,7 +182,7 @@
   </div>
 </footer>
 
-<dialog class="search" id="search" aria-label="Search the docs">
+<dialog class="search" id="docs-search" aria-label="Search the docs">
   <div class="search-field" role="search">
     <input id="search-q" type="search" placeholder="Search pages and headings" autocomplete="off" spellcheck="false"
       role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="search-results" aria-label="Search the docs">

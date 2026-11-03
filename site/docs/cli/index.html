@@ -167,7 +167,7 @@ set -gx EDITOR "dewline open --wait"</code></pre>
         <dt><code>--hook &lt;claude|codex|cursor&gt;</code></dt>
         <dd>Whose hook runs it. Required.</dd>
       </dl>
-      <p>It never writes a file, never starts the app and never runs another program. It finishes within 2 seconds whatever stdin holds, and when Dewline isn't running it stops before reading stdin. It always exits 0, even on a bad flag, because Claude Code and Codex take a hook's exit code 2 as a refusal of the tool call.</p>
+      <p>It always exits 0, even on a bad flag, because Claude Code and Codex take a hook's exit code 2 as a refusal of the tool call. <a href="/docs/agents/#what-a-hook-sends">What a hook sends</a> lists its other limits.</p>
 
       <h2 id="changes"><code>dewline changes</code></h2>
       <div class="code" data-lang="Usage">
@@ -227,9 +227,13 @@ dewline: /Users/you/Documents/Dewline/Inbox.md: there is nothing to capture</cod
         <dt><code>--to &lt;html|pdf|docx&gt;</code></dt>
         <dd>The format. Required.</dd>
         <dt><code>-o &lt;OUT&gt;</code></dt>
-        <dd>Where the export goes. By default it goes beside <code>FILE</code> with the format's extension.</dd>
+        <dd>Where the export goes. By default it goes beside <code>FILE</code> with the format's extension. The folder must exist.</dd>
       </dl>
-      <p>The command writes HTML and DOCX itself, with no window, and inlines images from the file's folder. Diagrams and math keep their source. The HTML page uses the system fonts at a 42em measure, follows light and dark mode, and carries a Content Security Policy that loads nothing from the network. PDF needs the app, which owns the paged layout: the command hands the file to Dewline.</p>
+      <p>The command writes HTML and DOCX itself, with no window. <a href="/docs/export/#command-line">Export</a> covers how that output differs from the app's.</p>
+      <aside class="callout caution">
+        <p class="callout-title">PDF from the command line fails in 0.1.0</p>
+        <p>PDF needs the app's paged layout, so <code>--to pdf</code> opens a <code>dewline://export</code> link for Dewline to handle. In 0.1.0 the command puts the source in a <code>file</code> field, the app reads <code>path</code>, and Dewline shows <code>The link has no path.</code> No PDF is written, and the command still exits 0. Use File &gt; Export as PDF… in the app, or a <a href="/docs/url-scheme/#export"><code>dewline://export</code></a> link with <code>path</code>.</p>
+      </aside>
       <div class="code" data-lang="Shell">
 <pre tabindex="0"><code><span class="p">$ </span>dewline export projects/launch-plan.md --to html
 <span class="p">$ </span>ls projects
@@ -368,7 +372,7 @@ For more information, try '--help'.
   </div>
 </footer>
 
-<dialog class="search" id="search" aria-label="Search the docs">
+<dialog class="search" id="docs-search" aria-label="Search the docs">
   <div class="search-field" role="search">
     <input id="search-q" type="search" placeholder="Search pages and headings" autocomplete="off" spellcheck="false"
       role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="search-results" aria-label="Search the docs">

@@ -148,7 +148,7 @@
       </aside>
 
       <h2 id="holds">Autosave holds</h2>
-      <p>Dewline autosaves 2 seconds after your last edit. While an agent works on a file, Dewline holds that autosave, so your save and the agent's write don't cross. Your edits stay in the window, and the autosave runs once the hold ends.</p>
+      <p>While an agent works on a file, Dewline holds the file's <a href="/docs/files/#saving">autosave</a>, so your save and the agent's write don't cross. Your edits stay in the window, and the autosave runs once the hold ends.</p>
       <ul>
         <li>A Claude Code tool call on a file (Read, Edit, MultiEdit or Write) holds its autosave until the session's turn ends: Stop, StopFailure, or the next UserPromptSubmit.</li>
         <li>A file Claude Code loads as instructions, such as a <code>CLAUDE.md</code>, is held until the session ends.</li>
@@ -157,22 +157,7 @@
       </ul>
 
       <h2 id="review">Keep or revert</h2>
-      <p>Each change carries its writer's name and color. Pick the hue for each writer in Settings &gt; Agents &gt; Writers. When an agent's turn ends with changes waiting, one quiet line under the tab bar says so, such as <em>Claude finished · 3 places in 2 files · Review</em>. It makes no sound and sends no notification.</p>
-      <div class="table" tabindex="0" role="region" aria-label="Keys for reviewing changes">
-        <table>
-          <thead><tr><th scope="col">Command</th><th scope="col">Menu</th><th scope="col">Keys</th></tr></thead>
-          <tbody>
-            <tr><td>Keep Change</td><td>Edit</td><td><kbd>⌘</kbd><kbd>↩</kbd></td></tr>
-            <tr><td>Revert Change</td><td>Edit</td><td><kbd>⌥</kbd><kbd>⌘</kbd><kbd>⌫</kbd></td></tr>
-            <tr><td>Keep All Changes</td><td>Edit</td><td><kbd>⇧</kbd><kbd>⌘</kbd><kbd>↩</kbd></td></tr>
-            <tr><td>Revert All Changes</td><td>Edit</td><td><kbd>⌥</kbd><kbd>⇧</kbd><kbd>⌘</kbd><kbd>⌫</kbd></td></tr>
-            <tr><td>Next Change</td><td>Go</td><td><kbd>⌃</kbd><kbd>⌘</kbd><kbd>↓</kbd></td></tr>
-            <tr><td>Previous Change</td><td>Go</td><td><kbd>⌃</kbd><kbd>⌘</kbd><kbd>↑</kbd></td></tr>
-            <tr><td>Review Changes</td><td>View</td><td><kbd>⇧</kbd><kbd>⌘</kbd><kbd>R</kbd></td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p>Review Changes lists the marked changes across the window's open files. Each decision is one undoable edit, so <kbd>⌘</kbd><kbd>Z</kbd> takes it back. Before an outside change lands, Dewline snapshots the file; <a href="/docs/files/">Files and saves</a> covers snapshots.</p>
+      <p>An agent's change is marked in its writer's color. Pick the hue for each writer in Settings &gt; Agents &gt; Writers. You keep or revert it like any marked change, with the commands and keys in <a href="/docs/files/#keep-revert">Files and saves</a>. Each decision is one undoable edit, and each one is logged as the next section describes.</p>
 
       <h2 id="decisions">The decisions loop</h2>
       <p>Each time you keep or revert an agent's change, Dewline appends one line to <code>~/Library/Application Support/dev.arkwerx.dewline/snapshots/decisions.jsonl</code>, a file only you can read. The line holds the agent, its session, the file, the UTC time, <code>kept</code> or <code>reverted</code>, and a BLAKE3 hash of the change's text. The text itself is never logged.</p>
@@ -181,14 +166,14 @@
 <pre tabindex="0"><code>Before you edit notes here, run `dewline changes --json --since &lt;today&gt;`
 and don't redo a change the user reverted.</code></pre>
       </div>
-      <p>Some files are private to Dewline: never snapshotted, and their decisions never logged. They are agent transcripts and settings: any <code>.jsonl</code> file, <code>.claude.json</code>, anything under a <code>file-history</code> folder, and <code>.json</code> or <code>.toml</code> files under <code>.claude</code> or <code>.codex</code>.</p>
+      <p>Agent transcripts and settings files are private to Dewline: never snapshotted, and their decisions never logged. <a href="/docs/security/#on-disk">Security and privacy</a> lists which files those are.</p>
 
       <h2 id="install">Install the hooks</h2>
       <p>Run this in Terminal. Settings &gt; Agents shows the same command with a Copy Command button, and shows each agent as Installed or Not installed.</p>
       <div class="code" data-lang="Shell">
 <pre tabindex="0"><code><span class="p">$ </span>dewline doctor --install-hooks</code></pre>
       </div>
-      <p>For each agent whose settings lack a hook, it prints the entries it would add and asks <code>Merge them in? [y/N]</code>. On <kbd>y</kbd> it copies the file to <code>&lt;file&gt;.dewline-backup-&lt;seconds&gt;</code>, merges the hooks in, and keeps every other key and hook as it was. Each hook runs the <code>dewline</code> you ran, by absolute path. Run <a href="/docs/cli/#doctor"><code>dewline doctor</code></a> afterward to check.</p>
+      <p>It shows the hooks it would add to each agent's settings and asks before it writes, keeping a backup; <a href="/docs/cli/#doctor"><code>dewline doctor</code></a> has the details. Each hook runs the <code>dewline</code> you ran, by absolute path. Run <code>dewline doctor</code> afterward to check.</p>
       <aside class="callout caution">
         <p class="callout-title">Codex</p>
         <p>Codex runs a new or changed hook only after you trust it. Start Codex, open <code>/hooks</code>, select each Dewline hook and press <kbd>t</kbd>.</p>
@@ -266,7 +251,7 @@ and don't redo a change the user reverted.</code></pre>
   </div>
 </footer>
 
-<dialog class="search" id="search" aria-label="Search the docs">
+<dialog class="search" id="docs-search" aria-label="Search the docs">
   <div class="search-field" role="search">
     <input id="search-q" type="search" placeholder="Search pages and headings" autocomplete="off" spellcheck="false"
       role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="search-results" aria-label="Search the docs">

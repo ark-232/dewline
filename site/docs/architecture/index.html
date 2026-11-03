@@ -14,7 +14,6 @@
 <link rel="preload" href="/fonts/ibm-plex-sans-var-latin1.v3.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/styles.css">
 <link rel="stylesheet" href="/docs/docs.css">
-<link rel="stylesheet" href="/docs/technical.css">
 <script src="/docs/docs.js" defer></script>
 <script src="/docs/search.js" defer></script>
 </head>
@@ -157,7 +156,7 @@
 <text class="f-d f-end" x="648" y="453">dewline-core</text>
 </svg>
         </div>
-        <figcaption><b>Figure 1.</b> One bundle, two languages. The app calls the engine through UniFFI. The Quick Look preview loads the same framework. The <code>dewline</code> command links the engine&#8217;s core crate (marked) on its own, and reaches the running app only through a private socket.</figcaption>
+        <figcaption><b>Figure 1.</b> One bundle, two languages. The app calls the engine through UniFFI. The Quick Look preview loads the same framework. The <code>dewline</code> command links the engine's core crate (marked) on its own, and reaches the running app only through a private socket.</figcaption>
       </figure>
 
       <h2 id="rules">Rules the code keeps</h2>
@@ -167,7 +166,7 @@
         <li>Every write, from any writer, takes one path: detect the change, compare it with the last known contents, snapshot, merge three ways, apply, and save only if the disk still matches.</li>
         <li>Conflicts never enter the file. The other version shows as a card until you choose.</li>
         <li>Nothing restyles the text or applies an outside change while an input method is composing.</li>
-        <li>Nothing touches the text view&#8217;s <code>layoutManager</code>, which would switch it to TextKit 1.</li>
+        <li>Nothing touches the text view's <code>layoutManager</code>, which would switch it to TextKit 1.</li>
         <li>After five seconds without input, nothing runs: no timers, no animation, no blinking caret.</li>
       </ul>
 
@@ -175,15 +174,15 @@
       <h3 id="editor">The editor</h3>
       <p>The editor is an <code>NSTextView</code> on TextKit 2. TextKit 1 and the switch between the two are deleted, so each feature is built once (<a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0004-textkit.md">0004</a>). Inline Writing Tools needs TextKit 2; on TextKit 1 it shows its results in a panel.</p>
       <p>The styler sets attributes only. Syntax hides by turning its color clear, so the characters on screen are always the characters in the file.</p>
-      <p>A keystroke reparses one window: the top-level block or list item that holds the edit, plus the neighbors that can continue into it. A window that does not hold keeps its neighbors&#8217; styling until the whole document reparses off the main thread after 300 ms idle (<a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0006-editor-architecture.md">0006</a>).</p>
+      <p>A keystroke reparses one window: the top-level block or list item that holds the edit, plus the neighbors that can continue into it. A window that does not hold keeps its neighbors' styling until the whole document reparses off the main thread after 300 ms idle (<a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0006-editor-architecture.md">0006</a>).</p>
 
       <h3 id="documents">Documents and saves</h3>
-      <p>Each file is an <code>NSDocument</code>. AppKit&#8217;s autosave in place is off, which also turns off the Versions browser. Dewline keeps its own history in snapshots instead.</p>
+      <p>Each file is an <code>NSDocument</code>. AppKit's autosave in place is off, which also turns off the Versions browser. Dewline keeps its own history in snapshots instead.</p>
       <ul>
         <li>The app autosaves 2 s after your last edit, through the engine.</li>
         <li><kbd>⌘</kbd><kbd>S</kbd> first lands whatever the file holds now, then saves.</li>
         <li>Documents read off the main thread, since the engine reads, hashes and snapshots the file as it opens.</li>
-        <li>A save that the engine refuses writes nothing to your file. Your text goes to the file&#8217;s draft snapshot instead.</li>
+        <li>A save that the engine refuses writes nothing to your file. Your text goes to the file's draft snapshot instead.</li>
       </ul>
 
       <h2 id="engine">The engine</h2>
@@ -194,12 +193,12 @@
       <p>The parser passes the 652 CommonMark 0.31.2 examples and the GFM table, strikethrough and task list examples. The parser and the merge each have a fuzz target in <code>core/fuzz</code>.</p>
 
       <h3 id="change-engine">Change engine and merge</h3>
-      <p>The change engine lands outside writes into an open document without losing a byte. Rust keeps each document&#8217;s base (the disk bytes the buffer last absorbed), the disk as last seen, the landing that waits for its commit, and the pending changes and conflicts. Swift keeps the buffer.</p>
-      <p>The merge is three-way: the file&#8217;s new version (theirs) lands on the open buffer (yours) against the base. It diffs lines first, then the words inside each changed region, both with imara-diff&#8217;s Myers algorithm. Offsets are UTF-16 code units, as the Swift buffer counts them, and never fall inside a <code>\r\n</code>.</p>
+      <p>The change engine lands outside writes into an open document without losing a byte. Rust keeps each document's base (the disk bytes the buffer last absorbed), the disk as last seen, the landing that waits for its commit, and the pending changes and conflicts. Swift keeps the buffer.</p>
+      <p>The merge is three-way: the file's new version (theirs) lands on the open buffer (yours) against the base. It diffs lines first, then the words inside each changed region, both with imara-diff's Myers algorithm. Offsets are UTF-16 code units, as the Swift buffer counts them, and never fall inside a <code>\r\n</code>.</p>
 
       <h3 id="saves">Compare-and-swap saves</h3>
       <p>A save writes only if the file still holds the bytes the save was based on, checked by BLAKE3 hash. Bytes that hash to the base write nothing.</p>
-      <p>The new bytes go to a hidden sibling that takes the file&#8217;s mode, owner, group, flags and extended attributes, and the sibling is renamed over the file. A symlink, a file with other hard links or an access control list is written in place instead, through the descriptor that was hashed. A failed write in place puts the original bytes back.</p>
+      <p>The new bytes go to a hidden sibling that takes the file's mode, owner, group, flags and extended attributes, and the sibling is renamed over the file. A symlink, a file with other hard links or an access control list is written in place instead, through the descriptor that was hashed. A failed write in place puts the original bytes back.</p>
 
       <h3 id="snapshots">Snapshots</h3>
       <p>Snapshots live in <code>~/Library/Application Support/dev.arkwerx.dewline/snapshots/</code>, never beside your files. The store is content-addressed:</p>
@@ -208,26 +207,26 @@
         <li><code>files/</code> holds one index per file, named by the hash of its path.</li>
         <li><code>tmp/</code> holds writes in progress. Each write is synced, renamed into place and its folder synced, so a crash leaves the old file or the new one whole.</li>
       </ul>
-      <p>A snapshot older than 30 days is dropped unless it is pinned or among its file&#8217;s newest 50. <a href="/docs/security/#on-disk">Security and privacy</a> covers permissions and what is never snapshotted.</p>
+      <p><a href="/docs/files/#snapshots">Files and saves</a> says when a snapshot is taken and how long it is kept. <a href="/docs/security/#on-disk">Security and privacy</a> covers permissions and what is never snapshotted.</p>
 
       <h3 id="jail">Path jail</h3>
-      <p>The MCP server, <code>dewline://</code> links and the images an export inlines all reach files through one jail in <code>core::jail</code>. A path is resolved with <code>realpath</code> and must lie inside the root. It is then opened from the root&#8217;s descriptor with no symlink allowed anywhere on the way (<code>O_NOFOLLOW_ANY</code>), and the opened file&#8217;s own path must still lie inside the root. A link or folder swapped in between the two steps opens nothing. A property test throws mixes of names, dots, links and loops at it.</p>
+      <p>The MCP server, <code>dewline://</code> links and the images an export inlines all reach files through one jail in <code>core::jail</code>. A path is resolved with <code>realpath</code> and must lie inside the root. It is then opened from the root's descriptor with no symlink allowed anywhere on the way (<code>O_NOFOLLOW_ANY</code>), and the opened file's own path must still lie inside the root. A link or folder swapped in between the two steps opens nothing. A property test throws mixes of names, dots, links and loops at it.</p>
 
       <h3 id="rendering">Highlighting, math and diagrams</h3>
       <div class="table" tabindex="0" role="region" aria-label="Renderers in the engine">
         <table>
           <thead><tr><th scope="col">Renders</th><th scope="col">With</th><th scope="col">How</th></tr></thead>
           <tbody>
-            <tr><th scope="row">Code</th><td>syntect 5.3.0</td><td>One worker thread owns 16 syntaxes and each block&#8217;s parse states, so an edit reparses from its first changed line. A line over 16 KB or with over 2,000 scope changes stays plain (<a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0008-code-highlighting.md">0008</a>).</td></tr>
+            <tr><th scope="row">Code</th><td>syntect 5.3.0</td><td>One worker thread owns 16 syntaxes and each block's parse states, so an edit reparses from its first changed line. A line over 16 KB or with over 2,000 scope changes stays plain (<a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0008-code-highlighting.md">0008</a>).</td></tr>
             <tr><th scope="row">Math</th><td>RaTeX 0.1.15</td><td>TeX typeset natively, off the main thread and cached. It renders all 50 formulas in <code>corpus/math</code> (<a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0005-math-engine.md">0005</a>).</td></tr>
             <tr><th scope="row">Mermaid</th><td>mermaid-rs-renderer 0.3.1</td><td>SVG drawn in Rust and rasterized with resvg, off the main thread and cached (<a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0002-1.0-scope.md">0002</a>).</td></tr>
           </tbody>
         </table>
       </div>
-      <p>No JavaScript runs on your notes anywhere. Math and diagrams each stop at 50 KB of source and a 250 ms render, and a diagram&#8217;s picture stops at 16 megapixels (16,777,216 pixels). A block that fails or runs over shows its source, with a dim line naming the error.</p>
+      <p>No JavaScript runs on your notes anywhere. Math and diagrams each stop at 50 KB of source and a 250 ms render, and a diagram's picture stops at 16 megapixels (16,777,216 pixels). A block that fails or runs over shows its source, with a dim line naming the error.</p>
 
       <h3 id="export">Export</h3>
-      <p>The engine writes HTML and DOCX. The app adds PDF: it lays out the engine&#8217;s HTML in a web view that runs no page script, keeps no data and follows no link, then cuts it into pages between top-level blocks. The <code>dewline</code> command hands a PDF export to the app.</p>
+      <p>The engine writes HTML and DOCX. The app adds PDF: it lays out the engine's HTML in a web view that runs no page script, keeps no data and follows no link, then cuts it into pages between top-level blocks. The <code>dewline</code> command hands a PDF export to the app through a <code>dewline://export</code> link, a hand-off that fails in 0.1.0 (<a href="/docs/cli/#export">Command line</a>).</p>
 
       <h2 id="boundary">Across the boundary</h2>
       <p>The app reaches the engine through UniFFI 0.32.2. <code>scripts/build-xcframework.sh</code> builds the engine as a dynamic framework, <code>DewlineFFI.xcframework</code>, so the app and its Quick Look preview share one copy in <code>Dewline.app/Contents/Frameworks</code>. The Swift package <code>MdCore</code> wraps the generated bindings.</p>
@@ -318,14 +317,14 @@
       </figure>
       <p>Three rules hold along the way.</p>
       <ul>
-        <li>The file is snapshotted before anything lands, and your unsaved typing is snapshotted before the merge. Any step can be undone from <strong>File › Snapshots</strong>.</li>
-        <li>While git holds <code>index.lock</code>, or an agent&#8217;s hooked tool call on the file is open, the landing waits, 10 s at most. A checkout or a patch lands after the writer finishes, not halfway through.</li>
-        <li>A change gets a writer&#8217;s name only when that writer&#8217;s hooks report it through <code>dewline notify</code>, which sends paths and BLAKE3 hashes, never content. Anything else shows as Unknown (<a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0007-agent-attribution.md">0007</a>).</li>
+        <li>The file is snapshotted before anything lands, and your unsaved typing is snapshotted before the merge. Any step can be undone from <strong>File &gt; Snapshots</strong>.</li>
+        <li>While git holds <code>index.lock</code>, or an agent's hooked tool call on the file is open, the landing waits, 10 s at most. A checkout or a patch lands after the writer finishes, not halfway through.</li>
+        <li>A change gets a writer's name only when that writer's hooks report it through <code>dewline notify</code>, which sends paths and BLAKE3 hashes, never content. Anything else shows as Unknown (<a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0007-agent-attribution.md">0007</a>).</li>
       </ul>
 
       <h2 id="front-ends">Other front ends</h2>
       <h3 id="quick-look">Quick Look</h3>
-      <p>The Quick Look preview is a sandboxed app extension. It returns the page that HTML export writes, as data, in the app&#8217;s stylesheet. The page runs no script and loads nothing from the network. Diagrams and math show as their source, and no image is inlined.</p>
+      <p>The Quick Look preview is a sandboxed app extension. It returns the page that HTML export writes, as data, in the app's stylesheet. The page runs no script and loads nothing from the network. Diagrams and math show as their source, and no image is inlined.</p>
 
       <h3 id="command">The <code>dewline</code> command</h3>
       <p>The command ships inside the app at <code>Dewline.app/Contents/Helpers/dewline</code>. It links <code>dewline-core</code> directly, with no UniFFI, no Mermaid, no math and no collaboration stack, so it is one small binary with no framework beside it. On a release build for arm64, it links only system libraries:</p>
@@ -335,21 +334,21 @@ dewline:
 	/usr/lib/libiconv.2.dylib (compatibility version 7.0.0, current version 7.0.0)
 	/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1359.40.3)</code></pre>
       </div>
-      <p>The command reaches the running app through one Unix socket, <code>~/Library/Application Support/dev.arkwerx.dewline/run/control.sock</code>. A connection carries one JSON line, such as an open request or a hook&#8217;s claim. <a href="/docs/cli/">Command line</a> and <a href="/docs/mcp/">MCP server</a> cover what it does.</p>
+      <p>The command reaches the running app through one Unix socket, <code>~/Library/Application Support/dev.arkwerx.dewline/run/control.sock</code>. A connection carries one JSON line, such as an open request or a hook's claim. <a href="/docs/cli/">Command line</a> and <a href="/docs/mcp/">MCP server</a> cover what it does.</p>
 
       <h2 id="updates">Updates</h2>
-      <p>Sparkle 2.10.0 updates the app. The appcast at <code>dewline.arkwerx.com/appcast.xml</code> is signed, and so is each update archive, with an EdDSA key whose public half is in the app&#8217;s <code>Info.plist</code>. Sparkle checks the archive before it extracts it. The updater starts only in builds signed with the ArkWerx Developer ID, so debug and unsigned builds never contact the feed. An update downloads in the background and installs when you quit. The app never restarts on its own.</p>
+      <p>Sparkle 2.10.0 updates the app. The appcast at <code>dewline.arkwerx.com/appcast.xml</code> is signed, and so is each update archive, with an EdDSA key whose public half is in the app's <code>Info.plist</code>. Sparkle checks the archive before it extracts it. The updater starts only in builds signed with the ArkWerx Developer ID, so debug and unsigned builds never contact the feed. An update downloads in the background and installs when you quit. The app never restarts on its own.</p>
 
       <h2 id="collaboration">Collaboration</h2>
       <p>Live collaboration runs on the same change engine (<a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0009-collaboration.md">0009</a>).</p>
       <ul>
         <li><strong>Mirror.</strong> <code>dewline-sync</code> keeps one Loro document per shared file, with one text container. The <code>.md</code> on each Mac stays the source of truth. Loro carries edits between Macs and nothing reads it back from disk. The host seeds it from the file as it is when Share is first pressed, so earlier history never leaves the Mac.</li>
-        <li><strong>Transport.</strong> iroh 1.3.0, peer to peer, with a relay when no direct path opens. The invite link carries the host&#8217;s address, so nothing is published to an address lookup service. A direct stream carries joins, keys and removals. An iroh-gossip topic carries edits and cursors.</li>
+        <li><strong>Transport.</strong> iroh 1.3.0, peer to peer, with a relay when no direct path opens. The invite link carries the host's address, so nothing is published to an address lookup service. A direct stream carries joins, keys and removals. An iroh-gossip topic carries edits and cursors.</li>
         <li><strong>Invites.</strong> A link holds a random 256-bit capability that the host spends the first time anyone presents it. The host approves each join by name.</li>
-        <li><strong>Keys.</strong> Each gossip message is sealed with XChaCha20-Poly1305 under the document key and signed with the sender&#8217;s ed25519 node key. Each approval or removal makes a new document key, so a removed Mac can read nothing new.</li>
-        <li><strong>The seam.</strong> A collaborator&#8217;s edit reaches the engine as one replace from that collaborator. The engine snapshots your buffer first, at most every 30 s. The app holds the edit while an input method composes and applies it outside your undo history, with the caret kept in place.</li>
+        <li><strong>Keys.</strong> Each gossip message is sealed with XChaCha20-Poly1305 under the document key and signed with the sender's ed25519 node key. Each approval or removal makes a new document key, so a removed Mac can read nothing new.</li>
+        <li><strong>The seam.</strong> A collaborator's edit reaches the engine as one replace from that collaborator. The engine snapshots your buffer first, at most every 30 s. The app holds the edit while an input method composes and applies it outside your undo history, with the caret kept in place.</li>
       </ul>
-      <p>Not built yet: rejoining after a dropped connection or a restart (a guest needs a new link today), and edits larger than iroh-gossip&#8217;s 1 MiB message.</p>
+      <p>Not built yet: rejoining after a dropped connection or a restart (a guest needs a new link today), and edits larger than iroh-gossip's 1 MiB message.</p>
 
       <h2 id="decisions">Decision records</h2>
       <p>Each record in <code>docs/decisions/</code> names what it decided and what would reopen it.</p>
@@ -363,7 +362,7 @@ dewline:
             <tr><td><a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0004-textkit.md">0004</a></td><td>TextKit 2 only, by measurement against TextKit 1.</td></tr>
             <tr><td><a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0005-math-engine.md">0005</a></td><td>RaTeX for math, over SwiftMath.</td></tr>
             <tr><td><a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0006-editor-architecture.md">0006</a></td><td>One parser, and what Rust may do on the keystroke path.</td></tr>
-            <tr><td><a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0007-agent-attribution.md">0007</a></td><td>When a change gets an agent&#8217;s name, per agent.</td></tr>
+            <tr><td><a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0007-agent-attribution.md">0007</a></td><td>When a change gets an agent's name, per agent.</td></tr>
             <tr><td><a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0008-code-highlighting.md">0008</a></td><td>syntect, its 16 syntaxes and its limits.</td></tr>
             <tr><td><a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0009-collaboration.md">0009</a></td><td>Live collaboration: Loro, iroh, invites, keys and removal.</td></tr>
             <tr><td><a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0010-perf-budgets.md">0010</a></td><td>Four performance budgets reset after the third perf pass.</td></tr>
@@ -396,7 +395,7 @@ dewline:
   </div>
 </footer>
 
-<dialog class="search" id="search" aria-label="Search the docs">
+<dialog class="search" id="docs-search" aria-label="Search the docs">
   <div class="search-field" role="search">
     <input id="search-q" type="search" placeholder="Search pages and headings" autocomplete="off" spellcheck="false"
       role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="search-results" aria-label="Search the docs">

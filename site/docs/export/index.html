@@ -130,7 +130,7 @@
       <p>HTML inlines PNG, JPEG, GIF, WebP and SVG images. DOCX takes PNG, JPEG and GIF.</p>
 
       <h2 id="command-line">From the command line</h2>
-      <p><code>dewline export</code> writes HTML and DOCX without opening the app. It needs <code>--to</code> and a file; the result goes beside the file with the format's extension unless <code>-o</code> names another path. It prints nothing when it succeeds.</p>
+      <p><code>dewline export</code> writes HTML and DOCX without opening the app. It prints nothing when it succeeds. <a href="/docs/cli/#export">Command line</a> lists its options and errors.</p>
       <div class="code" data-lang="Shell">
 <pre tabindex="0"><code><span class="p">$ </span>dewline export --to html notes.md
 <span class="p">$ </span>ls
@@ -140,11 +140,6 @@ notes.md
 <span class="p">$ </span>dewline export --to docx notes.md -o out/notes.docx</code></pre>
       </div>
       <p>From the command line, HTML and DOCX differ from the app's in two ways: the page uses system fonts and a plain light and dark stylesheet instead of your theme, and diagrams and math keep their source. Images in the note's folder are inlined as in the app.</p>
-      <ul>
-        <li>The folder <code>-o</code> points into must exist.</li>
-        <li>An output path that is the source file itself is refused, with <code>the export would replace its own source</code> and exit status 1.</li>
-      </ul>
-      <p><a href="/docs/cli/">Command line</a> lists every option.</p>
 
       <h2 id="quick-look">Quick Look</h2>
       <p>With Dewline installed, pressing <kbd>Space</kbd> on a <code>.md</code> file in Finder previews it as a page in your theme's colors. The preview is the same HTML export makes, held as data: it runs no script and loads nothing from the network. Diagrams and math show their source in the preview.</p>
@@ -174,7 +169,7 @@ notes.md
   </div>
 </footer>
 
-<dialog class="search" id="search" aria-label="Search the docs">
+<dialog class="search" id="docs-search" aria-label="Search the docs">
   <div class="search-field" role="search">
     <input id="search-q" type="search" placeholder="Search pages and headings" autocomplete="off" spellcheck="false"
       role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="search-results" aria-label="Search the docs">
