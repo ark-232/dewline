@@ -18,6 +18,17 @@ enum DewlineApp {
     }
 }
 
+/// What a launch shows when no file asked to open.
+@MainActor
+enum Launch {
+    /// The launch window shows when nothing else opened and either the setting asks for it or there is no last
+    /// session to reopen. The one caller keeps the test host windowless.
+    static func shouldShowLaunchWindow(session: Session?, defaults: UserDefaults, openWindows: Int) -> Bool {
+        guard openWindows == 0 else { return false }
+        return Preferences(defaults: defaults).onLaunch == .launchWindow || (session?.windows.isEmpty ?? true)
+    }
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var launchWindow: LaunchWindowController?
@@ -98,6 +109,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 resume()
                 if applicationShouldOpenUntitledFile(NSApp) { showWelcome(nil) }
             }
+        } else if !isTestHost, Launch.shouldShowLaunchWindow(session: session, defaults: defaults, openWindows: mainWindows) {
+            // AppKit asks for the launch window next, in applicationShouldOpenUntitledFile.
+            session = nil
         } else {
             resume()
         }
@@ -110,10 +124,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(forName: ThemeStore.didChange, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated { Export.publishPreviewStylesheet() }
         }
-        if !UserDefaults.standard.bool(forKey: Welcome.shownKey) {
-            UserDefaults.standard.set(true, forKey: Welcome.shownKey)
-            // Opened before AppKit asks for an untitled file, so the guide shows in place of the launch window.
-            replayDemo(nil)
+        if !defaults.bool(forKey: Welcome.shownKey) {
+            defaults.set(true, forKey: Welcome.shownKey)
+            // Opened before AppKit asks for an untitled file, so the notes folder shows in place of the launch window.
+            firstLaunch(in: FileActions.notesFolder)
+        } else if DailyNote.opensAtLaunch(defaults: defaults) {
+            openTodaysNote(nil)
         }
         let engine = MarkdownDocument.sharedEngine
         let control = ControlSocket(path: ControlSocket.standardPath, notify: { claim in
@@ -127,8 +143,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             try control.start()
             self.control = control
         } catch {
-            Logger(subsystem: "dev.arkwerx.dewline", category: "control")
-                .error("No control socket, so the dewline command can't reach this app: \(String(describing: error), privacy: .public)")
+            Tracking.report(.noSocket(error.localizedDescription))
         }
     }
 
@@ -203,12 +218,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return document
     }
 
-    /// Help > Replay the Demo, and the first launch: a fresh Welcome.md, then Demo's edit to it.
-    @objc func replayDemo(_ sender: Any?) {
-        let url = Welcome.url
-        NSDocumentController.shared.document(for: url)?.close()
+    /// The first launch: Welcome.md in the notes folder, open in a window on that folder with the caret at its end.
+    func firstLaunch(in folder: URL) {
         do {
-            try Welcome.copy(to: url, fresh: true)
+            try Welcome.write(in: folder)
+            Library.noteOpened(folder, folder: true)
+            Self.welcomeWindow(in: folder).showWindow(nil)
+        } catch {
+            NSApp.presentError(error)
+        }
+    }
+
+    /// A window on `folder` with its Welcome.md open and the caret at the end, not yet shown.
+    static func welcomeWindow(in folder: URL) -> MainWindowController {
+        let controller = MainWindowController(folder: Folder(folder))
+        controller.open(Welcome.url(in: folder), newTab: false)
+        if let textView = controller.textView {
+            textView.setSelectedRange(NSRange(location: (textView.string as NSString).length, length: 0))
+        }
+        return controller
+    }
+
+    /// Help > Replay the Demo: Welcome.md again if it is gone, then Demo's change to it.
+    @objc func replayDemo(_ sender: Any?) {
+        let folder = FileActions.notesFolder
+        do {
+            try Welcome.write(in: folder)
+            playDemo(at: Welcome.url(in: folder))
+        } catch {
+            NSApp.presentError(error)
+        }
+    }
+
+    /// `dewline://demo`, the link in Welcome.md: Demo extends the paragraph that holds it.
+    func playDemo(at url: URL) {
+        do {
             WelcomeDemo.play(try openMarkdown(at: url), at: url)
         } catch {
             NSApp.presentError(error)
@@ -217,7 +261,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // AppKit asks at launch when nothing opens or restores, and when the Dock icon is clicked with no windows.
     func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {
-        !opensFile && LaunchWindowController.showsWhenNothingIsOpen && !NSApp.windows.contains { $0.windowController is MainWindowController && ($0.isVisible || $0.isMiniaturized) }
+        !isTestHost && !opensFile && mainWindows == 0
+    }
+
+    /// Main windows on screen or in the Dock.
+    private var mainWindows: Int {
+        NSApp.windows.count { $0.windowController is MainWindowController && ($0.isVisible || $0.isMiniaturized) }
     }
 
     func applicationOpenUntitledFile(_ sender: NSApplication) -> Bool {
@@ -254,7 +303,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Called when the last tab closes.
     func nothingIsOpen() {
-        if LaunchWindowController.showsWhenNothingIsOpen { showWelcome(nil) }
+        if !isTestHost, Launch.shouldShowLaunchWindow(session: nil, defaults: defaults, openWindows: mainWindows) { showWelcome(nil) }
     }
 
     func closeLaunchWindow() {
@@ -265,13 +314,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func showWelcome(_ sender: Any?) {
         if launchWindow == nil { launchWindow = LaunchWindowController() }
         launchWindow?.showWindow(nil)
-    }
-
-    @objc func newDocument(_ sender: Any?) {
-        let document = MarkdownDocument()
-        NSDocumentController.shared.addDocument(document)
-        document.makeWindowControllers()
-        document.showWindows()
     }
 
     @objc func quickOpen(_ sender: Any?) {
@@ -299,5 +341,174 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ?? MainWindowController(folder: folder).window
         window?.windowController?.showWindow(nil)
         return window
+    }
+
+    // MARK: Notes and folders
+
+    /// The tab in front, if it is a main window's.
+    private var front: MainWindowController? {
+        (NSApp.mainWindow ?? NSApp.orderedWindows.first { $0.isVisible && $0.windowController is MainWindowController })?.windowController
+            as? MainWindowController
+    }
+
+    /// The front window's folder, else the notes folder.
+    private var frontFolder: URL {
+        front?.folder?.url ?? FileActions.notesFolder
+    }
+
+    /// File > New Note: "Untitled.md" in the front window's folder, or in the notes folder, open with the caret ready.
+    /// Its first line names it once it saves.
+    @objc func newNote(_ sender: Any?) {
+        do {
+            let url = try FileActions.newNote(in: frontFolder)
+            let controller = front?.folder != nil ? front : openFolder(at: FileActions.notesFolder)?.windowController as? MainWindowController
+            guard let controller else { return }
+            controller.open(url, newTab: true)
+            if let document = NSDocumentController.shared.document(for: url) as? MarkdownDocument {
+                FileActions.nameFromFirstLine(document)
+            }
+        } catch {
+            NSApp.presentError(error)
+        }
+    }
+
+    /// The launch window's New Note.
+    @objc func newDocument(_ sender: Any?) {
+        newNote(sender)
+    }
+
+    /// File > New Folder, in the front window's folder or the notes folder.
+    @objc func newFolder(_ sender: Any?) {
+        do {
+            try FileActions.newFolder(in: frontFolder, undo: front?.window?.undoManager)
+        } catch {
+            NSApp.presentError(error)
+        }
+    }
+
+    /// File > New Window: another window on the front window's folder, or on the notes folder.
+    @objc func newWindow(_ sender: Any?) {
+        let folder = Folder(frontFolder)
+        Library.noteOpened(folder.url, folder: true)
+        MainWindowController(folder: folder).showWindow(nil)
+    }
+
+    private var frontNote: MarkdownDocument? {
+        NSDocumentController.shared.currentDocument as? MarkdownDocument
+    }
+
+    @objc func duplicateNote(_ sender: Any?) {
+        guard let url = frontNote?.fileURL else { return }
+        do {
+            let copy = try FileActions.duplicate(url, undo: front?.window?.undoManager)
+            front?.open(copy, newTab: true)
+        } catch {
+            NSApp.presentError(error)
+        }
+    }
+
+    @objc func trashNote(_ sender: Any?) {
+        guard let url = frontNote?.fileURL else { return }
+        do {
+            try FileActions.trash(url, undo: front?.window?.undoManager)
+        } catch {
+            NSApp.presentError(error)
+        }
+    }
+
+    @objc func showEarlierVersions(_ sender: Any?) {
+        guard let document = frontNote, let window = document.windowControllers.first?.window else { return }
+        EarlierVersions.show(for: document, on: window)
+    }
+
+    /// File > Open Inbox: the inbox `dewline capture` appends to, made if it isn't there yet.
+    @objc func openInbox(_ sender: Any?) {
+        let url = Preferences.shared.inbox
+        do {
+            if !FileManager.default.fileExists(atPath: url.path) {
+                try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try Data().write(to: url, options: .withoutOverwriting)
+            }
+            try openMarkdown(at: url)
+        } catch {
+            NSApp.presentError(error)
+        }
+    }
+
+    /// File > Today's Note: today's file in the notes folder's Daily folder, made if it isn't there yet.
+    @objc func openTodaysNote(_ sender: Any?) {
+        do {
+            try openMarkdown(at: DailyNote.today(in: FileActions.notesFolder))
+            DailyNote.noteOpened(defaults: defaults)
+        } catch {
+            NSApp.presentError(error)
+        }
+    }
+
+    @objc func capture(_ sender: Any?) {
+        Capture.show()
+    }
+
+    /// File > Join Shared Note…: the invite link, pasted.
+    @objc func joinSharedNote(_ sender: Any?) {
+        let alert = NSAlert()
+        alert.messageText = "Join a shared note"
+        alert.informativeText = "Paste the invite link you were sent."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        field.placeholderString = "dewline://join\u{2026}"
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Join")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let link = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard link.hasPrefix("dewline://join") else {
+            let refused = NSAlert()
+            refused.messageText = "This isn\u{2019}t an invite link."
+            refused.informativeText = "An invite link starts with dewline://join. Ask for a new one."
+            refused.runModal()
+            return
+        }
+        Collaboration.join(link: link)
+    }
+
+    /// File > Print…: the note as its PDF export lays it out.
+    @objc func printNote(_ sender: Any?) {
+        guard let document = frontNote, let window = document.windowControllers.first?.window,
+            let text = (document.windowControllers.first as? MainWindowController)?.textView?.string
+        else { return }
+        Task {
+            do {
+                try await Export.print(text, title: document.displayName, folder: document.fileURL?.deletingLastPathComponent(), on: window)
+            } catch {
+                document.presentError(error, modalFor: window, delegate: nil, didPresent: nil, contextInfo: nil)
+            }
+        }
+    }
+
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let menu = NSMenu()
+        menu.addItem(withTitle: "New Note", action: #selector(newNote(_:)), keyEquivalent: "").target = self
+        menu.addItem(withTitle: "Capture\u{2026}", action: #selector(capture(_:)), keyEquivalent: "").target = self
+        if DailyNote.isOn(defaults: defaults) {
+            menu.addItem(withTitle: "Today\u{2019}s Note", action: #selector(openTodaysNote(_:)), keyEquivalent: "").target = self
+        }
+        return menu
+    }
+}
+
+extension AppDelegate: NSMenuItemValidation {
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        switch item.action {
+        case #selector(openTodaysNote(_:)):
+            item.isHidden = !DailyNote.isOn(defaults: defaults)
+            return !item.isHidden
+        case #selector(duplicateNote(_:)), #selector(trashNote(_:)), #selector(printNote(_:)):
+            return frontNote?.fileURL != nil
+        case #selector(showEarlierVersions(_:)):
+            return frontNote?.live != nil
+        default:
+            return true
+        }
     }
 }

@@ -1,40 +1,37 @@
 import AppKit
 import MdCore
 
-/// Welcome.md: the bundled guide, opened from a copy in Application Support that the reader owns.
+/// Welcome.md: the bundled guide, written once into the notes folder, where it is a note like any other.
+@MainActor
 enum Welcome {
-    /// True once the guide has opened on a first launch.
+    /// True once the first launch wrote the guide and opened the notes folder.
     static let shownKey = "DewlineWelcomeShown"
-    /// The paragraph the demo edits, and what it adds.
-    static let paragraph = "This paragraph is plain text in a Markdown file on your Mac. Any app can read it, and any app can change it."
-    static let addition = " Demo added this sentence from outside the editor, the way an agent writes to a file you have open."
-    static let tip = "*Demo changed this paragraph. Keep it (⌘↩) or Revert it (⌥⌘⌫).*"
-    static let done = "*Done. Changes from Claude Code, Codex or Cursor show up the same way.*"
-    /// The heading the tip goes above.
-    static let tryIt = "## Try it with your agent"
+    /// The sentence the demo extends, in the paragraph that holds its link, and what it adds.
+    static let paragraph = "Dewline marks each change so you can keep or revert it."
+    static let addition = " This sentence came from outside the editor, the way an agent\u{2019}s edit arrives."
 
     static var bundled: URL {
         Bundle.main.url(forResource: "Welcome", withExtension: "md")!
     }
 
-    static var url: URL {
-        URL.applicationSupportDirectory.appending(path: Bundle.main.bundleIdentifier ?? "dev.arkwerx.dewline")
-            .appending(path: "Welcome.md")
+    static func url(in folder: URL = FileActions.notesFolder) -> URL {
+        folder.appending(path: "Welcome.md")
     }
 
-    /// Writes the bundled guide to `url`, with that file's path in its agent prompt. An existing copy keeps its edits
-    /// unless `fresh`.
-    static func copy(to url: URL = url, fresh: Bool) throws {
-        guard fresh || !FileManager.default.fileExists(atPath: url.path) else { return }
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let text = try String(contentsOf: bundled, encoding: .utf8).replacingOccurrences(of: "{path}", with: url.path)
-        try Data(text.utf8).write(to: url, options: .atomic)
+    /// Writes the bundled guide into `folder` unless a Welcome.md is already there; true when it wrote one.
+    @discardableResult
+    static func write(in folder: URL = FileActions.notesFolder) throws -> Bool {
+        let url = url(in: folder)
+        guard !FileManager.default.fileExists(atPath: url.path) else { return false }
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Data(contentsOf: bundled).write(to: url, options: .withoutOverwriting)
+        return true
     }
 }
 
-/// The first-run demo: about 3 s after Welcome.md opens, a writer named Demo edits its paragraph through the change
-/// engine, claimed as an agent's hooks claim a write, so it lands marked with Keep and Revert. A tip line arrives under
-/// it as a quiet outside write, and becomes the done line once the change is decided.
+/// "Show me a change" in Welcome.md: a writer named Demo extends the paragraph that holds the link through the change
+/// engine, claimed as an agent's hooks claim a write, so it lands marked with Keep and Revert where the reader is
+/// looking.
 @MainActor
 final class WelcomeDemo {
     private static var running: WelcomeDemo?
@@ -62,7 +59,8 @@ final class WelcomeDemo {
             }
         }
         demo.start = Task { [weak demo] in
-            try? await Task.sleep(for: .seconds(3))
+            // Long enough to see the paragraph change after the click.
+            try? await Task.sleep(for: .milliseconds(400))
             guard !Task.isCancelled else { return }
             demo?.write()
         }
@@ -99,31 +97,12 @@ final class WelcomeDemo {
         claim(.turnEnd)
     }
 
+    /// Stops listening once Demo's change has landed and been kept or reverted.
     private func changed(_ live: LiveFile) {
         let pending = live.changes.values.contains { change in
             if case .agent(.demo, _) = change.origin { change.marked } else { false }
         }
-        if pending, !landed {
-            landed = true
-            rewrite { $0.replacingOccurrences(of: Welcome.tryIt, with: Welcome.tip + "\n\n" + Welcome.tryIt) }
-        } else if !pending, landed {
-            stop()
-            // The decision is an edit; once it is saved, the file takes the done line as a quiet outside write.
-            Task {
-                guard await live.autosave() == nil else { return }
-                rewrite { $0.replacingOccurrences(of: Welcome.tip, with: Welcome.done) }
-            }
-        }
-    }
-
-    /// Rewrites the file from outside the editor. With the buffer saved, the engine lands it quietly, unmarked.
-    private func rewrite(_ change: @escaping (String) -> String) {
-        let url = url
-        Task {
-            guard let text = try? String(contentsOf: url, encoding: .utf8) else { return }
-            let new = change(text)
-            if new != text { try? Data(new.utf8).write(to: url) }
-        }
+        if pending { landed = true } else if landed { stop() }
     }
 
     private static func hex(_ data: Data) -> String {

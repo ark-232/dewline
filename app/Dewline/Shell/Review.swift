@@ -1,7 +1,7 @@
 import AppKit
 import MdCore
 
-/// Review Changes, Follow Changes and the "finished" line: the agents' marked changes across a window's open files.
+/// The Changes tab and Follow Changes: the marked changes in a window's open notes, and the notes changed while closed.
 @MainActor
 enum Review {
     private static let followKey = "FollowChanges"
@@ -15,9 +15,14 @@ enum Review {
 
     /// The window's tabs' files.
     static func files(in window: NSWindow?) -> [LiveFile] {
+        documents(in: window).compactMap(\.live)
+    }
+
+    /// The window's tabs' notes.
+    static func documents(in window: NSWindow?) -> [MarkdownDocument] {
         guard let window else { return [] }
         let windows = (window.windowController as? MainWindowController)?.tabs.tabs.compactMap(\.window) ?? [window]
-        return windows.compactMap { ($0.windowController?.document as? MarkdownDocument)?.live }
+        return windows.compactMap { $0.windowController?.document as? MarkdownDocument }
     }
 
     /// Groups changes by writer session: "claude:<id>", "git", "external".
@@ -40,6 +45,7 @@ enum Review {
 
     /// A marked change landed; Follow Changes scrolls to it once you have not typed for 5 s.
     static func landed(_ live: LiveFile, _ change: UInt64) {
+        if let origin = live.changes[change]?.origin { times[key(origin)] = Date() }
         guard follows, ContinuousClock.now - LiveFile.lastEdit >= .seconds(5) else { return }
         // A landing's relabels arrive together; the last one is followed.
         let waiting = following != nil
@@ -81,214 +87,134 @@ enum Review {
         files(in: window).contains { $0.changes.values.contains(where: \.marked) }
     }
 
-    /// A session's turn ended: each window holding its changes shows the finished line. The landing its last write
-    /// started gets 500 ms to arrive first.
+    /// When each writer session's turn last ended, or its last change landed, for "Claude Code · 2:36 PM".
+    private static var times: [String: Date] = [:]
+
+    /// A session's turn ended; the Changes tab dates its notes by it.
     static func finished(vendor: ControlSocket.Claim.Vendor, session: String) {
-        let vendor: ChangeEngine.Vendor = switch vendor {
-        case .claude: .claude
-        case .codex: .codex
-        case .cursor: .cursor
-        case .demo: .demo
-        }
-        let origin = ChangeEngine.Origin.agent(vendor, session: session)
-        Task {
-            try? await Task.sleep(for: .milliseconds(500))
-            for window in NSApp.windows {
-                (window.windowController as? MainWindowController)?.finished.show(origin)
-            }
-        }
+        times["\(vendor.rawValue):\(session)"] = Date()
+    }
+
+    /// When `origin`'s session last finished a turn or landed a change.
+    static func time(of origin: ChangeEngine.Origin) -> Date? {
+        times[key(origin)]
+    }
+
+    /// The notes changed while closed, newest first, which the Keep bar counts and the Changes tab lists.
+    static var closedNotes: () -> [ClosedNote] = { [] }
+
+    static var closedCount: Int {
+        closedNotes().count
+    }
+
+    /// "Claude Code · 2:36 PM", or the name alone with no time known.
+    static func byline(_ origin: ChangeEngine.Origin, at time: Date?) -> String {
+        let name = EarlierVersions.writer(origin)
+        return time.map { "\(name) \u{00B7} \($0.formatted(date: .omitted, time: .shortened))" } ?? name
     }
 }
 
-/// "Claude finished · 3 places in 2 files · Review", one quiet line under the tab bar when an agent's turn ends with
-/// changes waiting in this window. It leaves when they are decided or Review Changes opens. No sound, no notification.
-@MainActor
-final class FinishedLine: NSView {
-    static let height: CGFloat = 24
-    private let label = NSTextField(labelWithString: "")
-    private let review = NSButton(title: "Review", target: nil, action: #selector(ReviewPanel.showReview(_:)))
-    private var origin: ChangeEngine.Origin?
+/// A note an outside writer changed while it was closed.
+struct ClosedNote: Equatable {
+    let url: URL
+    let origin: ChangeEngine.Origin
+    let time: Date
+}
 
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        isHidden = true
-        label.font = Chrome.label
-        label.lineBreakMode = .byTruncatingTail
-        review.isBordered = false
-        review.font = Chrome.labelActive
-        review.target = ReviewPanel.shared
-        review.toolTip = "Review Changes (⇧⌘R)"
-        let row = NSStackView(views: [label, review])
-        row.spacing = 0
-        row.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(row)
-        NSLayoutConstraint.activate([
-            row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
-            row.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -16),
-            row.centerYAnchor.constraint(equalTo: centerYAnchor),
-        ])
-        NotificationCenter.default.addObserver(self, selector: #selector(recount), name: LiveFile.changesDidChange, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(themeDidChange), name: ThemeStore.didChange, object: nil)
-        themeDidChange()
+
+/// The right pane's Changes tab: the window's open notes with undecided changes, then "Changed while closed". A note
+/// heads its changes with "Claude Code · 2:36 PM"; each row is the changed line, its changed words in bold, and
+/// "line 17". Keep and Revert show on the selected or hovered row; with Option they decide the whole note.
+@MainActor
+final class ReviewViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate {
+    enum Row {
+        case note(LiveFile, String)
+        case change(LiveFile, UInt64, NSString?)
+        case closedHeading
+        case closed(ClosedNote)
+    }
+
+    private(set) var rows: [Row] = []
+    private weak var source: NSWindow?
+    private let table = NSTableView()
+    private let empty = NSTextField(labelWithString: "Nothing to review.")
+    private var reloading = false
+    private var flags: Any?
+    private(set) var optionDown = false
+
+    /// Lists `window`'s notes, or the notes of the window this tab is in.
+    init(for window: NSWindow? = nil) {
+        source = window
+        super.init(nibName: nil, bundle: nil)
     }
 
     required init?(coder: NSCoder) {
-        fatalError("FinishedLine is built in code")
+        fatalError("ReviewViewController is built in code")
     }
 
-    override var wantsUpdateLayer: Bool { true }
-
-    override func updateLayer() {
-        layer?.backgroundColor = ThemeStore.shared.color(.islandEditor).resolved(for: effectiveAppearance).cgColor
-    }
-
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        themeDidChange()
-    }
-
-    @objc private func themeDidChange() {
-        label.textColor = ThemeStore.shared.color(.ink2)
-        review.contentTintColor = ThemeStore.shared.color(.ink)
-        needsDisplay = true
-    }
-
-    func show(_ origin: ChangeEngine.Origin) {
-        self.origin = origin
-        recount()
-    }
-
-    func dismiss() {
-        origin = nil
-        isHidden = true
-    }
-
-    @objc private func recount() {
-        guard let origin else { return }
-        let (places, files) = Review.count(origin, in: Review.files(in: window))
-        guard places > 0 else { return dismiss() }
-        let noun = places == 1 ? "place" : "places"
-        label.stringValue = "\(MarkWriter(origin).name) finished · \(places) \(noun) in \(files) \(files == 1 ? "file" : "files") · "
-        setAccessibilityLabel(label.stringValue + "Review")
-        isHidden = false
-    }
-}
-
-/// Review Changes (Shift-Cmd-R): every undecided marked change in the main window's open files, by writer session,
-/// then file, then change. A click jumps to the change; Keep and Revert decide one, and with Option every change in
-/// its file.
-@MainActor
-final class ReviewPanel: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate {
-    static let shared = ReviewPanel()
-
-    final class Node {
-        enum Kind {
-            case session(ChangeEngine.Origin)
-            case file(LiveFile)
-            case change(LiveFile, UInt64)
-        }
-
-        let kind: Kind
-        var children: [Node] = []
-
-        init(_ kind: Kind) {
-            self.kind = kind
-        }
-
-        var count: Int {
-            if case .change = kind { return 1 }
-            return children.reduce(0) { $0 + $1.count }
-        }
-    }
-
-    private var roots: [Node] = []
-    private var files: [LiveFile] = []
-    private var reloading = false
-    private lazy var outline = NSOutlineView()
-    private lazy var empty = NSTextField(labelWithString: "All changes reviewed")
-    private lazy var panel: NSPanel = makePanel()
-
-    private override init() {
-        super.init()
-        NotificationCenter.default.addObserver(self, selector: #selector(scheduleReload), name: LiveFile.changesDidChange, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(scheduleReload), name: NSWindow.didBecomeMainNotification, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(scheduleReload), name: MarkdownDocument.didCloseNotification, object: nil)
-    }
-
-    private func makePanel() -> NSPanel {
-        let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 360, height: 480),
-            styleMask: [.titled, .closable, .resizable, .utilityWindow],
-            backing: .buffered, defer: true)
-        panel.title = "Review Changes"
-        panel.isFloatingPanel = true
-        panel.hidesOnDeactivate = true
-        panel.becomesKeyOnlyIfNeeded = true
-        panel.isReleasedWhenClosed = false
-        panel.minSize = NSSize(width: 280, height: 200)
-        panel.setFrameAutosaveName("Review Changes")
-
+    override func loadView() {
         let column = NSTableColumn(identifier: .init("Change"))
-        outline.addTableColumn(column)
-        outline.outlineTableColumn = column
-        outline.headerView = nil
-        outline.style = .sourceList
-        outline.rowSizeStyle = .custom
-        outline.usesAutomaticRowHeights = false
-        outline.indentationPerLevel = 12
-        outline.dataSource = self
-        outline.delegate = self
-        outline.target = self
-        outline.action = #selector(clicked)
-        outline.setAccessibilityLabel("Changes")
+        table.addTableColumn(column)
+        table.headerView = nil
+        table.style = .plain
+        table.backgroundColor = .clear
+        table.intercellSpacing = .zero
+        table.selectionHighlightStyle = .none
+        table.dataSource = self
+        table.delegate = self
+        table.target = self
+        table.action = #selector(clicked)
+        table.setAccessibilityLabel("Changes")
         let scroll = NSScrollView()
-        scroll.documentView = outline
+        scroll.documentView = table
         scroll.hasVerticalScroller = true
         scroll.drawsBackground = false
-
-        empty.textColor = .secondaryLabelColor
+        empty.font = .systemFont(ofSize: 13)
         empty.alignment = .center
-        let content = NSVisualEffectView()
-        content.material = .sidebar
+        let root = NSView()
         for view in [scroll, empty] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
-            content.addSubview(view)
+            root.addSubview(view)
         }
         NSLayoutConstraint.activate([
-            scroll.topAnchor.constraint(equalTo: content.topAnchor),
-            scroll.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-            scroll.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            scroll.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            empty.centerXAnchor.constraint(equalTo: content.centerXAnchor),
-            empty.centerYAnchor.constraint(equalTo: content.centerYAnchor),
+            scroll.topAnchor.constraint(equalTo: root.topAnchor),
+            scroll.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            scroll.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            empty.centerXAnchor.constraint(equalTo: root.centerXAnchor),
+            empty.centerYAnchor.constraint(equalTo: root.centerYAnchor),
         ])
-        panel.contentView = content
-        if let main = NSApp.mainWindow, !panel.setFrameUsingName("Review Changes") {
-            panel.setFrameTopLeftPoint(NSPoint(x: main.frame.maxX - 376, y: main.frame.maxY - 72))
+        view = root
+        for name in [LiveFile.changesDidChange, NSWindow.didBecomeMainNotification, MarkdownDocument.didCloseNotification, ThemeStore.didChange] {
+            NotificationCenter.default.addObserver(self, selector: #selector(scheduleReload), name: name, object: nil)
         }
-        return panel
-    }
-
-    /// Shift-Cmd-R: shows the panel, or hides it when it is in front.
-    @objc func toggleReview(_ sender: Any?) {
-        if panel.isVisible { return panel.orderOut(sender) }
-        showReview(sender)
-    }
-
-    /// The finished line's Review.
-    @objc func showReview(_ sender: Any?) {
-        for window in NSApp.windows { (window.windowController as? MainWindowController)?.finished.dismiss() }
         reload()
-        panel.orderFront(sender)
     }
 
-    /// View > Follow Changes.
-    @objc func toggleFollow(_ sender: Any?) {
-        Review.follows.toggle()
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        reload()
+        flags = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            MainActor.assumeIsolated { self?.setOption(event.modifierFlags.contains(.option)) }
+            return event
+        }
+    }
+
+    override func viewDidDisappear() {
+        super.viewDidDisappear()
+        if let flags { NSEvent.removeMonitor(flags) }
+        flags = nil
+    }
+
+    /// With Option down, Keep and Revert read "Keep All in Note" and "Revert All in Note".
+    func setOption(_ down: Bool) {
+        guard down != optionDown else { return }
+        optionDown = down
+        table.enumerateAvailableRowViews { row, _ in (row.view(atColumn: 0) as? ChangeRow)?.optionDown = down }
     }
 
     @objc private func scheduleReload() {
-        guard panel.isVisible, !reloading else { return }
+        guard !reloading else { return }
         reloading = true
         DispatchQueue.main.async { [weak self] in
             self?.reloading = false
@@ -296,155 +222,239 @@ final class ReviewPanel: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegat
         }
     }
 
-    private func reload() {
-        files = Review.files(in: NSApp.mainWindow)
-        var sessions: [String: Node] = [:]
-        for live in files.sorted(by: { $0.url.lastPathComponent.localizedStandardCompare($1.url.lastPathComponent) == .orderedAscending }) {
-            var byFile: [String: Node] = [:]
-            for (id, change) in live.changes.filter(\.value.marked).sorted(by: { $0.value.range.location < $1.value.range.location }) {
-                let key = Review.key(change.origin)
-                let session = sessions[key] ?? Node(.session(change.origin))
-                sessions[key] = session
-                let file = byFile[key] ?? {
-                    let file = Node(.file(live))
-                    session.children.append(file)
-                    return file
-                }()
-                byFile[key] = file
-                file.children.append(Node(.change(live, id)))
+    func reload() {
+        let documents = Review.documents(in: source ?? view.window)
+        let files = documents.compactMap(\.live)
+        rows = []
+        for document in documents {
+            guard let live = document.live else { continue }
+            let text = document.textView?.string as NSString?
+            let marked = live.changes.filter(\.value.marked).sorted { $0.value.range.location < $1.value.range.location }
+            guard let newest = marked.max(by: { (Review.time(of: $0.value.origin) ?? .distantPast) < (Review.time(of: $1.value.origin) ?? .distantPast) }) else {
+                continue
             }
+            rows.append(.note(live, Review.byline(newest.value.origin, at: Review.time(of: newest.value.origin))))
+            rows += marked.map { .change(live, $0.key, text) }
         }
-        roots = sessions.sorted { $0.key < $1.key }.map(\.value)
-        outline.reloadData()
-        outline.expandItem(nil, expandChildren: true)
-        empty.isHidden = !roots.isEmpty
+        let open = Set(files.map(\.url.standardizedFileURL))
+        let closed = Review.closedNotes().filter { !open.contains($0.url.standardizedFileURL) }
+        if !closed.isEmpty { rows += [.closedHeading] + closed.map(Row.closed) }
+        empty.textColor = ThemeStore.shared.color(.ink2)
+        empty.isHidden = !rows.isEmpty
+        table.reloadData()
     }
 
     @objc private func clicked() {
-        guard let node = outline.item(atRow: outline.clickedRow) as? Node else { return }
-        switch node.kind {
-        case .change(let live, let id): live.reveal(id, caret: true)
-        case .file:
-            if case .change(let live, let id) = node.children.first?.kind { live.reveal(id, caret: true) }
-        case .session: break
+        guard rows.indices.contains(table.clickedRow) else { return }
+        switch rows[table.clickedRow] {
+        case .change(let live, let id, _): live.reveal(id, caret: true)
+        case .note(let live, _):
+            if let first = live.changes.filter(\.value.marked).min(by: { $0.value.range.location < $1.value.range.location }) {
+                live.reveal(first.key, caret: true)
+            }
+        case .closed(let note):
+            NSDocumentController.shared.openDocument(withContentsOf: note.url, display: true) { _, _, _ in }
+        case .closedHeading: break
         }
+        table.enumerateAvailableRowViews { row, index in (row.view(atColumn: 0) as? ChangeRow)?.selected = index == table.clickedRow }
     }
 
-    /// Keep or Revert on a change's row; with Option, Keep All or Revert All in its file.
-    fileprivate func decide(_ live: LiveFile, _ id: UInt64, keep: Bool) {
-        if NSEvent.modifierFlags.contains(.option) { return live.decideAll(keep: keep) }
+    /// Keep or Revert on a row; with Option, every change in its note.
+    func decide(_ live: LiveFile, _ id: UInt64, keep: Bool) {
+        if optionDown { return live.decideAll(keep: keep) }
         keep ? live.keep(id) : live.revert(id)
     }
 
-    // MARK: Outline
+    // MARK: Table
 
-    func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
-        (item as? Node)?.children.count ?? roots.count
+    func numberOfRows(in tableView: NSTableView) -> Int {
+        rows.count
     }
 
-    func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
-        (item as? Node)?.children[index] ?? roots[index]
+    func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
+        switch rows[row] {
+        case .note, .closedHeading: 36
+        case .change, .closed: 32
+        }
     }
 
-    func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
-        !((item as? Node)?.children.isEmpty ?? true)
+    func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool {
+        false
     }
 
-    func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
-        if case .change = (item as? Node)?.kind { return 28 }
-        return 24
-    }
-
-    func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
-        guard let node = item as? Node else { return nil }
-        switch node.kind {
-        case .session(let origin):
-            let writer = MarkWriter(origin)
-            let title = NSMutableAttributedString(attributedString: writer.stamp)
-            if case .agent(_, let session) = origin {
-                title.append(NSAttributedString(string: "  " + session.prefix(8), attributes: [
-                    .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular), .foregroundColor: NSColor.secondaryLabelColor,
-                ]))
-            }
-            return ReviewRow(title: title, detail: "\(node.count)", symbol: nil)
-        case .file(let live):
-            let name = NSAttributedString(string: live.url.lastPathComponent, attributes: [.font: NSFont.systemFont(ofSize: 12, weight: .medium)])
-            return ReviewRow(title: name, detail: "\(node.count)", symbol: "doc.text")
-        case .change(let live, let id):
-            let excerpt = live.excerpt(id)
-            let conflict = live.changes[id]?.conflict == true
-            let text = NSAttributedString(string: conflict ? "Two versions: \(excerpt)" : excerpt.isEmpty ? "Blank lines" : excerpt, attributes: [
-                .font: NSFont.systemFont(ofSize: 12),
+    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        let store = ThemeStore.shared
+        switch rows[row] {
+        case .note(let live, let byline):
+            return HeadingRow(live.url.deletingPathExtension().lastPathComponent, detail: byline)
+        case .closedHeading:
+            return HeadingRow("Changed while closed", detail: nil)
+        case .closed(let note):
+            let title = NSAttributedString(string: note.url.deletingPathExtension().lastPathComponent, attributes: [
+                .font: NSFont.systemFont(ofSize: 13), .foregroundColor: store.color(.ink),
             ])
-            let row = ReviewRow(title: text, detail: "\(live.line(id))", symbol: nil)
-            row.addDecisions(
-                keep: { [weak self, weak live] in if let live { self?.decide(live, id, keep: true) } },
-                revert: { [weak self, weak live] in if let live { self?.decide(live, id, keep: false) } })
-            row.toolTip = "Line \(live.line(id)). Option-click Keep or Revert for every change in this file."
+            return ChangeRow(title, detail: Review.byline(note.origin, at: note.time), decide: nil)
+        case .change(let live, let id, let text):
+            let row = ChangeRow(Self.line(of: id, in: live, text: text), detail: "line \(live.line(id))") { [weak self, weak live] keep in
+                guard let live else { return }
+                self?.decide(live, id, keep: keep)
+            }
+            row.optionDown = optionDown
             return row
         }
     }
-}
 
-extension ReviewPanel: NSMenuItemValidation {
-    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        if menuItem.action == #selector(toggleFollow(_:)) { menuItem.state = Review.follows ? .on : .off }
-        if menuItem.action == #selector(toggleReview(_:)) { menuItem.state = panel.isVisible ? .on : .off }
-        return true
+    /// The change's whole line, trimmed, with the changed words in bold; a change that only removed text shows the
+    /// line with the removed words struck.
+    static func line(of id: UInt64, in live: LiveFile, text: NSString?) -> NSAttributedString {
+        let store = ThemeStore.shared
+        let regular: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: store.color(.ink)]
+        guard let change = live.changes[id], let text else { return NSAttributedString(string: live.excerpt(id), attributes: regular) }
+        let range = NSIntersectionRange(change.range, NSRange(location: 0, length: text.length))
+        var line = text.lineRange(for: NSRange(location: range.location, length: 0))
+        if range.length > 0, !text.substring(with: line).contains(where: { !$0.isWhitespace }) {
+            line = text.lineRange(for: NSRange(location: min(range.location + 1, max(text.length - 1, 0)), length: 0))
+        }
+        let shown = NSMutableAttributedString(string: text.substring(with: line), attributes: regular)
+        let local = NSIntersectionRange(NSRange(location: range.location - line.location, length: range.length), NSRange(location: 0, length: shown.length))
+        if local.length > 0 {
+            shown.addAttribute(.font, value: NSFont.systemFont(ofSize: 13, weight: .semibold), range: local)
+        } else if change.conflict || !change.removed.isEmpty {
+            let removed = (change.conflict ? change.theirs : change.removed).split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
+            shown.insert(NSAttributedString(string: removed, attributes: regular.merging([
+                .strikethroughStyle: NSUnderlineStyle.single.rawValue, .foregroundColor: store.color(.ink2),
+            ]) { $1 }), at: min(max(range.location - line.location, 0), shown.length))
+        }
+        let trimmed = shown.string
+        let lead = trimmed.prefix { $0.isWhitespace }.utf16.count
+        let tail = String(trimmed.reversed().prefix { $0.isWhitespace }).utf16.count
+        guard lead + tail < shown.length else { return NSAttributedString(string: "Blank lines", attributes: regular) }
+        return shown.attributedSubstring(from: NSRange(location: lead, length: shown.length - lead - tail))
     }
 }
 
-/// A row of Review Changes: a title, a count or line number in tabular digits, and Keep and Revert on a change.
-private final class ReviewRow: NSTableCellView {
-    private let stack = NSStackView()
-    private var actions: [() -> Void] = []
-
-    init(title: NSAttributedString, detail: String, symbol: String?) {
+/// A note's name in 13 pt semibold over its byline, or the "Changed while closed" heading.
+private final class HeadingRow: NSTableCellView {
+    init(_ title: String, detail: String?) {
         super.init(frame: .zero)
-        stack.orientation = .horizontal
-        stack.spacing = 6
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
-        ])
-        if let symbol, let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) {
-            let icon = NSImageView(image: image)
-            icon.contentTintColor = .secondaryLabelColor
-            stack.addArrangedSubview(icon)
+        let store = ThemeStore.shared
+        let name = NSTextField(labelWithString: title)
+        name.font = .systemFont(ofSize: 13, weight: .semibold)
+        name.textColor = store.color(.ink)
+        name.lineBreakMode = .byTruncatingMiddle
+        name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let row = NSStackView(views: [name])
+        row.spacing = 8
+        if let detail {
+            let byline = NSTextField(labelWithString: detail)
+            byline.font = .systemFont(ofSize: 11)
+            byline.textColor = store.color(.ink2)
+            row.addArrangedSubview(byline)
         }
+        row.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(row)
+        NSLayoutConstraint.activate([
+            row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            row.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -16),
+            row.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6),
+        ])
+        setAccessibilityLabel([title, detail].compactMap(\.self).joined(separator: ", "))
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("HeadingRow is built in code")
+    }
+}
+
+/// A change's line and "line 17", with Keep and Revert in place of the line number while the row is hovered or
+/// selected. A closed note's row has no decisions.
+final class ChangeRow: NSTableCellView {
+    private let detail: NSTextField
+    private let keep: FlowButton
+    private let revert: FlowButton
+    private let decides: Bool
+    private var hovering = false {
+        didSet { update() }
+    }
+    var selected = false {
+        didSet { update() }
+    }
+    var optionDown = false {
+        didSet {
+            keep.title = optionDown ? "Keep All in Note" : "Keep"
+            revert.title = optionDown ? "Revert All in Note" : "Revert"
+        }
+    }
+
+    init(_ title: NSAttributedString, detail text: String, decide: ((Bool) -> Void)?) {
+        detail = NSTextField(labelWithString: text)
+        keep = FlowButton("Keep", style: .plain) { decide?(true) }
+        revert = FlowButton("Revert", style: .plain) { decide?(false) }
+        decides = decide != nil
+        super.init(frame: .zero)
         let label = NSTextField(labelWithAttributedString: title)
         label.lineBreakMode = .byTruncatingTail
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         label.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        stack.addArrangedSubview(label)
-        let count = NSTextField(labelWithString: detail)
-        count.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
-        count.textColor = .secondaryLabelColor
-        count.setContentHuggingPriority(.required, for: .horizontal)
-        stack.addArrangedSubview(count)
+        detail.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+        detail.textColor = ThemeStore.shared.color(.ink2)
+        detail.setContentHuggingPriority(.required, for: .horizontal)
+        keep.toolTip = "Keep (\u{2318}\u{21A9}). Option: every change in this note."
+        revert.toolTip = "Revert (\u{2325}\u{2318}\u{232B}). Option: every change in this note."
+        let row = NSStackView(views: [label, detail, revert, keep])
+        row.spacing = 4
+        row.setCustomSpacing(8, after: label)
+        row.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(row)
+        NSLayoutConstraint.activate([
+            row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            row.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            row.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self))
+        setAccessibilityLabel("\(title.string), \(text)")
+        update()
     }
 
     required init?(coder: NSCoder) {
-        fatalError("ReviewRow is built in code")
+        fatalError("ChangeRow is built in code")
     }
 
-    func addDecisions(keep: @escaping () -> Void, revert: @escaping () -> Void) {
-        for (index, (title, action)) in [("Keep", keep), ("Revert", revert)].enumerated() {
-            let button = NSButton(title: title, target: self, action: #selector(decide(_:)))
-            button.bezelStyle = .accessoryBarAction
-            button.controlSize = .small
-            button.font = .systemFont(ofSize: 11)
-            button.tag = index
-            button.setContentHuggingPriority(.required, for: .horizontal)
-            stack.addArrangedSubview(button)
-            actions.append(action)
-        }
+    /// Whether Keep and Revert show.
+    var showsDecisions: Bool {
+        !keep.isHidden
     }
 
-    @objc private func decide(_ sender: NSButton) {
-        actions[sender.tag]()
+    private func update() {
+        let decisions = decides && (hovering || selected)
+        keep.isHidden = !decisions
+        revert.isHidden = !decisions
+        detail.isHidden = decisions
+        wantsLayer = true
+        layer?.backgroundColor = hovering || selected ? FlowColors.selection.resolved(for: effectiveAppearance).cgColor : nil
+        layer?.cornerRadius = 6
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        hovering = true
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        hovering = false
+    }
+}
+
+/// View > Follow Changes: while you are idle, each new marked change scrolls into view.
+@MainActor
+final class FollowChanges: NSObject, NSMenuItemValidation {
+    static let shared = FollowChanges()
+
+    @objc func toggleFollow(_ sender: Any?) {
+        Review.follows.toggle()
+    }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        menuItem.state = Review.follows ? .on : .off
+        return true
     }
 }
