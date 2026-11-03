@@ -4,7 +4,7 @@
 (() => {
   const root = document.querySelector(".hva");
   if (!root || !root.animate) return;
-  const L = 10000, OUTRO = 9300, START = 8600;
+  const L = 10000, OUTRO = 9300, START = 6200;
   const EASE = "cubic-bezier(0.16, 1, 0.3, 1)";
   const reduce = matchMedia("(prefers-reduced-motion: reduce)");
   let anims = [], seen = false, width = root.clientWidth, timer;
