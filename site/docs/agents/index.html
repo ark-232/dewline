@@ -3,12 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Agents and changes · Dewline docs</title>
-<meta name="description" content="How Dewline names an agent's change, what stays Unknown, autosave holds, keep and revert, and the agent hooks.">
+<title>Agents · Dewline docs</title>
+<meta name="description" content="Keep or revert a change, chat with your coding agent beside a note, and set up agent hooks.">
+<meta name="doc-type" content="how-to">
 <link rel="canonical" href="https://dewline.arkwerx.com/docs/agents/">
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#F7FBF9" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#091110" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F9FAFA" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E100F" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preload" href="/fonts/newsreader-var.v1.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/ibm-plex-sans-var-latin1.v3.woff2" as="font" type="font/woff2" crossorigin>
@@ -43,8 +44,8 @@
     <a class="dtop-label" href="/docs/">Docs</a>
     <button type="button" class="search-open" aria-keyshortcuts="Meta+K /"><span>Search</span><kbd>⌘K</kbd></button>
     <nav class="dtop-links" aria-label="Site">
-      <a href="https://github.com/ark-232/dewline/releases/latest">Download</a>
       <a href="https://github.com/ark-232/dewline">Source</a>
+      <a class="dtop-get" href="https://github.com/ark-232/dewline/releases/latest">Download</a>
     </nav>
   </div>
 </header>
@@ -59,128 +60,188 @@
       </ul>
     </div>
     <div class="dnav-group">
-      <p class="dnav-title">Guide</p>
+      <p class="dnav-title">Write</p>
       <ul>
         <li><a href="/docs/editing/">Editing</a></li>
         <li><a href="/docs/markdown/">Markdown</a></li>
-        <li><a href="/docs/files/">Files and saves</a></li>
-        <li><a href="/docs/collaboration/">Collaboration</a></li>
+        <li><a href="/docs/keyboard/">Keyboard</a></li>
         <li><a href="/docs/themes-and-fonts/">Themes and fonts</a></li>
-        <li><a href="/docs/keyboard/">Keyboard shortcuts</a></li>
         <li><a href="/docs/export/">Export</a></li>
       </ul>
     </div>
     <div class="dnav-group">
-      <p class="dnav-title">Reference</p>
+      <p class="dnav-title">Files and changes</p>
       <ul>
-        <li><a href="/docs/cli/">Command line</a></li>
-        <li><a href="/docs/mcp/">MCP server</a></li>
-        <li><a href="/docs/agents/" aria-current="page">Agents and changes</a></li>
+        <li><a href="/docs/files/">Files</a></li>
+        <li><a href="/docs/agents/" aria-current="page">Agents</a></li>
+        <li><a href="/docs/collaboration/">Collaboration</a></li>
+      </ul>
+    </div>
+    <div class="dnav-group">
+      <p class="dnav-title">Developers</p>
+      <ul>
+        <li><a href="/docs/cli/">CLI</a></li>
+        <li><a href="/docs/mcp/">MCP</a></li>
         <li><a href="/docs/url-scheme/">URL scheme</a></li>
       </ul>
     </div>
     <div class="dnav-group">
-      <p class="dnav-title">Technical</p>
+      <p class="dnav-title">About</p>
       <ul>
-        <li><a href="/docs/architecture/">Architecture</a></li>
-        <li><a href="/docs/performance/">Performance</a></li>
         <li><a href="/docs/security/">Security and privacy</a></li>
+        <li><a href="/docs/performance/">Performance</a></li>
+        <li><a href="/docs/architecture/">Architecture</a></li>
       </ul>
     </div>
   </nav>
 
   <main class="dmain" id="main">
     <article class="prose">
-      <p class="eyebrow">Reference</p>
-      <h1>Agents and changes</h1>
-      <p class="lead">When a coding agent changes a file you have open, Dewline marks the change and puts the agent's name on it, but only when the agent's hooks prove the write was theirs. This page covers that proof, what stays Unknown, how Dewline holds your autosave while an agent works, and how to install the hooks.</p>
+      <h1>Agents</h1>
+      <p class="lead">Dewline marks each change another writer makes to an open note, so you can keep or revert it. You can also chat with your own coding agent beside the note.</p>
 
-      <h2 id="naming">How a change gets a name</h2>
-      <p>Dewline names an agent only when two things hold. The agent's hooks bracket the write with one tool call id. And the change that call declared (Write's content, Edit's strings, Codex's patch) turns the file's previous bytes into the bytes now on disk. Anything else is Unknown.</p>
-      <ol>
-        <li><strong>Before the tool runs</strong>, its PreToolUse hook sends the file's realpath, a BLAKE3 hash of its bytes, and <code>declared</code>: the hash of the bytes the declared change will make.</li>
-        <li><strong>The tool writes</strong> the file.</li>
-        <li><strong>After it runs</strong>, its PostToolUse hook sends the hash of the bytes it finds.</li>
-        <li><strong>Dewline sees the change land.</strong> It names the agent when one session's calls chain from the old bytes to the new, each call's declared hash matches what its PostToolUse found, and the change came within 5 seconds of the calls. When no session's calls link the two, or more than one session's do, the change stays Unknown.</li>
+      <h2 id="review">Keep or revert a change</h2>
+      <p>When git, a sync app, a script or an agent writes to an open note, Dewline marks the change. A bar under the text names the writer: “Claude changed 3 places · 2 other notes”.</p>
+      <ol class="steps">
+        <li><b>Step through the changes</b> with the bar's arrows, or <span class="keys"><kbd>⌃</kbd><kbd>⌘</kbd><kbd>↓</kbd></span> and <span class="keys"><kbd>⌃</kbd><kbd>⌘</kbd><kbd>↑</kbd></span>.</li>
+        <li><b>Keep or revert the one in focus.</b></li>
+        <li><b>Click “2 other notes”</b> for the Changes list <span class="keys">(<kbd>⇧</kbd><kbd>⌘</kbd><kbd>R</kbd>)</span>, which includes notes changed while closed.</li>
       </ol>
-      <p>Here are the three lines Claude Code's hooks sent for one Edit that changed <code>Ship 0.1.0</code> to <code>Ship 0.1.0 on Friday</code>, then ended the turn. The PreToolUse <code>declared</code> hash is the PostToolUse <code>hash</code>:</p>
-      <div class="code" data-lang="Control socket">
-<pre tabindex="0"><code>{"v":1,"op":"notify","event":"PreToolUse","vendor":"claude","session":"9f2c51e0-demo","tool_use_id":"toolu_01Demo","tool":"Edit","path":"/Users/you/Notes/projects/launch-plan.md","hash":"f066cd491c0020c3731f816242042957a762d61421c1e63c501197f5c113003f","declared":"<b>85073fe38a86b2e20f3eeb23e5551e3d6567af36cc99b546197fbd88cfae0e81</b>"}
-{"v":1,"op":"notify","event":"PostToolUse","vendor":"claude","session":"9f2c51e0-demo","tool_use_id":"toolu_01Demo","tool":"Edit","path":"/Users/you/Notes/projects/launch-plan.md","hash":"<b>85073fe38a86b2e20f3eeb23e5551e3d6567af36cc99b546197fbd88cfae0e81</b>"}
-{"v":1,"op":"notify","event":"Stop","vendor":"claude","session":"9f2c51e0-demo"}</code></pre>
-      </div>
-      <div class="table" tabindex="0" role="region" aria-label="The hashes in those lines">
+      <div class="table" tabindex="0" role="region" aria-label="Keep and Revert keys">
         <table>
-          <thead><tr><th scope="col">Event</th><th scope="col"><code>hash</code></th><th scope="col"><code>declared</code></th></tr></thead>
+          <thead><tr><th scope="col">Command</th><th scope="col">Keys</th></tr></thead>
           <tbody>
-            <tr><td>PreToolUse</td><td><code>f066cd491c00…</code> (the bytes before)</td><td><code>85073fe38a86…</code></td></tr>
-            <tr><td>PostToolUse</td><td><code>85073fe38a86…</code> (the bytes after)</td><td></td></tr>
+            <tr><td>Keep Change</td><td><span class="keys"><kbd>⌘</kbd><kbd>↩</kbd></span></td></tr>
+            <tr><td>Revert Change</td><td><span class="keys"><kbd>⌥</kbd><kbd>⌘</kbd><kbd>⌫</kbd></span></td></tr>
+            <tr><td>Keep All Changes</td><td><span class="keys"><kbd>⇧</kbd><kbd>⌘</kbd><kbd>↩</kbd></span></td></tr>
+            <tr><td>Revert All Changes</td><td><span class="keys"><kbd>⌥</kbd><kbd>⇧</kbd><kbd>⌘</kbd><kbd>⌫</kbd></span></td></tr>
           </tbody>
         </table>
       </div>
-      <p>The declared change is what keeps a second writer from taking the agent's name. If something else wrote to the file during the call, the bytes on disk wouldn't match the declared hash. Hashes before and after the call alone would credit the agent with both writes.</p>
+      <p>Each choice is one edit you can undo. A revert leaves the other app's history alone.</p>
+      <details id="marked">
+        <summary>Which changes are marked</summary>
+        <div class="table" tabindex="0" role="region" aria-label="Which outside changes are marked">
+          <table>
+            <thead><tr><th scope="col">The change</th><th scope="col">No unsaved edits</th><th scope="col">Unsaved edits</th></tr></thead>
+            <tbody>
+              <tr><td>An agent's, through the panel or named by its hooks</td><td>Marked</td><td>Marked</td></tr>
+              <tr><td>git's, such as a checkout or a rebase</td><td>Lands unmarked</td><td>Marked</td></tr>
+              <tr><td>Another app's</td><td>Lands unmarked</td><td>Marked</td></tr>
+              <tr><td>Another app's, to an agent instruction file such as <code>CLAUDE.md</code></td><td>Marked</td><td>Marked</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>A hook that reports late can still name a change that landed unmarked; it then becomes marked.</p>
+      </details>
 
-      <h2 id="agents">Which agents are named</h2>
-      <div class="table" tabindex="0" role="region" aria-label="Agents and what Dewline names">
+      <h2 id="chat">Chat with your agent</h2>
+      <p>The Agent panel talks to a coding agent you install yourself. Dewline ships no model and needs no account.</p>
+      <ol class="steps">
+        <li><b>Press <span class="keys"><kbd>⌥</kbd><kbd>⌘</kbd><kbd>A</kbd></span></b>, or click Agent in the toolbar. The panel opens beside the note.</li>
+        <li><b>Pick an agent</b> from the menu at the top.</li>
+        <li><b>Type and press <kbd>↩</kbd>.</b> The open note and any selection go along.</li>
+        <li><b>Keep or revert its edits</b>, which arrive marked.</li>
+      </ol>
+      <p><span class="keys"><kbd>⌘</kbd><kbd>.</kbd></span> stops a turn. The agent works only inside the open folder and asks before it runs a command.</p>
+      <div class="table" tabindex="0" role="region" aria-label="Agents the panel finds">
         <table>
-          <thead><tr><th scope="col">Agent</th><th scope="col">Named changes</th><th scope="col">Hook events</th></tr></thead>
+          <thead><tr><th scope="col">Agent</th><th scope="col">Install</th></tr></thead>
           <tbody>
-            <tr><th scope="row">Claude Code</th><td>Edit, MultiEdit and Write. Read calls hold the file but change nothing.</td><td>PreToolUse and PostToolUse for <code>Read|Edit|MultiEdit|Write</code>; Stop, StopFailure, UserPromptSubmit, SessionEnd, InstructionsLoaded</td></tr>
-            <tr><th scope="row">Codex</th><td><code>apply_patch</code>, one claim for each file the patch adds, updates, deletes or moves.</td><td>PreToolUse and PostToolUse for <code>^apply_patch$</code></td></tr>
-            <tr><th scope="row">Cursor</th><td>None. Its changes stay Unknown; its hooks report the end of each turn.</td><td>preToolUse, postToolUse, stop</td></tr>
-            <tr><th scope="row">Gemini CLI</th><td>None. Its hooks carry no call id.</td><td>None</td></tr>
+            <tr><td>Gemini CLI</td><td><code>npm install -g @google/gemini-cli</code></td></tr>
+            <tr><td>Claude Code</td><td><code>npm install -g @agentclientprotocol/claude-agent-acp</code></td></tr>
+            <tr><td>Codex</td><td><code>npm install -g @agentclientprotocol/codex-acp</code></td></tr>
           </tbody>
         </table>
       </div>
-      <p>Cursor's tool hooks carry <code>conversation_id</code> and <code>tool_use_id</code>, but as of 30 October 2026 Cursor documents no <code>tool_input</code> fields for its <code>Write</code> tool, the one its edits run as. Without them, nothing can declare what an edit wrote.</p>
+      <p>Run each agent once in Terminal to sign in. Settings &gt; Agents &gt; Add Agent… adds any other Agent Client Protocol agent.</p>
 
-      <h2 id="unknown">What stays Unknown</h2>
-      <p>An Unknown change shows with a hollow bead and a dashed underline, and you keep or revert it like any other. These show as Unknown:</p>
-      <ul>
-        <li>Edits through a shell: Claude Code's Bash tool, Codex's shell, Cursor's terminal, <code>codex exec</code> runs, and any edit that skips the hooks. A hook around a command can't say which bytes the command wrote.</li>
-        <li>A call whose result Dewline can't compute exactly: an Edit of a file with CR or CRLF line endings, a file that isn't UTF-8 text, holds a NUL byte or starts with a byte-order mark, an Edit Claude Code would refuse, or a Codex patch that would stop partway. A file over 64 MB gets no declared hash.</li>
-        <li>Sync apps, scripts and other apps.</li>
-      </ul>
-      <aside class="callout note">
-        <p class="callout-title">Note</p>
-        <p>In its auto and bypassPermissions modes, Claude Code tells the model to edit with <code>sed</code>, heredocs or short scripts, so many of its edits there show as Unknown.</p>
-      </aside>
+      <h2 id="install">Mark edits from other agents</h2>
+      <p>An agent you run in Terminal writes files itself. Hooks let its edits carry its name.</p>
+      <ol class="steps">
+        <li><b>Click Set Up</b> on the status bar line “Agent edits aren't marked yet”, or in Settings &gt; Agents.</li>
+        <li><b>Confirm the files it changes.</b> Each keeps a backup beside it.</li>
+        <li><b>For Codex, trust the hooks:</b> open <code>/hooks</code> in Codex, select each Dewline hook and press <kbd>t</kbd>.</li>
+      </ol>
+      <p>In Terminal, <a href="/docs/cli/#doctor"><code>dewline doctor --install-hooks</code></a> does the same.</p>
 
-      <h2 id="holds">Autosave holds</h2>
-      <p>While an agent works on a file, Dewline holds the file's <a href="/docs/files/#saving">autosave</a>, so your save and the agent's write don't cross. Your edits stay in the window, and the autosave runs once the hold ends.</p>
-      <ul>
-        <li>A Claude Code tool call on a file (Read, Edit, MultiEdit or Write) holds its autosave until the session's turn ends: Stop, StopFailure, or the next UserPromptSubmit.</li>
-        <li>A file Claude Code loads as instructions, such as a <code>CLAUDE.md</code>, is held until the session ends.</li>
-        <li>Every hold lapses 30 minutes after the session's last hook event, so a crashed session can't hold a file for good.</li>
-        <li>Codex patches put no hold on autosave. Codex truncates a file and then writes it, so while any hooked call on a file is open, Dewline waits up to 10 seconds before it lands an outside change on that file.</li>
-      </ul>
-
-      <h2 id="review">Keep or revert</h2>
-      <p>An agent's change is marked in its writer's color. Pick the hue for each writer in Settings &gt; Agents &gt; Writers. You keep or revert it like any marked change, with the commands and keys in <a href="/docs/files/#keep-revert">Files and saves</a>. Each decision is one undoable edit, and each one is logged as the next section describes.</p>
-
-      <h2 id="decisions">The decisions loop</h2>
-      <p>Each time you keep or revert an agent's change, Dewline appends one line to <code>~/Library/Application Support/dev.arkwerx.dewline/snapshots/decisions.jsonl</code>, a file only you can read. The line holds the agent, its session, the file, the UTC time, <code>kept</code> or <code>reverted</code>, and a BLAKE3 hash of the change's text. The text itself is never logged.</p>
-      <p>Agents read the log back before their next edit, through <a href="/docs/cli/#changes"><code>dewline changes</code></a> or the MCP server's <a href="/docs/mcp/#tool-decisions"><code>decisions</code></a> tool. A line in a project's instructions file closes the loop:</p>
+      <h2 id="decisions">Let agents see what you reverted</h2>
+      <p>Dewline logs each Keep or Revert of an agent's change, without the text. Agents read the log with <a href="/docs/cli/#changes"><code>dewline changes</code></a> or the MCP <a href="/docs/mcp/#tool-decisions"><code>decisions</code></a> tool. Add this to a project's instructions:</p>
       <div class="code" data-lang="CLAUDE.md or AGENTS.md">
 <pre tabindex="0"><code>Before you edit notes here, run `dewline changes --json --since &lt;today&gt;`
 and don't redo a change the user reverted.</code></pre>
       </div>
-      <p>Agent transcripts and settings files are private to Dewline: never snapshotted, and their decisions never logged. <a href="/docs/security/#on-disk">Security and privacy</a> lists which files those are.</p>
 
-      <h2 id="install">Install the hooks</h2>
-      <p>Run this in Terminal. Settings &gt; Agents shows the same command with a Copy Command button, and shows each agent as Installed or Not installed.</p>
-      <div class="code" data-lang="Shell">
-<pre tabindex="0"><code><span class="p">$ </span>dewline doctor --install-hooks</code></pre>
+      <h2 id="naming">How Dewline knows who wrote it</h2>
+      <p>A change carries an agent's name only when its hooks prove the write was theirs. Panel edits need no hooks.</p>
+      <details id="proof">
+        <summary>The four steps, and the lines one Edit sent</summary>
+      <ol>
+        <li>Before a tool runs, its PreToolUse hook sends the file's realpath and a BLAKE3 hash of its bytes. It also sends <code>declared</code>, the hash of the bytes the change will make.</li>
+        <li>The tool writes the file.</li>
+        <li>After it runs, its PostToolUse hook sends the hash of the bytes it finds.</li>
+        <li>Dewline names the agent when one session's calls chain from the old bytes to the new. Each declared hash must match, and the change must land within 5 seconds.</li>
+      </ol>
+      <p>The declared hash keeps a second writer from taking the agent's name. If something else wrote during the call, the bytes on disk would not match it.</p>
+        <p>Claude Code changed <code>Ship 0.1.0</code> to <code>Ship 0.1.0 on Friday</code>, then ended the turn. The PreToolUse <code>declared</code> hash is the PostToolUse <code>hash</code>.</p>
+        <div class="code" data-lang="Control socket">
+<pre tabindex="0"><code>{"v":1,"op":"notify","event":"PreToolUse","vendor":"claude","session":"9f2c51e0-demo","tool_use_id":"toolu_01Demo","tool":"Edit","path":"/Users/you/Notes/projects/launch-plan.md","hash":"f066cd491c0020c3731f816242042957a762d61421c1e63c501197f5c113003f","declared":"<b>85073fe38a86b2e20f3eeb23e5551e3d6567af36cc99b546197fbd88cfae0e81</b>"}
+{"v":1,"op":"notify","event":"PostToolUse","vendor":"claude","session":"9f2c51e0-demo","tool_use_id":"toolu_01Demo","tool":"Edit","path":"/Users/you/Notes/projects/launch-plan.md","hash":"<b>85073fe38a86b2e20f3eeb23e5551e3d6567af36cc99b546197fbd88cfae0e81</b>"}
+{"v":1,"op":"notify","event":"Stop","vendor":"claude","session":"9f2c51e0-demo"}</code></pre>
+        </div>
+      </details>
+
+      <details id="agents">
+        <summary>Which agents are named</summary>
+      <div class="table" tabindex="0" role="region" aria-label="Agents and what Dewline names">
+        <table>
+          <thead><tr><th scope="col">Agent</th><th scope="col">Named changes</th><th scope="col">Hook events</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Claude Code</th><td>Edit, MultiEdit, Write. Read holds the file and changes nothing.</td><td>PreToolUse and PostToolUse for <code>Read|Edit|MultiEdit|Write</code>; Stop, StopFailure, UserPromptSubmit, SessionEnd, InstructionsLoaded</td></tr>
+            <tr><th scope="row">Codex</th><td><code>apply_patch</code>, one claim per file the patch adds, updates, deletes or moves</td><td>PreToolUse and PostToolUse for <code>^apply_patch$</code></td></tr>
+            <tr><th scope="row">Cursor</th><td>None. Its hooks report the end of each turn only.</td><td>preToolUse, postToolUse, stop</td></tr>
+            <tr><th scope="row">Gemini CLI</th><td>None from Terminal. Its hooks carry no call id.</td><td>None</td></tr>
+          </tbody>
+        </table>
       </div>
-      <p>It shows the hooks it would add to each agent's settings and asks before it writes, keeping a backup; <a href="/docs/cli/#doctor"><code>dewline doctor</code></a> has the details. Each hook runs the <code>dewline</code> you ran, by absolute path. Run <code>dewline doctor</code> afterward to check.</p>
-      <aside class="callout caution">
-        <p class="callout-title">Codex</p>
-        <p>Codex runs a new or changed hook only after you trust it. Start Codex, open <code>/hooks</code>, select each Dewline hook and press <kbd>t</kbd>.</p>
+      <p>Cursor's hooks carry call ids. As of 30 October 2026, Cursor documents no <code>tool_input</code> for its <code>Write</code> tool, so nothing can declare what an edit wrote.</p>
+      </details>
+      <details id="unknown">
+        <summary>What shows as another app</summary>
+      <ul>
+        <li>Edits through a shell: Claude Code's Bash tool, Codex's shell, Cursor's terminal, <code>codex exec</code>, and any edit that skips the hooks.</li>
+        <li>A call whose result Dewline can't compute exactly. That includes an Edit of a file with CR or CRLF line endings, or of a file that isn't plain UTF-8. It also includes a Codex patch that would stop partway. A file over 64 MB gets no declared hash.</li>
+        <li>Sync apps, scripts and every other app.</li>
+      </ul>
+      <aside class="callout note">
+        <p class="callout-title">Note</p>
+        <p>In its auto and bypassPermissions modes, Claude Code edits with <code>sed</code>, heredocs or short scripts. Many of those edits show as from another app.</p>
       </aside>
-
-      <h3 id="by-hand">By hand</h3>
-      <p>These are the entries <code>--install-hooks</code> adds, with the command inside the app. Merge them into your settings. Claude Code also reads a project's <code>.claude/settings.json</code>.</p>
-      <div class="code" data-lang="~/.claude/settings.json">
+      </details>
+      <details id="holds">
+        <summary>Autosave waits for the agent</summary>
+      <ul>
+        <li>A Claude Code tool call on a note holds that note's autosave until the turn ends: Stop, StopFailure or the next UserPromptSubmit. Your edits stay in the window.</li>
+        <li>A file Claude Code loads as instructions, such as <code>CLAUDE.md</code>, is held until the session ends.</li>
+        <li>Every hold lapses 30 minutes after the session's last hook event.</li>
+        <li>Codex patches hold nothing. While any hooked call on a file is open, Dewline waits up to 10 seconds before it lands an outside change there.</li>
+      </ul>
+      </details>
+      <details id="what-a-hook-sends">
+        <summary>What a hook sends</summary>
+      <p>Each hook runs <a href="/docs/cli/#notify"><code>dewline notify</code></a> with the event's JSON on stdin. It sends one line per file on the app's control socket: the event, agent, session, tool, call id, realpath and BLAKE3 hashes. It never sends file content.</p>
+      <ul>
+        <li>It never writes a file, starts Dewline or runs another program.</li>
+        <li>When Dewline isn't running, it stops before reading stdin or any file.</li>
+        <li>It reads at most 64 MB of stdin and hashes Write's <code>content</code> as it streams.</li>
+        <li>It finishes within 2 seconds and always exits 0, so it can't block a tool call.</li>
+        <li>Session and call ids are 1 to 128 printable ASCII characters. Dewline refuses any other line.</li>
+      </ul>
+      </details>
+      <details id="by-hand">
+        <summary>Install the hooks by hand</summary>
+      <p>Merge these entries into each agent's settings. Claude Code also reads a project's <code>.claude/settings.json</code>.</p>
+        <div class="code" data-lang="~/.claude/settings.json">
 <pre tabindex="0"><code>{
   "hooks": {
     "PreToolUse": [{"matcher": "Read|Edit|MultiEdit|Write", "hooks": [{"type": "command", "command": "/Applications/Dewline.app/Contents/Helpers/dewline notify --hook claude"}]}],
@@ -192,16 +253,16 @@ and don't redo a change the user reverted.</code></pre>
     "InstructionsLoaded": [{"hooks": [{"type": "command", "command": "/Applications/Dewline.app/Contents/Helpers/dewline notify --hook claude"}]}]
   }
 }</code></pre>
-      </div>
-      <div class="code" data-lang="~/.codex/hooks.json">
+        </div>
+        <div class="code" data-lang="~/.codex/hooks.json">
 <pre tabindex="0"><code>{
   "hooks": {
     "PreToolUse": [{"matcher": "^apply_patch$", "hooks": [{"type": "command", "command": "/Applications/Dewline.app/Contents/Helpers/dewline notify --hook codex"}]}],
     "PostToolUse": [{"matcher": "^apply_patch$", "hooks": [{"type": "command", "command": "/Applications/Dewline.app/Contents/Helpers/dewline notify --hook codex"}]}]
   }
 }</code></pre>
-      </div>
-      <div class="code" data-lang="~/.cursor/hooks.json">
+        </div>
+        <div class="code" data-lang="~/.cursor/hooks.json">
 <pre tabindex="0"><code>{
   "version": 1,
   "hooks": {
@@ -210,25 +271,17 @@ and don't redo a change the user reverted.</code></pre>
     "stop": [{"command": "/Applications/Dewline.app/Contents/Helpers/dewline notify --hook cursor"}]
   }
 }</code></pre>
-      </div>
-
-      <h3 id="remove">Remove them</h3>
-      <p>Delete each hook whose command ends in <code>notify --hook claude</code>, <code>notify --hook codex</code> or <code>notify --hook cursor</code> from the files above, or copy back the <code>.dewline-backup-&lt;seconds&gt;</code> file that <code>--install-hooks</code> left beside each one. <code>dewline doctor</code> then lists those events as missing. Without hooks, agent changes show as Unknown and Dewline puts no hold on your autosave.</p>
-
-      <h2 id="what-a-hook-sends">What a hook sends</h2>
-      <p>Each hook runs <a href="/docs/cli/#notify"><code>dewline notify</code></a> with the event's JSON on stdin. It sends Dewline one line per file on the app's control socket, as in the example above: the event, the agent and session, the tool and its call id, the file's realpath, and BLAKE3 hashes. Never the file's content.</p>
-      <ul>
-        <li>It never writes a file, never starts Dewline and never runs another program.</li>
-        <li>When Dewline isn't running, it stops before reading stdin or any file.</li>
-        <li>It reads at most 64 MB of stdin. Write's <code>content</code> is hashed as it streams and then dropped.</li>
-        <li>It finishes within 2 seconds and always exits 0, so it can't hold up or refuse a tool call.</li>
-        <li>Session and call ids are 1 to 128 printable ASCII characters. Dewline refuses a line that breaks any rule.</li>
-      </ul>
+        </div>
+      </details>
+      <details id="remove">
+        <summary>Remove the hooks</summary>
+      <p>Delete each hook whose command ends in <code>notify --hook claude</code>, <code>codex</code> or <code>cursor</code>. Or copy back the <code>.dewline-backup-&lt;seconds&gt;</code> file beside each settings file. Without hooks, agent edits show as from another app and autosave never waits.</p>
+      </details>
     </article>
 
     <nav class="pager" aria-label="Previous and next page">
-      <a class="prev" href="/docs/mcp/"><span>Previous</span><b>MCP server</b></a>
-      <a class="next" href="/docs/url-scheme/"><span>Next</span><b>URL scheme</b></a>
+      <a class="prev" href="/docs/files/">Previous: Files</a>
+      <a class="next" href="/docs/collaboration/">Next: Collaboration</a>
     </nav>
   </main>
 
@@ -239,13 +292,13 @@ and don't redo a change the user reverted.</code></pre>
 
 <footer class="foot">
   <div class="foot-in wrap">
-    <p>Free, source-available under <a class="text-link" href="https://github.com/ark-232/dewline/blob/main/LICENSE.md">FSL-1.1-ALv2</a>. Published by ArkWerx LLC.</p>
+    <p>© 2026 ArkWerx LLC</p>
     <nav aria-label="Project">
-      <a href="/">Home</a>
+      <a href="/docs/">Docs</a>
+      <a href="https://github.com/ark-232/dewline/releases">Releases</a>
       <a href="https://github.com/ark-232/dewline">Source</a>
-      <a href="https://github.com/ark-232/dewline/releases/latest">Releases</a>
-      <a href="https://github.com/ark-232/dewline/issues">Issues</a>
-      <a href="https://github.com/ark-232/dewline/blob/main/SECURITY.md">Security</a>
+      <a href="/docs/security/">Security</a>
+      <a href="https://github.com/ark-232/dewline/issues/new">Report an issue</a>
     </nav>
   </div>
 </footer>

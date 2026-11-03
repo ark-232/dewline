@@ -4,11 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Editing · Dewline docs</title>
-<meta name="description" content="How Dewline renders Markdown as you type, and the Source view, Vim mode, focus and typewriter modes, lists, folding and find.">
+<meta name="description" content="What the editor does as you type: live Markdown, Preview, links, lists, find, Vim mode and Settings.">
+<meta name="doc-type" content="reference">
 <link rel="canonical" href="https://dewline.arkwerx.com/docs/editing/">
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#F7FBF9" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#091110" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F9FAFA" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E100F" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preload" href="/fonts/newsreader-var.v1.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/ibm-plex-sans-var-latin1.v3.woff2" as="font" type="font/woff2" crossorigin>
@@ -43,8 +44,8 @@
     <a class="dtop-label" href="/docs/">Docs</a>
     <button type="button" class="search-open" aria-keyshortcuts="Meta+K /"><span>Search</span><kbd>⌘K</kbd></button>
     <nav class="dtop-links" aria-label="Site">
-      <a href="https://github.com/ark-232/dewline/releases/latest">Download</a>
       <a href="https://github.com/ark-232/dewline">Source</a>
+      <a class="dtop-get" href="https://github.com/ark-232/dewline/releases/latest">Download</a>
     </nav>
   </div>
 </header>
@@ -59,119 +60,108 @@
       </ul>
     </div>
     <div class="dnav-group">
-      <p class="dnav-title">Guide</p>
+      <p class="dnav-title">Write</p>
       <ul>
         <li><a href="/docs/editing/" aria-current="page">Editing</a></li>
         <li><a href="/docs/markdown/">Markdown</a></li>
-        <li><a href="/docs/files/">Files and saves</a></li>
-        <li><a href="/docs/collaboration/">Collaboration</a></li>
+        <li><a href="/docs/keyboard/">Keyboard</a></li>
         <li><a href="/docs/themes-and-fonts/">Themes and fonts</a></li>
-        <li><a href="/docs/keyboard/">Keyboard shortcuts</a></li>
         <li><a href="/docs/export/">Export</a></li>
       </ul>
     </div>
     <div class="dnav-group">
-      <p class="dnav-title">Reference</p>
+      <p class="dnav-title">Files and changes</p>
       <ul>
-        <li><a href="/docs/cli/">Command line</a></li>
-        <li><a href="/docs/mcp/">MCP server</a></li>
-        <li><a href="/docs/agents/">Agents and changes</a></li>
+        <li><a href="/docs/files/">Files</a></li>
+        <li><a href="/docs/agents/">Agents</a></li>
+        <li><a href="/docs/collaboration/">Collaboration</a></li>
+      </ul>
+    </div>
+    <div class="dnav-group">
+      <p class="dnav-title">Developers</p>
+      <ul>
+        <li><a href="/docs/cli/">CLI</a></li>
+        <li><a href="/docs/mcp/">MCP</a></li>
         <li><a href="/docs/url-scheme/">URL scheme</a></li>
       </ul>
     </div>
     <div class="dnav-group">
-      <p class="dnav-title">Technical</p>
+      <p class="dnav-title">About</p>
       <ul>
-        <li><a href="/docs/architecture/">Architecture</a></li>
-        <li><a href="/docs/performance/">Performance</a></li>
         <li><a href="/docs/security/">Security and privacy</a></li>
+        <li><a href="/docs/performance/">Performance</a></li>
+        <li><a href="/docs/architecture/">Architecture</a></li>
       </ul>
     </div>
   </nav>
 
   <main class="dmain" id="main">
     <article class="prose">
-      <p class="eyebrow">Guide</p>
       <h1>Editing</h1>
-      <p class="lead">Dewline renders Markdown in place as you type. The file underneath stays plain text: rendering changes how characters look, never which characters are there.</p>
+      <p class="lead">Dewline renders Markdown in place as you type. Rendering changes how characters look, never which characters are in the file.</p>
 
       <h2 id="live-rendering">Live rendering</h2>
-      <p>Markup hides once it has done its job. Type <code>**bold**</code> and the asterisks disappear, leaving bold text. Move the caret onto that word and the asterisks come back, so you edit the source exactly where you are and nowhere else.</p>
-      <p>The rule is per span. Only the markers of the span the caret touches show; the rest of the line stays rendered. A selection reveals every span it touches. This holds for headings, quotes, emphasis, links, inline code, highlights, wikilinks, footnote references and inline math. A tag keeps its <code>#</code> in sight and shows dimmed.</p>
-      <p>Some blocks draw as a picture while the caret is outside them, and show their source when the caret moves in:</p>
-      <ul>
-        <li>a fenced <code>mermaid</code> diagram</li>
-        <li>a <code>$$</code> formula on lines of its own</li>
-        <li>an image alone on its line</li>
-        <li>front matter, which folds to one line such as "Front matter · 3 fields"</li>
-      </ul>
-      <p>Diagrams and math render natively, off the main thread. If one fails, Dewline shows its source with a dim line naming the error. Fenced code sits in a well in the code font, with syntax colors; its fence lines show when the caret reaches them.</p>
-      <aside class="callout note">
-        <p class="callout-title">Note</p>
-        <p>While an input method is composing text, such as Japanese or Chinese input, Dewline restyles nothing and applies no outside change until the composition ends.</p>
-      </aside>
+      <p>Type <code>**bold**</code> and the asterisks hide, leaving bold text. Move the caret onto the word and they come back. Only the span under the caret shows its markers; a selection shows every span it touches.</p>
+      <p>A diagram, a <code>$$</code> formula, an image alone on its line and front matter draw as a picture until the caret moves in. If one fails to draw, its source shows with the error under it.</p>
+      <p>Settings &gt; Editor &gt; Heading style offers Standard and Editorial. Editorial sets the first heading as a display title and section heads in small caps.</p>
 
-      <h3 id="heading-style">Heading style</h3>
-      <p>Settings &gt; Editor &gt; Heading style offers Standard and Editorial. Editorial sets the first heading as a display title and section heads in small caps. The file stays plain Markdown either way.</p>
+      <h2 id="preview">Preview beside the text</h2>
+      <p>View &gt; Preview <span class="keys"><kbd>⌥</kbd><kbd>⌘</kbd><kbd>P</kbd></span> opens the finished page in a pane on the right, with every marker hidden. The text on the left switches to Source while the pane is open. The preview scrolls with you and updates when you pause.</p>
+      <p>The same pane holds the <a href="/docs/agents/#chat">Agent</a> panel and the Changes list. Close it with the same key.</p>
 
       <h2 id="source">Source view</h2>
-      <p>View &gt; Show Source <span class="keys"><kbd>⌥</kbd><kbd>⌘</kbd><kbd>U</kbd></span> switches the window between the rendered page and the plain text, with every character visible and the whole page in the code font. The caret's line stays where it was on screen. Settings &gt; General &gt; Open documents in sets whether new windows start in Live or Source.</p>
+      <p>View &gt; Show Source <span class="keys"><kbd>⌥</kbd><kbd>⌘</kbd><kbd>U</kbd></span> shows every character, in the code font. The caret's line stays where it was on screen.</p>
 
-      <h2 id="writing-tools">Typing, spelling and Writing Tools</h2>
-      <ul>
-        <li><strong>Spelling</strong> is checked as you type, on by default. Code, math, front matter, HTML, web addresses and wikilink targets are skipped.</li>
-        <li><strong>Smart Punctuation</strong> turns straight quotes into curly ones and double hyphens into dashes. It is off by default and never touches code. Turn it on in Settings &gt; Editor or Edit &gt; Smart Punctuation.</li>
-        <li><strong>Writing Tools, dictation and the system services</strong> work as they do in any Mac text view. Writing Tools leave the same ranges alone as the spelling checker.</li>
-        <li><strong>The word count</strong> sits in the line above the text, after the file's path: <code>plans / v2.md · 1,204 words</code>. With a selection it reads "12 of 1,204 words". Markup, code, math, front matter, HTML and link addresses don't count.</li>
-      </ul>
-
-      <h2 id="lists">Lists and tasks</h2>
-      <p>In a list item, <kbd>↩</kbd> starts the next item: a numbered item counts on by one, and a task item starts unchecked. <kbd>↩</kbd> on an empty item ends the list.</p>
-      <p><kbd>⇥</kbd> indents and <span class="keys"><kbd>⇧</kbd><kbd>⇥</kbd></span> outdents every item the selection touches, as one undoable edit. Outside a list, <kbd>⇥</kbd> inserts a tab or 2 or 4 spaces, as Settings &gt; Editor &gt; Tab key inserts says.</p>
-      <p>A click on a task box checks or unchecks it and leaves the caret where it was.</p>
-
-      <h2 id="format">Formatting and moving lines</h2>
-      <p>The Format menu writes Markdown for you. Bold <span class="keys"><kbd>⌘</kbd><kbd>B</kbd></span>, Italic <span class="keys"><kbd>⌘</kbd><kbd>I</kbd></span>, Strikethrough, Highlight and Inline Code wrap the selection, or the word at the caret, and unwrap it when it already has the markers. Link <span class="keys"><kbd>⌘</kbd><kbd>K</kbd></span> writes <code>[text]()</code> and puts the caret between the parentheses.</p>
-      <p>Headings, Quote, Bulleted List, Numbered List and Task act on every selected line. When all the lines have the format it comes off; otherwise the lines without it get it. Numbered List numbers the lines from 1. Body Text <span class="keys"><kbd>⌘</kbd><kbd>0</kbd></span> turns a heading back into plain text.</p>
-      <p>Edit &gt; Move Line Up <span class="keys"><kbd>⌥</kbd><kbd>⌘</kbd><kbd>[</kbd></span> and Move Line Down <span class="keys"><kbd>⌥</kbd><kbd>⌘</kbd><kbd>]</kbd></span> swap the selected lines with the line above or below. The selection moves with them.</p>
-
-      <h2 id="images">Pasting images</h2>
-      <p>Paste or drop an image and Dewline saves it as a PNG named <code>image-&lt;date&gt;-&lt;n&gt;.png</code>, then links it at the caret, as one edit. It goes beside the document, or in an <code>attachments</code> folder beside it if Settings &gt; Files says so. Save a new document once before you paste; until then it has no folder.</p>
-
-      <h2 id="focus">Focus and typewriter</h2>
-      <dl>
-        <dt>View &gt; Focus <span class="keys"><kbd>⇧</kbd><kbd>⌘</kbd><kbd>D</kbd></span></dt>
-        <dd>Dims every block but the one holding the caret. Only the color changes; the text does not.</dd>
-        <dt>View &gt; Typewriter <span class="keys"><kbd>⇧</kbd><kbd>⌘</kbd><kbd>T</kbd></span></dt>
-        <dd>Keeps the caret's line in the middle of the window. The first and last lines can scroll to the middle too.</dd>
-      </dl>
-      <p>Settings &gt; Editor &gt; Motion sets how the caret travels to a far jump: Off, Calm (streaks to where a jump such as Find Next lands) or Lively (also for clicks and long moves). With Reduce Motion on in macOS, Dewline uses Off.</p>
-
-      <h2 id="folding">Folding</h2>
-      <p>View &gt; Fold <span class="keys"><kbd>⌥</kbd><kbd>⌘</kbd><kbd>←</kbd></span> folds the fenced code block or callout holding the caret, or else the section under the nearest heading above it. A heading's section runs to the next heading of the same or a higher level. Unfold <span class="keys"><kbd>⌥</kbd><kbd>⌘</kbd><kbd>→</kbd></span> opens it again, and Fold All and Unfold All add <kbd>⇧</kbd>.</p>
-      <p>A chevron appears in the left margin beside a foldable block under the pointer; click it to fold. Moving the caret into folded text unfolds it.</p>
-
-      <h2 id="links">Following links</h2>
-      <p><span class="keys"><kbd>⌘</kbd>-click</span> follows what is under the pointer:</p>
+      <h2 id="links">Links</h2>
+      <p>A link shows in the text color with a thin underline. <span class="keys"><kbd>⌘</kbd>-click</span> follows it:</p>
       <ul>
         <li>A web or mail address opens in its app.</li>
-        <li>A link or wikilink to a note opens the note, at the heading if the link names one. A wikilink to a note that doesn't exist yet offers to create it.</li>
-        <li>A footnote reference jumps to its definition, and the definition's label jumps back. Hovering a reference shows the footnote's text.</li>
+        <li>A link or wikilink to a note opens the note, at the heading if it names one. A wikilink to a missing note offers to make it.</li>
+        <li>A footnote reference jumps to its definition and back. Hover it to read the footnote.</li>
         <li>A tag runs Find in Files for it.</li>
       </ul>
-      <p>Go &gt; Back <span class="keys"><kbd>⌘</kbd><kbd>[</kbd></span> and Forward <span class="keys"><kbd>⌘</kbd><kbd>]</kbd></span> retrace the jumps. Links with any other scheme, such as <code>javascript:</code>, <code>data:</code> or <code>file:</code>, and absolute paths only beep.</p>
+      <p>A web address alone on its line shows as a card with the page's title and picture. Hover any other web link to see the same preview. The file keeps the plain address either way.</p>
+      <p>Previews ask the site for its title and picture. Turn them off in Settings &gt; Editor &gt; Link previews; <a href="/docs/security/">Security and privacy</a> says what is sent. Go &gt; Back <span class="keys"><kbd>⌘</kbd><kbd>[</kbd></span> and Forward <span class="keys"><kbd>⌘</kbd><kbd>]</kbd></span> retrace your jumps. Other schemes, such as <code>javascript:</code> or <code>file:</code>, do nothing.</p>
+
+      <h2 id="lists">Lists and tasks</h2>
+      <p>In a list, <kbd>↩</kbd> starts the next item, counting on or adding an unchecked box. <kbd>↩</kbd> on an empty item ends the list. <kbd>⇥</kbd> and <span class="keys"><kbd>⇧</kbd><kbd>⇥</kbd></span> indent and outdent every selected item, as one undo step. Click a task box to check it.</p>
+      <p>Outside a list, <kbd>⇥</kbd> types a tab or 2 or 4 spaces, as Settings &gt; Editor &gt; Tab key says.</p>
+
+      <h2 id="format">Format and move lines</h2>
+      <p>The Format menu writes the Markdown. Bold, Italic, Strikethrough, Highlight and Inline Code wrap the selection or the word at the caret, and unwrap it when it has the markers. Link <span class="keys"><kbd>⌘</kbd><kbd>K</kbd></span> writes <code>[text]()</code> with the caret inside the parentheses.</p>
+      <p>Headings, Quote, the lists and Task act on every selected line, and come off when all lines have them. Edit &gt; Move Line Up <span class="keys"><kbd>⌥</kbd><kbd>⌘</kbd><kbd>[</kbd></span> and Down <span class="keys"><kbd>⌥</kbd><kbd>⌘</kbd><kbd>]</kbd></span> move the selected lines. <a href="/docs/keyboard/#format">Keyboard</a> lists every key.</p>
+
+      <h2 id="images">Paste images</h2>
+      <p>Paste or drop an image and Dewline saves it as <code>image-&lt;date&gt;-&lt;n&gt;.png</code> beside the note, then links it at the caret. Settings &gt; Files can put images in an <code>attachments</code> folder instead.</p>
 
       <h2 id="find">Find</h2>
-      <p>Edit &gt; Find &gt; Find… <span class="keys"><kbd>⌘</kbd><kbd>F</kbd></span> opens the find bar over the page. It finds and replaces in the open file. Find Next <span class="keys"><kbd>⌘</kbd><kbd>G</kbd></span> and Find Previous <span class="keys"><kbd>⇧</kbd><kbd>⌘</kbd><kbd>G</kbd></span> step through the matches. Go to Line… <span class="keys"><kbd>⌘</kbd><kbd>L</kbd></span> moves the caret to a line by number.</p>
-      <p>Find in Files… <span class="keys"><kbd>⇧</kbd><kbd>⌘</kbd><kbd>F</kbd></span> searches every Markdown file in the window's folder, in the sidebar:</p>
+      <p>Find… <span class="keys"><kbd>⌘</kbd><kbd>F</kbd></span> finds and replaces in the open note. <span class="keys"><kbd>⌘</kbd><kbd>G</kbd></span> and <span class="keys"><kbd>⇧</kbd><kbd>⌘</kbd><kbd>G</kbd></span> step through matches. Go to Line… <span class="keys"><kbd>⌘</kbd><kbd>L</kbd></span> jumps by number.</p>
+      <p>Find in Files… <span class="keys"><kbd>⇧</kbd><kbd>⌘</kbd><kbd>F</kbd></span> searches every note in the folder, in the sidebar. Matches come grouped by note, up to 10,000. <kbd>↩</kbd> opens one, <span class="keys"><kbd>⌘</kbd><kbd>↩</kbd></span> opens it in a new tab, and <kbd>⎋</kbd> returns to the folder.</p>
+
+      <h2 id="focus">Focus, typewriter and motion</h2>
       <ul>
-        <li>It searches as you type, once you pause, with Match Case and Whole Word switches.</li>
-        <li>Matches arrive grouped by file, each on its line with the match marked. A search stops at 10,000 matches and says so.</li>
-        <li><kbd>↩</kbd> opens the selected match, <span class="keys"><kbd>⌘</kbd><kbd>↩</kbd></span> opens it in a new tab, and <kbd>⎋</kbd> returns to the file tree.</li>
+        <li><strong>View &gt; Focus</strong> <span class="keys"><kbd>⇧</kbd><kbd>⌘</kbd><kbd>D</kbd></span> dims every block but the caret's.</li>
+        <li><strong>View &gt; Typewriter</strong> keeps the caret's line in the middle of the window.</li>
+        <li><strong>Settings &gt; Editor &gt; Motion</strong> sets how the caret travels on a far jump: Off, Calm or Lively. With Reduce Motion on in macOS, it is Off.</li>
       </ul>
 
+      <h2 id="folding">Folding</h2>
+      <p>View &gt; Fold <span class="keys"><kbd>⌥</kbd><kbd>⌘</kbd><kbd>←</kbd></span> folds the code block or callout at the caret, or else the section under the heading above. Unfold is <span class="keys"><kbd>⌥</kbd><kbd>⌘</kbd><kbd>→</kbd></span>; add <kbd>⇧</kbd> for all. A chevron in the margin folds too, and moving the caret into folded text opens it.</p>
+
+      <h2 id="writing-tools">Spelling, Writing Tools and word count</h2>
+      <ul>
+        <li><strong>Spelling</strong> is checked as you type. Code, math, front matter, HTML, addresses and wikilink targets are skipped.</li>
+        <li><strong>Smart Punctuation</strong> curls quotes and turns double hyphens into dashes. It is off by default and never touches code.</li>
+        <li><strong>Writing Tools and dictation</strong> work as in any Mac text view, and skip the same ranges as spelling.</li>
+        <li><strong>The word count</strong> sits in the status bar under the text: “1,204 words”, or “38 of 1,204 words” with a selection. Markup and code don't count.</li>
+      </ul>
+      <aside class="callout note">
+        <p class="callout-title">Note</p>
+        <p>While an input method is composing, such as Japanese or Chinese input, Dewline restyles nothing and lands no outside change.</p>
+      </aside>
+
       <h2 id="vim">Vim mode</h2>
-      <p>Turn it on in Settings &gt; Editor or from the command palette. It is off by default. The mode shows at the window's lower right. In insert mode every key but <kbd>⎋</kbd> types as usual, and input methods keep working.</p>
+      <p>Turn it on in Settings &gt; Editor or the command palette. The mode shows at the window's lower right. In insert mode every key but <kbd>⎋</kbd> types as usual.</p>
       <div class="table" tabindex="0" role="region" aria-label="Vim keys">
         <table>
           <thead><tr><th scope="col">Kind</th><th scope="col">Keys</th></tr></thead>
@@ -189,12 +179,31 @@
       </div>
 
       <h2 id="undo">Undo</h2>
-      <p>Each Format command and each line move is one step of undo, named in the Edit menu. A change made outside Dewline lands without clearing your undo history, so <span class="keys"><kbd>⌘</kbd><kbd>Z</kbd></span> still walks back through your own edits. <a href="/docs/files/">Files and saves</a> covers outside changes.</p>
+      <p>Each Format command, line move, file action and Keep or Revert is one undo step, named in the Edit menu. A change from another app lands without clearing your undo history.</p>
+
+      <h2 id="palette">Command palette</h2>
+      <p>View &gt; Command Palette… <span class="keys"><kbd>⇧</kbd><kbd>⌘</kbd><kbd>P</kbd></span> runs any command in the menu bar. It also changes Theme, Appearance, Smart Punctuation, Vim Mode, Heading Style and Show Ignored Files in place. Commands you ran lately rank first, and <kbd>⎋</kbd> steps back out.</p>
+
+      <h2 id="settings">Settings</h2>
+      <p>Dewline &gt; Settings… <span class="keys"><kbd>⌘</kbd><kbd>,</kbd></span> opens on the pane you used last. Changes apply at once.</p>
+      <div class="table" tabindex="0" role="region" aria-label="Settings panes">
+        <table>
+          <thead><tr><th scope="col">Pane</th><th scope="col">What it sets</th></tr></thead>
+          <tbody>
+            <tr><td>General</td><td>When Dewline opens, Live or Source for new windows, updates</td></tr>
+            <tr><td>Editor</td><td>Vim mode, heading style, motion, Tab key, spelling, Smart Punctuation, link previews</td></tr>
+            <tr><td>Appearance</td><td><a href="/docs/themes-and-fonts/">Themes, fonts</a>, text size, line height, line width</td></tr>
+            <tr><td>Files</td><td>Ignored files, where pasted images go, the inbox, daily note, capture shortcut</td></tr>
+            <tr><td>Agents</td><td>Agents for the Agent panel, and <a href="/docs/agents/#install">agent hooks</a></td></tr>
+            <tr><td>Sharing</td><td>Your name, where shared copies go</td></tr>
+          </tbody>
+        </table>
+      </div>
     </article>
 
     <nav class="pager" aria-label="Previous and next page">
-      <a class="prev" href="/docs/first-steps/"><span>Previous</span><b>First steps</b></a>
-      <a class="next" href="/docs/markdown/"><span>Next</span><b>Markdown</b></a>
+      <a class="prev" href="/docs/first-steps/">Previous: First steps</a>
+      <a class="next" href="/docs/markdown/">Next: Markdown</a>
     </nav>
   </main>
 
@@ -205,13 +214,13 @@
 
 <footer class="foot">
   <div class="foot-in wrap">
-    <p>Free, source-available under <a class="text-link" href="https://github.com/ark-232/dewline/blob/main/LICENSE.md">FSL-1.1-ALv2</a>. Published by ArkWerx LLC.</p>
+    <p>© 2026 ArkWerx LLC</p>
     <nav aria-label="Project">
-      <a href="/">Home</a>
+      <a href="/docs/">Docs</a>
+      <a href="https://github.com/ark-232/dewline/releases">Releases</a>
       <a href="https://github.com/ark-232/dewline">Source</a>
-      <a href="https://github.com/ark-232/dewline/releases/latest">Releases</a>
-      <a href="https://github.com/ark-232/dewline/issues">Issues</a>
-      <a href="https://github.com/ark-232/dewline/blob/main/SECURITY.md">Security</a>
+      <a href="/docs/security/">Security</a>
+      <a href="https://github.com/ark-232/dewline/issues/new">Report an issue</a>
     </nav>
   </div>
 </footer>

@@ -98,6 +98,18 @@ if (outline && headings.length > 1) {
   outline.hidden = true;
 }
 
+// A link to a folded section, or to something inside one, unfolds it.
+function unfoldTarget() {
+  const target = location.hash ? document.getElementById(decodeURIComponent(location.hash.slice(1))) : null;
+  const fold = target?.closest("details");
+  if (fold && !fold.open) {
+    fold.open = true;
+    target.scrollIntoView();
+  }
+}
+addEventListener("hashchange", unfoldTarget);
+unfoldTarget();
+
 // The phone menu opens the docs navigation over the page.
 const menu = document.querySelector(".menu");
 const nav = document.getElementById("dnav");

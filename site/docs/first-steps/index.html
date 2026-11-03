@@ -4,11 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>First steps · Dewline docs</title>
-<meta name="description" content="Open a folder or an Obsidian vault in Dewline, then find your way with the sidebar, Quick Open, the command palette and Settings.">
+<meta name="description" content="Install Dewline, write a note, keep or revert a change, then open your own folder.">
+<meta name="doc-type" content="tutorial">
 <link rel="canonical" href="https://dewline.arkwerx.com/docs/first-steps/">
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#F7FBF9" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#091110" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F9FAFA" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E100F" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preload" href="/fonts/newsreader-var.v1.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/ibm-plex-sans-var-latin1.v3.woff2" as="font" type="font/woff2" crossorigin>
@@ -43,8 +44,8 @@
     <a class="dtop-label" href="/docs/">Docs</a>
     <button type="button" class="search-open" aria-keyshortcuts="Meta+K /"><span>Search</span><kbd>⌘K</kbd></button>
     <nav class="dtop-links" aria-label="Site">
-      <a href="https://github.com/ark-232/dewline/releases/latest">Download</a>
       <a href="https://github.com/ark-232/dewline">Source</a>
+      <a class="dtop-get" href="https://github.com/ark-232/dewline/releases/latest">Download</a>
     </nav>
   </div>
 </header>
@@ -59,133 +60,111 @@
       </ul>
     </div>
     <div class="dnav-group">
-      <p class="dnav-title">Guide</p>
+      <p class="dnav-title">Write</p>
       <ul>
         <li><a href="/docs/editing/">Editing</a></li>
         <li><a href="/docs/markdown/">Markdown</a></li>
-        <li><a href="/docs/files/">Files and saves</a></li>
-        <li><a href="/docs/collaboration/">Collaboration</a></li>
+        <li><a href="/docs/keyboard/">Keyboard</a></li>
         <li><a href="/docs/themes-and-fonts/">Themes and fonts</a></li>
-        <li><a href="/docs/keyboard/">Keyboard shortcuts</a></li>
         <li><a href="/docs/export/">Export</a></li>
       </ul>
     </div>
     <div class="dnav-group">
-      <p class="dnav-title">Reference</p>
+      <p class="dnav-title">Files and changes</p>
       <ul>
-        <li><a href="/docs/cli/">Command line</a></li>
-        <li><a href="/docs/mcp/">MCP server</a></li>
-        <li><a href="/docs/agents/">Agents and changes</a></li>
+        <li><a href="/docs/files/">Files</a></li>
+        <li><a href="/docs/agents/">Agents</a></li>
+        <li><a href="/docs/collaboration/">Collaboration</a></li>
+      </ul>
+    </div>
+    <div class="dnav-group">
+      <p class="dnav-title">Developers</p>
+      <ul>
+        <li><a href="/docs/cli/">CLI</a></li>
+        <li><a href="/docs/mcp/">MCP</a></li>
         <li><a href="/docs/url-scheme/">URL scheme</a></li>
       </ul>
     </div>
     <div class="dnav-group">
-      <p class="dnav-title">Technical</p>
+      <p class="dnav-title">About</p>
       <ul>
-        <li><a href="/docs/architecture/">Architecture</a></li>
-        <li><a href="/docs/performance/">Performance</a></li>
         <li><a href="/docs/security/">Security and privacy</a></li>
+        <li><a href="/docs/performance/">Performance</a></li>
+        <li><a href="/docs/architecture/">Architecture</a></li>
       </ul>
     </div>
   </nav>
 
   <main class="dmain" id="main">
     <article class="prose">
-      <p class="eyebrow">Start</p>
       <h1>First steps</h1>
-      <p class="lead">Open the notes you already keep, then learn the four ways around them: the sidebar, Quick Open, the command palette and Settings.</p>
+      <p class="lead">Install Dewline, write a note, keep or revert a change, then open your own folder.</p>
 
-      <h2 id="install">Install</h2>
-      <p>Download the disk image or install the Homebrew cask, as <a href="/docs/#install">Overview</a> shows. Dewline needs macOS 26. It has no account and asks for no sign-in.</p>
-      <p>The first time Dewline opens, it shows Welcome.md, a short guide that is itself a Markdown file. A few seconds later a writer named Demo edits one of its paragraphs, so you see how Dewline marks a change made outside the editor. Help &gt; Replay the Demo runs it again.</p>
+      <h2 id="install">Install Dewline</h2>
+      <p>Download the disk image and drag Dewline into Applications, or use Homebrew:</p>
+      <div class="code" data-lang="Terminal">
+<pre tabindex="0"><code><span class="p">$ </span>brew install --cask ark-232/tap/dewline</code></pre>
+      </div>
+      <p>Dewline needs macOS 26 or later, on Apple Silicon or Intel. It is free and has no account. The cask also puts the <a href="/docs/cli/"><code>dewline</code> command</a> on your PATH.</p>
 
-      <h2 id="open">Open your notes</h2>
-      <p>Dewline edits files where they are. Nothing is imported or copied.</p>
-      <div class="table" tabindex="0" role="region" aria-label="Ways to open notes">
+      <h2 id="first-note">Write your first note</h2>
+      <ol class="steps">
+        <li><b>Open Dewline.</b> It makes a <code>Dewline</code> folder in Documents and opens <code>Welcome.md</code> there. The caret waits at the end of the note.</li>
+        <li><b>Type anything.</b> Dewline saves as you go. There is no Save prompt.</li>
+        <li><b>Press <span class="keys"><kbd>⌘</kbd><kbd>N</kbd></span> for a new note.</b> <code>Untitled.md</code> appears in the folder with the caret ready. The first line you write becomes its name.</li>
+      </ol>
+      <p>The window title shows the note's name, and the sidebar row of the open note is selected.</p>
+
+      <h2 id="see-a-change">See a change</h2>
+      <p>Git, a sync app, a script or a coding agent can change a note while it is open. Dewline marks each change so you can keep it or revert it.</p>
+      <ol class="steps">
+        <li><b>Go back to Welcome.md</b> in the sidebar.</li>
+        <li><b><span class="keys"><kbd>⌘</kbd>-click</span> “Show me a change”.</b> A demo writer edits that paragraph, and the new words are marked.</li>
+        <li><b>Keep or revert it.</b> The bar under the text offers Keep <span class="keys">(<kbd>⌘</kbd><kbd>↩</kbd>)</span> and Revert <span class="keys">(<kbd>⌥</kbd><kbd>⌘</kbd><kbd>⌫</kbd>)</span>. <span class="keys"><kbd>⌘</kbd><kbd>Z</kbd></span> undoes either one.</li>
+      </ol>
+      <p><a href="/docs/agents/">Agents</a> has the rest: every key, the Changes list, and chatting with your own agent.</p>
+
+      <h2 id="open">Open your own folder</h2>
+      <ol class="steps">
+        <li><b>Choose File &gt; Open Folder…</b> <span class="keys">(<kbd>⌥</kbd><kbd>⌘</kbd><kbd>O</kbd>)</span> and pick a folder of Markdown files or an Obsidian vault.</li>
+        <li><b>Look at the sidebar.</b> Its top row is the folder's name, with the notes under it. Nothing is imported or copied.</li>
+        <li><b>Find a note</b> with <span class="keys"><kbd>⇧</kbd><kbd>⌘</kbd><kbd>O</kbd></span>. Type part of its name and press <kbd>↩</kbd>.</li>
+      </ol>
+      <p>Dewline leaves the vault's <code>.obsidian</code> folder alone. Wikilinks, embeds, tags, callouts and front matter follow Obsidian's syntax.</p>
+
+      <h2 id="come-back">Quit and come back</h2>
+      <p>Quit with <span class="keys"><kbd>⌘</kbd><kbd>Q</kbd></span>. Every note is already saved. Open Dewline again and your windows, tabs and caret come back where you left them.</p>
+      <p>To start on the launch window instead, set Settings &gt; General &gt; When Dewline opens.</p>
+
+      <h2 id="switching">Switching from Obsidian or Notion</h2>
+      <p>Dewline opens an Obsidian vault as it is, so you can use it instead of Obsidian on your Mac or beside it. From Notion, it suits the notes you want to keep as files.</p>
+      <div class="table" tabindex="0" role="region" aria-label="Dewline, Obsidian and Notion compared">
         <table>
-          <thead><tr><th scope="col">To open</th><th scope="col">Do this</th></tr></thead>
+          <thead><tr><th scope="col">Job</th><th scope="col">Dewline</th><th scope="col">Obsidian</th><th scope="col">Notion</th></tr></thead>
           <tbody>
-            <tr><td>A folder or an Obsidian vault</td><td>File &gt; Open Folder… <span class="keys"><kbd>⌥</kbd><kbd>⌘</kbd><kbd>O</kbd></span>.</td></tr>
-            <tr><td>One file</td><td>File &gt; Open… <span class="keys"><kbd>⌘</kbd><kbd>O</kbd></span>.</td></tr>
-            <tr><td>A file at a line, from Terminal</td><td><code>dewline open notes.md:12</code>. See <a href="/docs/cli/">Command line</a>.</td></tr>
-            <tr><td>A new note</td><td>File &gt; New <span class="keys"><kbd>⌘</kbd><kbd>N</kbd></span>. Its first save starts in the folder Settings &gt; General names, <code>~/Documents</code> by default.</td></tr>
+            <tr><th scope="row">Markdown with syntax hidden until the caret arrives</th><td>Yes</td><td>Yes</td><td>Not Markdown</td></tr>
+            <tr><th scope="row">Open a folder or vault in place, no import</th><td>Yes</td><td>Yes</td><td>No</td></tr>
+            <tr><th scope="row">Wikilinks, embeds, tags, callouts, front matter</th><td>Yes</td><td>Yes</td><td>Partial</td></tr>
+            <tr><th scope="row">Backlinks pane, graph, Canvas, Bases</th><td>No (backlinks through MCP)</td><td>Yes</td><td>Not applicable</td></tr>
+            <tr><th scope="row">Plugins</th><td>No</td><td>Yes</td><td>Integrations</td></tr>
+            <tr><th scope="row">Phone and tablet apps</th><td>No</td><td>Yes</td><td>Yes</td></tr>
+            <tr><th scope="row">Sync between your devices</th><td>No</td><td>Paid Sync</td><td>Cloud</td></tr>
+            <tr><th scope="row">Databases, views, relations</th><td>No</td><td>Bases</td><td>Yes</td></tr>
+            <tr><th scope="row">Public web pages</th><td>No</td><td>Publish (paid)</td><td>Yes</td></tr>
+            <tr><th scope="row">Team spaces, permissions</th><td>No</td><td>No</td><td>Yes</td></tr>
+            <tr><th scope="row">Live co-editing</th><td>Mac to Mac, by invite link</td><td>Plugins</td><td>Yes</td></tr>
+            <tr><th scope="row">Works offline, files on disk</th><td>Yes</td><td>Yes</td><td>Limited</td></tr>
+            <tr><th scope="row">Export HTML, PDF, Word</th><td>Yes</td><td>PDF, plugins</td><td>Lossy</td></tr>
+            <tr><th scope="row">Platforms</th><td>Mac</td><td>Mac, Windows, Linux, phones</td><td>Web, desktop, phones</td></tr>
           </tbody>
         </table>
       </div>
-      <p>An Obsidian vault is a folder of Markdown files, so it opens the same way. Dewline reads the files and leaves the <code>.obsidian</code> folder alone; dotfiles never show in the sidebar. Wikilinks, embeds, tags, callouts and front matter follow Obsidian's syntax. <a href="/docs/markdown/">Markdown</a> lists what renders.</p>
-
-      <h2 id="launch-window">The launch window</h2>
-      <p>When nothing is open, Dewline shows the launch window. Window &gt; Launch Window <span class="keys"><kbd>⇧</kbd><kbd>⌘</kbd><kbd>1</kbd></span> brings it back at any time.</p>
-      <ul>
-        <li><strong>New Document, Open… and Open Folder…</strong> sit at the top with their shortcuts.</li>
-        <li><strong>Recent, Pinned and Folders</strong> list the files you opened, the files you pinned and the folders you opened. Each file shows its first line of prose.</li>
-        <li><strong>Typing</strong> filters the list. <kbd>↩</kbd> opens the selected row, and <kbd>⌫</kbd> forgets a recent file.</li>
-        <li><strong>Show this window when nothing is open</strong> turns the window off. Settings &gt; General decides whether Dewline reopens your last files or shows this window at launch.</li>
-      </ul>
-
-      <h2 id="sidebar">The sidebar</h2>
-      <p>A folder's window has a sidebar. View &gt; Show Sidebar <span class="keys"><kbd>⌃</kbd><kbd>⌘</kbd><kbd>S</kbd></span> shows and hides it. From top to bottom it holds:</p>
-      <dl>
-        <dt>Pinned</dt>
-        <dd>Files you pinned. Right-click any file and choose Pin.</dd>
-        <dt>Agent files</dt>
-        <dd>The instruction files coding agents load from this folder, such as <code>CLAUDE.md</code> and <code>AGENTS.md</code>. <a href="/docs/agents/">Agents and changes</a> covers them.</dd>
-        <dt>Review</dt>
-        <dd>Files with outside changes waiting for you to keep or revert them.</dd>
-        <dt>The folder</dt>
-        <dd>The folder's tree, with the open file's headings listed under its row. The heading at the top of the page is set in italic as you scroll.</dd>
-        <dt>Recents</dt>
-        <dd>Files you opened lately, from any folder.</dd>
-      </dl>
-      <p>A click opens a file in the current tab. <span class="keys"><kbd>⌘</kbd>-click</span> opens it in a new tab. Right-click a file for Open in New Tab, Pin and Show in Finder.</p>
-      <p>The tree hides <code>.git</code>, <code>node_modules</code> and dotfiles. Files your <code>.gitignore</code> lists stay hidden too, unless you turn on Settings &gt; Files &gt; Show files .gitignore hides; they then show dimmed.</p>
-
-      <h2 id="quick-open">Quick Open</h2>
-      <p>File &gt; Quick Open… <span class="keys"><kbd>⇧</kbd><kbd>⌘</kbd><kbd>O</kbd></span> finds Markdown files by name in the window's folder, Recents and Pinned. Type a few letters of the name in order; they need not be next to each other. <kbd>↩</kbd> opens the file.</p>
-      <p>A prefix changes what the field searches. Type it first:</p>
-      <div class="table" tabindex="0" role="region" aria-label="Quick Open prefixes">
-        <table>
-          <thead><tr><th scope="col">Prefix</th><th scope="col">Searches</th></tr></thead>
-          <tbody>
-            <tr><td><code>&gt;</code></td><td>Commands and settings. This is the command palette.</td></tr>
-            <tr><td><code>@</code></td><td>Headings in this file.</td></tr>
-            <tr><td><code>:</code></td><td>A line in this file, by number.</td></tr>
-            <tr><td><code>#</code></td><td>Headings across the folder.</td></tr>
-            <tr><td><code>?</code></td><td>Lists these prefixes.</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p>A prefix after a file name reaches into that file: <code>notes@intro</code> goes to the heading "intro" in notes.md, and <code>notes:42</code> goes to its line 42. The prefix turns into a chip in front of the field; <kbd>⌫</kbd> on the empty field removes it.</p>
-
-      <h2 id="palette">The command palette</h2>
-      <p>View &gt; Command Palette… <span class="keys"><kbd>⇧</kbd><kbd>⌘</kbd><kbd>P</kbd></span> opens the same panel on <code>&gt;</code>. It runs any enabled command in the menu bar and changes these settings in place:</p>
-      <ul>
-        <li>Theme… and Appearance…, which open a list of values.</li>
-        <li>Smart Punctuation, Vim Mode, Heading Style and Show Ignored Files, which switch on and off.</li>
-      </ul>
-      <p>Commands you ran lately rank higher. <kbd>⎋</kbd> steps back out of a list of values, then clears the field, then closes the panel.</p>
-
-      <h2 id="settings">Settings</h2>
-      <p>Dewline &gt; Settings… <span class="keys"><kbd>⌘</kbd><kbd>,</kbd></span> has six panes. Each pane has a Restore Defaults button for its own settings.</p>
-      <div class="table" tabindex="0" role="region" aria-label="Settings panes">
-        <table>
-          <thead><tr><th scope="col">Pane</th><th scope="col">What it sets</th></tr></thead>
-          <tbody>
-            <tr><td>General</td><td>What opens at launch, whether documents open in Live or Source, where new files go, and updates.</td></tr>
-            <tr><td>Appearance</td><td>Themes, fonts, text size, line height and line width. See <a href="/docs/themes-and-fonts/">Themes and fonts</a>.</td></tr>
-            <tr><td>Editor</td><td>Vim mode, heading style, motion, the Tab key, spelling and Smart Punctuation. See <a href="/docs/editing/">Editing</a>.</td></tr>
-            <tr><td>Files</td><td>Files .gitignore hides, where pasted images go, and the inbox file <code>dewline capture</code> writes to.</td></tr>
-            <tr><td>Agents</td><td>The hooks that name the agent behind a change, and each writer's color.</td></tr>
-            <tr><td>Collaboration</td><td>Your name, where shared copies go, and a collaborator's color.</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p>Changes apply as you make them. There is no Save or Apply button.</p>
+      <p>If you need notes on a phone, keep Obsidian or Notion for that. Open the same files in Dewline on your Mac.</p>
     </article>
 
     <nav class="pager" aria-label="Previous and next page">
-      <a class="prev" href="/docs/"><span>Previous</span><b>Overview</b></a>
-      <a class="next" href="/docs/editing/"><span>Next</span><b>Editing</b></a>
+      <a class="prev" href="/docs/">Previous: Overview</a>
+      <a class="next" href="/docs/editing/">Next: Editing</a>
     </nav>
   </main>
 
@@ -196,13 +175,13 @@
 
 <footer class="foot">
   <div class="foot-in wrap">
-    <p>Free, source-available under <a class="text-link" href="https://github.com/ark-232/dewline/blob/main/LICENSE.md">FSL-1.1-ALv2</a>. Published by ArkWerx LLC.</p>
+    <p>© 2026 ArkWerx LLC</p>
     <nav aria-label="Project">
-      <a href="/">Home</a>
+      <a href="/docs/">Docs</a>
+      <a href="https://github.com/ark-232/dewline/releases">Releases</a>
       <a href="https://github.com/ark-232/dewline">Source</a>
-      <a href="https://github.com/ark-232/dewline/releases/latest">Releases</a>
-      <a href="https://github.com/ark-232/dewline/issues">Issues</a>
-      <a href="https://github.com/ark-232/dewline/blob/main/SECURITY.md">Security</a>
+      <a href="/docs/security/">Security</a>
+      <a href="https://github.com/ark-232/dewline/issues/new">Report an issue</a>
     </nav>
   </div>
 </footer>
