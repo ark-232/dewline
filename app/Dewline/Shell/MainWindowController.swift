@@ -481,6 +481,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         // Lays the text out to the anchor, so the page is tall enough to scroll there.
         textView.scrollRangeToVisible(NSRange(location: top, length: 0))
         textView.hold(top, at: -place.offset)
+        // Past the first screen the text styles once the whole parse lands, and that pass keeps this line in place.
+        textView.styler.restored = textView.styler.hasUnstyledText ? top : nil
     }
 
     @objc func goBack(_ sender: Any?) {
