@@ -345,8 +345,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         if !paneItem.isCollapsed, pane.tab == .preview {
             sourceBeforePreview = textView.styler.showsSource
             if !textView.styler.showsSource { textView.toggleSource(nil) }
+            pane.preview.show(textView)
         }
-        pane.preview.show(textView)
         updatePresence()
         changesChanged()
         if let url = document.fileURL { ReviewInbox.noteOpened(url) }
@@ -608,6 +608,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         } else if !shown, let was = sourceBeforePreview {
             sourceBeforePreview = nil
             if textView.styler.showsSource != was { textView.toggleSource(nil) }
+            pane.preview.show(nil)
         }
     }
 

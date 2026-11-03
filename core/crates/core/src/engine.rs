@@ -420,11 +420,10 @@ impl Engine {
         let disk_hash = blake3::hash(&bytes);
         let disk: Arc<[u8]> = bytes.as_slice().into();
         let closed = self.closed_base(&real, disk_hash, &bytes, wall)?;
-        let (base_hash, bytes) = match &closed {
-            Some((change, before)) => (change.before, before.clone()),
-            None => (disk_hash, bytes),
+        let (base_hash, base, bytes) = match &closed {
+            Some((change, before)) => (change.before, before.as_slice().into(), before.clone()),
+            None => (disk_hash, disk.clone(), bytes),
         };
-        let base: Arc<[u8]> = bytes.as_slice().into();
         let contents = text::Opened::new(bytes);
         let (read_only, bom) = match &contents {
             text::Opened::Utf8 { bom, .. } => (false, *bom),
