@@ -28,9 +28,18 @@ const DOCS = [
     h: [["How a change gets a name", "naming"], ["Which agents are named", "agents"], ["What stays Unknown", "unknown"], ["Autosave holds", "holds"], ["Keep or revert", "review"], ["The decisions loop", "decisions"], ["Install the hooks", "install"], ["By hand", "by-hand"], ["Remove them", "remove"], ["What a hook sends", "what-a-hook-sends"]] },
   { s: "Reference", t: "URL scheme", u: "/docs/url-scheme/", k: "dewline:// url link open export join",
     h: [["dewline://open", "open"], ["dewline://export", "export"], ["dewline://join", "join"], ["Path rules", "paths"], ["Errors", "errors"]] },
-  { s: "Technical", t: "Architecture", u: "/docs/architecture/", k: "appkit textkit swift rust core uniffi engine", h: [] },
-  { s: "Technical", t: "Performance", u: "/docs/performance/", k: "perf latency keystroke launch memory budgets measured", h: [] },
-  { s: "Technical", t: "Security and privacy", u: "/docs/security/", k: "privacy telemetry network vulnerability report", h: [] },
+  { s: "Technical", t: "Architecture", u: "/docs/architecture/", k: "appkit textkit swift rust core uniffi engine pulldown-cmark blake3 zstd syntect ratex mermaid sparkle loro iroh quick look",
+    h: [["The split", "the-split"], ["Rules the code keeps", "rules"], ["The editor", "editor"], ["Documents and saves", "documents"],
+      ["Parser", "parser"], ["Change engine and merge", "change-engine"], ["Compare-and-swap saves", "saves"], ["Snapshots", "snapshots"],
+      ["Path jail", "jail"], ["Highlighting, math and diagrams", "rendering"], ["Across the boundary", "boundary"],
+      ["An outside change, disk to screen", "outside-change"], ["Quick Look", "quick-look"], ["The dewline command", "command"],
+      ["Updates", "updates"], ["Collaboration", "collaboration"], ["Decision records", "decisions"]] },
+  { s: "Technical", t: "Performance", u: "/docs/performance/", k: "perf latency keystroke launch memory budgets measured perf.sh idle cpu dmg m4",
+    h: [["The run", "the-run"], ["Budgets", "budgets"], ["What each budget measures", "measures"], ["How perf.sh runs", "how-perf-sh-runs"],
+      ["The four reset budgets", "reset"], ["Where a keystroke goes", "keystroke"], ["Also measured", "also-measured"]] },
+  { s: "Technical", t: "Security and privacy", u: "/docs/security/", k: "privacy telemetry network vulnerability report account snapshots jail sandbox license fsl",
+    h: [["No account, no telemetry", "no-account"], ["What goes over the network", "network"], ["What stays on disk", "on-disk"],
+      ["Threats and controls", "threats"], ["The controls at work", "examples"], ["Reporting a vulnerability", "reporting"], ["License", "license"]] },
 ];
 
 const dialog = document.getElementById("search");

@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Security and privacy · Dewline docs</title>
+<meta name="description" content="What Dewline sends over the network, what it keeps on disk, the controls against hostile files and processes, and how to report a vulnerability.">
+<link rel="canonical" href="https://dewline.arkwerx.com/docs/security/">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#F7FBF9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#091110" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="/fonts/newsreader-var.v1.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/ibm-plex-sans-var-latin1.v3.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/styles.css">
+<link rel="stylesheet" href="/docs/docs.css">
+<link rel="stylesheet" href="/docs/technical.css">
+<script src="/docs/docs.js" defer></script>
+<script src="/docs/search.js" defer></script>
+</head>
+<body class="docs">
+<a class="skip" href="#main">Skip to content</a>
+<header class="dtop">
+  <div class="dtop-in">
+    <button type="button" class="menu" aria-controls="dnav" aria-expanded="false">Menu</button>
+    <a class="lockup" href="/" aria-label="Dewline home"><svg aria-hidden="true" focusable="false" viewBox="-8 -12 979.9 176">
+  <g transform="matrix(0.27316 0 0 0.27316 -43.71 -77.27)">
+    <path class="bead" d="M348.6 768A192 192 0 1 1 595.4 768Z"/>
+    <path class="ink" d="M640 312.9L768 288V768H640Z"/>
+    <path class="ink" d="M832 768H192A32 32 0 0 0 192 832H832Z"/>
+  </g>
+  <g transform="translate(239.56 0)">
+  <g class="ink">
+    <path d="M 80.7 71.3Q 80.7 62.1 74.7 56.5Q 68.7 50.8 59.4 50.8Q 51.0 50.8 45.0 55.6Q 39.0 60.5 35.8 70.3Q 32.7 80.2 32.7 95.3Q 32.7 109.7 35.7 118.9Q 38.8 128.1 45.1 132.4Q 51.3 136.7 60.8 136.7Q 68.1 136.7 74.4 134.3Q 80.6 131.8 86.2 125.9L 87.3 128.2Q 81.2 135.4 76.1 140.0Q 71.1 144.7 66.6 147.4Q 62.1 150.0 57.9 151.1Q 53.7 152.2 49.5 152.2Q 36.4 152.2 26.9 146.2Q 17.3 140.1 12.1 129.2Q 6.8 118.3 6.8 103.8Q 6.8 89.9 11.0 79.0Q 15.2 68.1 22.7 60.6Q 30.3 53.1 40.6 49.2Q 50.9 45.4 63.2 45.4Q 69.2 45.4 75.3 46.2Q 81.4 47.0 87.3 48.8Q 93.1 50.6 98.2 53.4L 80.7 55.5V 22.1Q 79.5 21.4 76.8 19.7Q 74.0 18.1 70.7 16.1Q 67.4 14.1 64.5 12.4V 10.3L 105.5 1.4H 106.4L 105.4 18.4V 137.9Q 106.3 138.3 108.2 139.2Q 110.1 140.1 112.4 141.1Q 114.7 142.2 116.9 143.2Q 119.2 144.3 120.8 145.0V 147.4L 82.5 153.0H 81.5L 80.7 137.7Z"/>
+    <path d="M 178.6 45.4Q 190.0 45.4 198.2 49.9Q 206.4 54.5 211.1 63.3Q 215.9 72.1 216.8 84.8H 150.0V 78.2H 204.3L 193.4 82.6Q 192.6 71.2 190.4 64.3Q 188.2 57.4 184.5 54.2Q 180.8 51.0 175.5 51.0Q 168.5 51.0 163.5 55.2Q 158.4 59.3 155.8 67.7Q 153.2 76.2 153.2 89.1Q 153.2 105.3 157.2 115.4Q 161.3 125.5 169.2 130.1Q 177.1 134.7 188.5 134.7Q 194.0 134.7 199.1 133.3Q 204.2 131.9 208.7 129.0Q 213.3 126.1 217.1 121.5L 219.0 122.9Q 212.5 133.9 205.9 140.3Q 199.4 146.7 192.2 149.5Q 185.0 152.2 176.4 152.2Q 162.7 152.2 151.9 146.3Q 141.2 140.3 135.1 128.8Q 128.9 117.3 128.9 100.7Q 128.9 85.8 134.7 73.2Q 140.5 60.6 151.6 53.0Q 162.7 45.4 178.6 45.4Z"/>
+    <path d="M 365.7 53.8 351.9 50.9V 47.6H 386.3V 50.9L 374.2 53.8L 346.0 152.0H 336.4L 299.9 70.1L 306.1 69.3L 273.6 152.0H 264.0L 233.6 54.8L 221.6 50.8V 47.6H 273.2V 50.9L 259.6 54.3L 281.3 128.2L 276.0 133.1L 306.1 45.3H 316.2L 352.1 127.0L 346.5 133.1Z"/>
+    <path d="M 425.3 144.0 438.2 147.2V 150.0H 387.8V 147.2L 400.7 144.0V 22.1Q 399.4 21.3 397.0 19.9Q 394.7 18.6 391.5 16.7Q 388.3 14.8 384.4 12.4V 10.3L 424.3 1.4H 425.3V 19.8Z"/>
+    <path d="M 484.0 44.5V 64.6V 144.1L 496.6 147.2V 150.0H 446.5V 147.2L 459.4 144.0V 67.3Q 458.3 66.4 456.3 64.9Q 454.2 63.4 451.6 61.4Q 448.9 59.3 445.8 56.9V 54.8L 483.0 44.5Z"/>
+    <path d="M 542.9 65.8V 144.1L 555.6 147.2V 150.0H 505.4V 147.2L 518.3 144.0V 67.3Q 516.7 66.0 513.7 63.6Q 510.7 61.2 504.8 56.9V 54.8L 542.0 44.5H 542.9ZM 570.8 147.2 583.5 144.1V 81.0Q 583.5 74.8 581.4 70.7Q 579.3 66.7 575.1 64.7Q 570.9 62.8 564.2 62.8Q 557.4 62.8 551.1 64.6Q 544.9 66.5 540.1 68.8L 539.1 66.8Q 546.8 60.0 552.5 55.8Q 558.2 51.6 562.7 49.4Q 567.1 47.2 571.3 46.4Q 575.4 45.6 580.3 45.6Q 594.7 45.6 601.4 53.4Q 608.1 61.2 608.1 77.3V 144.0L 621.0 147.2V 150.0H 570.8Z"/>
+    <path d="M 680.3 45.4Q 691.7 45.4 699.9 49.9Q 708.1 54.5 712.8 63.3Q 717.6 72.1 718.5 84.8H 651.7V 78.2H 706.0L 695.1 82.6Q 694.3 71.2 692.1 64.3Q 689.9 57.4 686.2 54.2Q 682.5 51.0 677.2 51.0Q 670.2 51.0 665.2 55.2Q 660.1 59.3 657.5 67.7Q 654.9 76.2 654.9 89.1Q 654.9 105.3 658.9 115.4Q 663.0 125.5 670.9 130.1Q 678.8 134.7 690.2 134.7Q 695.7 134.7 700.8 133.3Q 705.9 131.9 710.4 129.0Q 715.0 126.1 718.8 121.5L 720.7 122.9Q 714.2 133.9 707.6 140.3Q 701.1 146.7 693.9 149.5Q 686.7 152.2 678.1 152.2Q 664.4 152.2 653.6 146.3Q 642.9 140.3 636.8 128.8Q 630.6 117.3 630.6 100.7Q 630.6 85.8 636.4 73.2Q 642.2 60.6 653.3 53.0Q 664.4 45.4 680.3 45.4Z"/>
+  </g>
+  <circle class="ink" cx="470.1" cy="18.1" r="16.0"/>
+  </g>
+</svg></a>
+    <a class="dtop-label" href="/docs/">Docs</a>
+    <button type="button" class="search-open" aria-keyshortcuts="Meta+K /"><span>Search</span><kbd>⌘K</kbd></button>
+    <nav class="dtop-links" aria-label="Site">
+      <a href="https://github.com/ark-232/dewline/releases/latest">Download</a>
+      <a href="https://github.com/ark-232/dewline">Source</a>
+    </nav>
+  </div>
+</header>
+
+<div class="dshell">
+  <nav class="dnav" id="dnav" aria-label="Docs">
+    <div class="dnav-group">
+      <p class="dnav-title">Start</p>
+      <ul>
+        <li><a href="/docs/">Overview</a></li>
+        <li><a href="/docs/first-steps/">First steps</a></li>
+      </ul>
+    </div>
+    <div class="dnav-group">
+      <p class="dnav-title">Guide</p>
+      <ul>
+        <li><a href="/docs/editing/">Editing</a></li>
+        <li><a href="/docs/markdown/">Markdown</a></li>
+        <li><a href="/docs/files/">Files and saves</a></li>
+        <li><a href="/docs/collaboration/">Collaboration</a></li>
+        <li><a href="/docs/themes-and-fonts/">Themes and fonts</a></li>
+        <li><a href="/docs/keyboard/">Keyboard shortcuts</a></li>
+        <li><a href="/docs/export/">Export</a></li>
+      </ul>
+    </div>
+    <div class="dnav-group">
+      <p class="dnav-title">Reference</p>
+      <ul>
+        <li><a href="/docs/cli/">Command line</a></li>
+        <li><a href="/docs/mcp/">MCP server</a></li>
+        <li><a href="/docs/agents/">Agents and changes</a></li>
+        <li><a href="/docs/url-scheme/">URL scheme</a></li>
+      </ul>
+    </div>
+    <div class="dnav-group">
+      <p class="dnav-title">Technical</p>
+      <ul>
+        <li><a href="/docs/architecture/">Architecture</a></li>
+        <li><a href="/docs/performance/">Performance</a></li>
+        <li><a href="/docs/security/" aria-current="page">Security and privacy</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <main class="dmain" id="main">
+    <article class="prose">
+      <p class="eyebrow">Technical</p>
+      <h1>Security and privacy</h1>
+      <p class="lead">Dewline needs no account and sends no telemetry. This page lists every request the app makes over the network, what it keeps on disk, and the controls between your notes and a hostile file, process or peer.</p>
+
+      <h2 id="no-account">No account, no telemetry</h2>
+      <p>You never sign up or sign in. The code has no analytics, no usage reporting and no crash reporter. The app&#8217;s logs go to the macOS unified log on your Mac and nowhere else. Sparkle&#8217;s system profile is off, so an update check sends no hardware details.</p>
+
+      <h2 id="network">What goes over the network</h2>
+      <p>The app makes three kinds of request, each for a feature you can see. Nothing else in the code opens a connection.</p>
+      <dl>
+        <dt>Updates</dt>
+        <dd>Once a day, once the first-run line about updates has shown, and whenever you choose Check Now. The app asks <code>dewline.arkwerx.com/appcast.xml</code> for the feed and downloads an update from GitHub. Each request carries the user agent <code>Dewline</code>. Turn off the daily check in Settings › General › Updates. Debug and unsigned builds never contact the feed.</dd>
+        <dt>Fonts</dt>
+        <dd>Only when you install a font from the catalog in Settings › Fonts. Each file comes from <code>raw.githubusercontent.com</code>, google/fonts at one pinned commit, in an ephemeral session with no cookies and no cache. The file is pinned by URL, byte size and SHA-256, and a download that does not match is refused before it touches the disk.</dd>
+        <dt>Collaboration</dt>
+        <dd>Only while you share a file or join one. Edits and cursors go to the other Mac directly, or through n0&#8217;s relay, <code>use1-1.relay.n0.iroh.link</code>, when no direct path opens. The relay sees node ids, addresses and timing. The content is encrypted end to end.</dd>
+      </dl>
+      <p>Images in a note load from relative paths on disk only; an image given as a URL is never fetched. Links you click open in your browser.</p>
+
+      <h2 id="on-disk">What stays on disk</h2>
+      <dl>
+        <dt>Snapshots</dt>
+        <dd><code>~/Library/Application Support/dev.arkwerx.dewline/snapshots/</code>. Folders are <code>0700</code> and files <code>0600</code>. Each version is compressed with zstd, not encrypted. A snapshot is kept 30 days, or longer when it is pinned or among its file&#8217;s newest 50.</dd>
+        <dt>Decisions log</dt>
+        <dd><code>decisions.jsonl</code> in the snapshots folder: one line for each agent change you kept or reverted.</dd>
+        <dt>Control socket</dt>
+        <dd><code>~/Library/Application Support/dev.arkwerx.dewline/run/control.sock</code>, in a <code>0700</code> folder, itself <code>0600</code>. The app removes it when it quits.</dd>
+        <dt>Collaboration keys</dt>
+        <dd>Your login Keychain, service <code>dev.arkwerx.dewline.sync</code>: this Mac&#8217;s node key and each share&#8217;s document key, readable only while the Mac is unlocked and never synced to another device.</dd>
+        <dt>Inbox</dt>
+        <dd><code>~/Documents/Dewline/Inbox.md</code>, unless you choose another file. Every capture appends to it.</dd>
+        <dt>Shared copies</dt>
+        <dd><code>~/Documents/Dewline Shared/</code>, unless you choose another folder. A guest&#8217;s copy of a shared file goes here, and a file already there is never overwritten.</dd>
+      </dl>
+      <p>Files that may hold secrets are never snapshotted: any <code>.jsonl</code> file (agent transcripts), <code>.claude.json</code>, anything in a <code>file-history</code> folder, and <code>.json</code> or <code>.toml</code> files in a <code>.claude</code> or <code>.codex</code> folder.</p>
+      <aside class="callout caution">
+        <p class="callout-title">Caution</p>
+        <p>The collaboration keys sit in the login Keychain, so any app you allow to read them can (<a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0009-collaboration.md">0009</a>). The data-protection Keychain needs an entitlement and a provisioning profile that this build does not have yet.</p>
+      </aside>
+
+      <h2 id="threats">Threats and controls</h2>
+      <p>Each row names a control in the code and where it lives.</p>
+      <div class="table" tabindex="0" role="region" aria-label="Threats and the controls against them">
+        <table>
+          <thead><tr><th scope="col">Threat</th><th scope="col">Control</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Hostile Markdown in the editor</th><td>No JavaScript runs on a note anywhere. Mermaid and math render natively, off the main thread, capped at 50 KB of source, a 250 ms render and a 16 megapixel picture; a failed render shows the source. The parser and the merge are fuzzed. Highlighting skips lines over 16 KB or with over 2,000 scope changes. <span class="src">(<code>core/crates/ffi</code>, <code>core/fuzz</code>)</span></td></tr>
+            <tr><th scope="row">Hostile Markdown in an export</th><td>Raw HTML in the source is written as text. A <code>javascript:</code> link loses its target. The page carries a Content Security Policy that allows no script. PDF layout runs in a web view with page scripts off, no stored data and no navigation past the first page. <span class="src">(<code>core::export</code>, <code>Export.swift</code>)</span></td></tr>
+            <tr><th scope="row">Images that reach outside the folder</th><td>An export inlines an image only from inside the document&#8217;s folder, through the path jail, up to 20 MB, and only when its bytes are PNG, JPEG, GIF, WebP or SVG. <span class="src">(<code>core::export</code>)</span></td></tr>
+            <tr><th scope="row">A Finder preview of a hostile file</th><td>Quick Look runs as a sandboxed extension and returns static HTML with no script and no network access. Diagrams and math show as source, and no image is inlined. <span class="src">(<code>app/QuickLook</code>)</span></td></tr>
+            <tr><th scope="row">Path traversal and symlink swaps</th><td>One jail resolves a path with <code>realpath</code>, opens it from the root&#8217;s descriptor with <code>O_NOFOLLOW_ANY</code>, and checks the opened file is still inside. A property test covers mixes of dots, links and loops. <span class="src">(<code>core::jail</code>)</span></td></tr>
+            <tr><th scope="row">An agent over MCP</th><td>stdio only, no network listener. The server refuses a root that is your home folder or above it, inside <code>~/Library</code>, or holding <code>.ssh</code>. It serves only <code>.md</code>, <code>.markdown</code> and <code>.txt</code> files outside dot folders, reads at most 8 MB of a file, returns at most 200 hits and reads at most 20,000 files per search. Its one write appends to the inbox. <span class="src">(<code>cli/src/mcp.rs</code>)</span></td></tr>
+            <tr><th scope="row">Another process on the control socket</th><td>The socket sits in a folder only you can enter, and both ends check that the peer runs as your user. A request is one line of at most 16 KB, sent within 2 s, with at most 16 connections. An open request must name an absolute path to an existing regular file. Nothing that arrives writes a file: a hook&#8217;s claim carries ids, a path and BLAKE3 hashes, never content, and can only label a change. <span class="src">(<code>ControlSocket.swift</code>, <code>cli/src/control.rs</code>)</span></td></tr>
+            <tr><th scope="row">A crafted <code>dewline://</code> link</th><td>Every path goes through the jail: inside your home folder, never in <code>~/Library</code> or a <code>.ssh</code> folder. An export link writes only a file named for its format. <span class="src">(<code>SchemeLinks.swift</code>)</span></td></tr>
+            <tr><th scope="row">A tampered update</th><td>The feed and each archive are signed with EdDSA, and Sparkle checks the archive before it extracts it. Releases are signed with the ArkWerx Developer ID and notarized. Release notes render with JavaScript off. <span class="src">(<code>app/project.yml</code>, <code>Updates.swift</code>)</span></td></tr>
+            <tr><th scope="row">A stolen invite or a hostile collaborator</th><td>An invite admits one join attempt, and the host approves each one by name. Edits are sealed under the document key and signed by a member&#8217;s node key; anything else is dropped. Removing someone rotates the key. A guest&#8217;s Mac takes only a file name from the host, reduced to a bare name in the shared folder. <span class="src">(<code>core/crates/sync</code>, <a href="https://github.com/ark-232/dewline/blob/main/docs/decisions/0009-collaboration.md">0009</a>)</span></td></tr>
+            <tr><th scope="row">A writer racing your save</th><td>Saves are compare-and-swap against the bytes you last absorbed. A refused save writes your text to the file&#8217;s draft snapshot, never over the newer file. <span class="src">(<code>core::file</code>, <code>core::engine</code>)</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="examples">The controls at work</h2>
+      <h3 id="example-mcp">The MCP server&#8217;s roots</h3>
+      <p>Each refusal exits with status 1 before the server reads anything:</p>
+      <div class="code" data-lang="Shell">
+<pre tabindex="0"><code><span class="p">$ </span>cd ~
+<span class="p">$ </span>dewline mcp .
+dewline: .: the folder is your home folder or holds it
+<span class="p">$ </span>dewline mcp Library/Notes
+dewline: Library/Notes: the folder is inside ~/Library
+<span class="p">$ </span>dewline mcp server
+dewline: server: the folder holds .ssh</code></pre>
+      </div>
+      <p>Inside a served folder, a read that leaves the folder, follows a symlink out of it, or reaches into a dot folder returns an error result. Here <code>alias.md</code> is a symlink to a file one folder up:</p>
+      <div class="code" data-lang="JSON">
+<pre tabindex="0"><code>{"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"../secret.md: it is outside the folder"}],"isError":true}}
+{"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"alias.md: it is outside the folder"}],"isError":true}}
+{"jsonrpc":"2.0","id":4,"result":{"content":[{"type":"text","text":".git/config.md: only .md, .markdown and .txt files outside dot folders are served"}],"isError":true}}</code></pre>
+      </div>
+
+      <h3 id="example-export">Exporting a hostile note</h3>
+      <p>A note with a script tag, an image with an <code>onerror</code> handler and a <code>javascript:</code> link:</p>
+      <div class="code" data-lang="Markdown">
+<pre tabindex="0"><code># Hostile
+
+&lt;script&gt;alert(1)&lt;/script&gt;
+
+Text &lt;img src=x onerror=alert(2)&gt; here.
+
+[a link](javascript:alert(3))</code></pre>
+      </div>
+      <div class="code" data-lang="Shell">
+<pre tabindex="0"><code><span class="p">$ </span>dewline export hostile.md --to html -o hostile.html</code></pre>
+      </div>
+      <p>The page&#8217;s policy and body, as written:</p>
+      <div class="code" data-lang="HTML">
+<pre tabindex="0"><code>&lt;meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:"&gt;
+…
+&lt;h1&gt;Hostile&lt;/h1&gt;
+&lt;pre class="html"&gt;&amp;lt;script&amp;gt;alert(1)&amp;lt;/script&amp;gt;
+&lt;/pre&gt;
+&lt;p&gt;Text &amp;lt;img src=x onerror=alert(2)&amp;gt; here.&lt;/p&gt;
+&lt;p&gt;&lt;a&gt;a link&lt;/a&gt;&lt;/p&gt;</code></pre>
+      </div>
+
+      <h2 id="reporting">Reporting a vulnerability</h2>
+      <p>Report it privately through GitHub: open the repository&#8217;s <a href="https://github.com/ark-232/dewline/security">Security tab</a> and choose <strong>Report a vulnerability</strong>. Do not open a public issue or pull request for it.</p>
+      <ul>
+        <li>Include the Dewline version (Dewline › About Dewline), the macOS version, and the steps or a file that reproduce the problem.</li>
+        <li>Disclosure is coordinated over 90 days from the report. The fix ships and the advisory publishes within that window, sooner when the fix is ready. If 90 days pass without a fix, you are free to publish.</li>
+        <li>Reporters are credited by handle in the advisory and the release notes when they agree.</li>
+        <li>Only the latest release gets fixes. A security fix ships as a critical update through the signed feed, so the app shows it at once. It never restarts on its own.</li>
+      </ul>
+
+      <h2 id="license">License</h2>
+      <p>Dewline is free and source-available under the <a href="https://github.com/ark-232/dewline/blob/main/LICENSE.md">Functional Source License 1.1, Apache 2.0 future license</a> (FSL-1.1-ALv2). You may use, read and change it for anything except a competing product. Each release becomes Apache 2.0 two years after it ships. The open-source components it includes, and their licenses, are in <a href="https://github.com/ark-232/dewline/blob/main/THIRD_PARTY_NOTICES.md">THIRD_PARTY_NOTICES.md</a>, which also ships inside the app.</p>
+    </article>
+
+    <nav class="pager" aria-label="Previous and next page">
+      <a class="prev" href="/docs/performance/"><span>Previous</span><b>Performance</b></a>
+    </nav>
+  </main>
+
+  <aside class="dside">
+    <nav class="outline" aria-labelledby="outline-title"><p class="outline-title" id="outline-title">On this page</p></nav>
+  </aside>
+</div>
+
+<footer class="foot">
+  <div class="foot-in wrap">
+    <p>Free, source-available under <a class="text-link" href="https://github.com/ark-232/dewline/blob/main/LICENSE.md">FSL-1.1-ALv2</a>. Published by ArkWerx LLC.</p>
+    <nav aria-label="Project">
+      <a href="/">Home</a>
+      <a href="https://github.com/ark-232/dewline">Source</a>
+      <a href="https://github.com/ark-232/dewline/releases/latest">Releases</a>
+      <a href="https://github.com/ark-232/dewline/issues">Issues</a>
+      <a href="https://github.com/ark-232/dewline/blob/main/SECURITY.md">Security</a>
+    </nav>
+  </div>
+</footer>
+
+<dialog class="search" id="search" aria-label="Search the docs">
+  <div class="search-field" role="search">
+    <input id="search-q" type="search" placeholder="Search pages and headings" autocomplete="off" spellcheck="false"
+      role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="search-results" aria-label="Search the docs">
+    <button type="button" class="search-close" aria-label="Close search"><kbd>esc</kbd></button>
+  </div>
+  <ul class="search-results" id="search-results" role="listbox" aria-label="Results"></ul>
+  <p class="search-hint"><span><kbd>↑</kbd><kbd>↓</kbd> to move</span><span><kbd>↵</kbd> to open</span></p>
+</dialog>
+<p class="vh" aria-live="polite" id="copied"></p>
+</body>
+</html>
