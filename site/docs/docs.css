@@ -110,7 +110,7 @@ html { scroll-padding-top: calc(var(--top-h) + 1.25rem); }
 .prose strong { font-weight: 600; color: var(--ink); }
 .prose a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--slate); text-decoration-thickness: 1px; text-underline-offset: 0.25em; }
 .prose a:hover { text-decoration-color: var(--ink); }
-.prose a.btn { color: var(--paper); text-decoration: none; }
+.prose a.btn { color: var(--on-dawn); text-decoration: none; }
 .prose :not(pre) > code {
   padding: 0.125em 0.375em; border-radius: 0.3125rem; background: var(--code-bg);
   color: var(--ink); font-size: 0.875em; overflow-wrap: anywhere;
