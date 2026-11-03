@@ -382,7 +382,9 @@ struct JourneyTests {
         Self.claim(.turnEnd, vault.engine)
         let review = ReviewViewController(for: tab.window)
         _ = review.view
-        #expect(review.rows.count == 5)
+        // Four changed lines under plan.md, then the two notes changed while closed.
+        #expect(review.rows.count == 8)
+        guard case .closedHeading = review.rows[5] else { Issue.record("no closed heading"); return }
         if case .note(_, let byline) = review.rows[0] { #expect(byline.hasPrefix("Claude Code \u{00B7} ")) } else { Issue.record("no note heading") }
         guard case .change(let live, let first, let text) = review.rows[1] else { Issue.record("no change row"); return }
         let line = ReviewViewController.line(of: first, in: live, text: text)
@@ -409,7 +411,7 @@ struct JourneyTests {
         #expect(tab.textView.string == expected)
         #expect(!bar.shown)
         review.reload()
-        #expect(review.rows.isEmpty)
+        #expect(review.rows.count == 3)
         #expect(Review.count(claude, in: files) == (places: 0, files: 0))
         #expect(!Review.hasMarked(in: tab.window))
 
@@ -778,19 +780,10 @@ struct JourneyTests {
         let tab = try Tab(vault.url("plan.md"), engine: vault.engine)
         defer { tab.close() }
         let chain = Self.chain(from: tab.textView)
-        // The window that hosts the right pane, Share and the tab row answers these (ShellActions).
-        let shell: Set<Selector> = [
-            #selector(ShellActions.togglePreview(_:)), #selector(ShellActions.toggleAgent(_:)), #selector(ShellActions.toggleChanges(_:)),
-            #selector(ShellActions.shareNote(_:)), #selector(ShellActions.reopenClosedTab(_:)),
-        ]
         for (path, item) in Self.items(of: MainMenu.bar().main) {
             guard let action = item.action else { continue }
             let handlers: [AnyObject] = item.target.map { [$0 as AnyObject] } ?? chain
-            withKnownIssue("MainWindowController answers ShellActions once the right pane lands", isIntermittent: true) {
-                #expect(handlers.contains { $0.responds(to: action) }, "\(path) does nothing: no handler for \(action)")
-            } when: {
-                shell.contains(action)
-            }
+            #expect(handlers.contains { $0.responds(to: action) }, "\(path) does nothing: no handler for \(action)")
         }
         // New Tab reaches the tab's controller rather than stopping at a responder before it.
         #expect(chain.first { $0.responds(to: #selector(NSResponder.newWindowForTab(_:))) } === tab.controller)
