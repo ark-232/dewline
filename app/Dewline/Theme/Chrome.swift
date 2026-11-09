@@ -79,7 +79,7 @@ enum Chrome {
 /// Dewline's own 1.5 pt line glyphs, in place of SF Symbols, as template images that take their view's tint.
 @MainActor
 enum Glyph {
-    case sidebar, back, forward, up, down, share, close, disclosure, disclosed
+    case sidebar, back, forward, up, down, share, close, disclosure, disclosed, newNote, newFolder, collapseAll
 
     private static var cache: [String: NSImage] = [:]
 
@@ -124,6 +124,16 @@ enum Glyph {
                 line([(4.5, 2.75), (7.75, 6), (4.5, 9.25)])
             case .disclosed:
                 line([(2.75, 4.5), (6, 7.75), (9.25, 4.5)])
+            case .newNote:
+                line([(7.25, 2.75), (2.75, 2.75), (2.75, 13.25), (13.25, 13.25), (13.25, 8.75)])
+                line([(6.75, 9.25), (7, 7), (11.75, 2.25), (13.75, 4.25), (9, 9), (6.75, 9.25)])
+            case .newFolder:
+                line([(2.75, 12.75), (2.75, 3.25), (6.25, 3.25), (7.75, 5), (13.25, 5), (13.25, 12.75), (2.75, 12.75)])
+                line([(8, 7), (8, 11)])
+                line([(6, 9), (10, 9)])
+            case .collapseAll:
+                line([(4.5, 2.75), (8, 6.25), (11.5, 2.75)])
+                line([(4.5, 13.25), (8, 9.75), (11.5, 13.25)])
             }
             NSColor.black.setStroke()
             path.stroke()
@@ -400,9 +410,20 @@ final class DewMark: NSView {
     }
 }
 
+/// A 1 pt vertical line down a row at `x`: an indent guide. An active one marks a folder that holds the open note.
+struct RowGuide: Equatable {
+    let x: CGFloat
+    let active: Bool
+}
+
 /// A selected row: an ink wash at 6 pt radius. No hover, no system highlight. Cells that conform to `ChromeSelectable`
-/// hear about selection.
+/// hear about selection. Indent guides, when a row has them, run its full height under the wash: ink at 8% in light
+/// and 10% in dark, `ink3` when active.
 final class StationRowView: NSTableRowView {
+    var guides: [RowGuide] = [] {
+        didSet { if guides != oldValue { needsDisplay = true } }
+    }
+
     override var isSelected: Bool {
         didSet {
             guard isSelected != oldValue else { return }
@@ -417,7 +438,12 @@ final class StationRowView: NSTableRowView {
         set {}
     }
 
-    override func drawBackground(in dirtyRect: NSRect) {}
+    override func drawBackground(in dirtyRect: NSRect) {
+        for guide in guides {
+            (guide.active ? Chrome.color(.ink3) : Chrome.wash).setFill()
+            NSRect(x: guide.x - 0.5, y: bounds.minY, width: 1, height: bounds.height).fill()
+        }
+    }
 
     override func drawSelection(in dirtyRect: NSRect) {
         let rect = bounds.insetBy(dx: 6, dy: 0)

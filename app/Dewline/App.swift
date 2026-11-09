@@ -391,7 +391,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// File > New Folder, in the front window's folder or the notes folder.
     @objc func newFolder(_ sender: Any?) {
         do {
-            try FileActions.newFolder(in: frontFolder, undo: front?.window?.undoManager)
+            let url = try FileActions.newFolder(in: frontFolder, undo: front?.window?.undoManager)
+            front?.sidebar.renameNew(url)
         } catch {
             NSApp.presentError(error)
         }

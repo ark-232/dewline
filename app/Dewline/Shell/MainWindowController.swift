@@ -13,7 +13,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     let folder: Folder?
     /// The folder's Markdown files for Quick Open, shared with the folder's other tabs.
     let index: FolderIndex?
-    private let sidebar: SidebarViewController
+    let sidebar: SidebarViewController
     private let split = StationSplitController()
     private let toolbar = WindowToolbar()
     /// The editor column: the tab row, the page, the Keep bar and the status bar, top to bottom.
@@ -33,8 +33,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     /// Review's line for a finished agent turn; the Keep bar says it now, so it is never laid out.
     let finished = FinishedLine()
     private(set) var textView: EditorTextView?
-    private var outlineUpdate: Task<Void, Never>?
-    private var sectionUpdate: Task<Void, Never>?
+    private var linkUpdateAfterTyping: Task<Void, Never>?
     private var history = History() {
         didSet { updateNavigation() }
     }
@@ -111,7 +110,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         tabRow.tabs = tabs
         window.delegate = self
         sidebar.open = { [weak self] url, newTab in self?.open(url, newTab: newTab) }
-        sidebar.jump = { [weak self] heading in self?.jump(to: heading) }
         sidebar.reveal = { [weak self] url, match, newTab in self?.reveal(match, in: url, newTab: newTab) }
         pane.picked = { [weak self] tab in self?.tabs.tabs.forEach { $0.showPane(tab) } }
         NotificationCenter.default.addObserver(self, selector: #selector(updatePresence), name: Collaboration.changed, object: nil)
@@ -332,13 +330,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         document.undoManager = textView.styler.undoManager
         if let old = self.textView {
             NotificationCenter.default.removeObserver(self, name: NSText.didChangeNotification, object: old)
-            NotificationCenter.default.removeObserver(self, name: BlockMap.didParse, object: old.styler.map)
             NotificationCenter.default.removeObserver(self, name: NSView.boundsDidChangeNotification, object: old.enclosingScrollView?.contentView)
             NotificationCenter.default.removeObserver(self, name: NSTextView.didChangeSelectionNotification, object: old)
         }
         NotificationCenter.default.addObserver(self, selector: #selector(textChanged), name: NSText.didChangeNotification, object: textView)
         NotificationCenter.default.addObserver(self, selector: #selector(countWords), name: NSTextView.didChangeSelectionNotification, object: textView)
-        NotificationCenter.default.addObserver(self, selector: #selector(updateOutline), name: BlockMap.didParse, object: textView.styler.map)
         NotificationCenter.default.addObserver(self, selector: #selector(scrolled), name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
         self.textView = textView
         keepBar.attach(textView, live: document.live)
@@ -350,7 +346,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         updatePresence()
         changesChanged()
         if let url = document.fileURL { ReviewInbox.noteOpened(url) }
-        sidebar.show(document.fileURL, headings: outline(of: textView.textStorage!.mutableString, in: textView.styler.map))
+        sidebar.show(document.fileURL)
         markBrokenLinks()
         if let url = document.fileURL {
             Library.noteOpened(url)
@@ -726,17 +722,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
 
     private static let loadsMessage = "loads"
 
-    /// Lists the headings 300 ms after typing stops, or once a whole parse lands. The preview takes the text, and a
-    /// result shown until the next keystroke goes.
+    /// Checks links 300 ms after typing stops. The preview takes the text, and a result shown until the next
+    /// keystroke goes.
     @objc private func textChanged() {
         countWords()
         statusBar.typed()
         if !paneItem.isCollapsed, pane.tab == .preview { pane.preview.textChanged() }
-        outlineUpdate?.cancel()
-        outlineUpdate = Task { [weak self] in
+        linkUpdateAfterTyping?.cancel()
+        linkUpdateAfterTyping = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
-            self?.updateOutline()
             self?.markBrokenLinks()
         }
     }
@@ -770,22 +765,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         }
     }
 
-    @objc private func updateOutline() {
-        guard let textView else { return }
-        sidebar.updateOutline(outline(of: textView.textStorage!.mutableString, in: textView.styler.map))
-    }
-
-    /// The preview follows the page at once; the outline marks the section at the top 160 ms after scrolling stops.
+    /// The preview follows the page as it scrolls.
     @objc private func scrolled() {
         if !paneItem.isCollapsed, pane.tab == .preview { pane.preview.follow() }
-        sectionUpdate?.cancel()
-        sectionUpdate = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(160))
-            guard !Task.isCancelled, let self, let textView = self.textView, let scrollView = textView.enclosingScrollView else { return }
-            let top = NSPoint(
-                x: textView.textContainerOrigin.x + 4, y: max(textView.visibleRect.minY + scrollView.contentInsets.top + 8, textView.textContainerOrigin.y))
-            self.sidebar.markSection(at: textView.characterIndexForInsertion(at: top))
-        }
     }
 
     func windowWillClose(_ notification: Notification) {

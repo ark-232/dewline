@@ -218,7 +218,7 @@ extension MainWindowController {
 
     @objc func newFolderInFolder(_ sender: Any?) {
         guard let folder = (sender as? NSMenuItem)?.representedObject as? URL else { return }
-        perform { try FileActions.newFolder(in: folder, undo: self.window?.undoManager) }
+        perform { try self.sidebar.renameNew(FileActions.newFolder(in: folder, undo: self.window?.undoManager)) }
     }
 
     @objc func renameItem(_ sender: Any?) {

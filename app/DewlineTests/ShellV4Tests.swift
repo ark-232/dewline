@@ -3,7 +3,7 @@ import MdCore
 import Testing
 @testable import Dewline
 
-/// The main window as ux-v4 lays it out, built offscreen: the title, the tab row, the sidebar's folder row, the status
+/// The main window as ux-v4 lays it out, built offscreen: the title, the tab row, the sidebar's header, the status
 /// bar, the right pane's preview, Show Sidebar (B1) and restoring a place (B2).
 @MainActor @Suite(.serialized)
 struct ShellV4Tests {
@@ -92,14 +92,44 @@ struct ShellV4Tests {
         let outline = try #require(all(main.window!.contentView!).compactMap { $0 as? NSOutlineView }.first)
         for _ in 0..<200 where outline.numberOfRows < 3 { await settle(0.01) }
         let kinds = (0..<outline.numberOfRows).compactMap { (outline.item(atRow: $0) as? SidebarNode)?.kind }
-        guard case .root(let url)? = kinds.first else { Issue.record("The first row is not the folder"); return }
-        #expect(url.lastPathComponent == "Field Notes")
+        #expect(!kinds.contains { if case .root = $0 { true } else { false } })
+        #expect(all(main.sidebar.view).contains { ($0 as? NSTextField)?.stringValue == "Field Notes" })
         let names = kinds.compactMap { kind -> String? in
             if case .entry(let entry) = kind { return entry.url.lastPathComponent }
             if case .section(let title) = kind { return title }
             return nil
         }
         #expect(names == ["CLAUDE.md", "plan.md"])
+    }
+
+    /// The header's path names the folders down to the open note's, and those folders' rows say they hold it.
+    @Test func theHeaderShowsThePathToTheOpenNotesFolder() async throws {
+        Offscreen.install()
+        defer { Offscreen.uninstall() }
+        let root = try folder(["top.md": "# Top\n"])
+        let deep = root.appending(path: "Ideas/Q3", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: deep, withIntermediateDirectories: true)
+        try Data("# Plan\n".utf8).write(to: deep.appending(path: "plan.md"))
+        let main = MainWindowController(folder: Folder(root))
+        main.display(try document(deep.appending(path: "plan.md")))
+        main.showWindow(nil)
+        defer { close([main]) }
+        func all(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(all) }
+        func crumbs() -> [String] {
+            let path = all(main.sidebar.view).compactMap { $0 as? NSStackView }.first { $0.accessibilityLabel() == "Current folder" }
+            return path?.arrangedSubviews.compactMap { ($0 as? NSButton)?.title } ?? []
+        }
+        let outline = try #require(all(main.sidebar.view).compactMap { $0 as? NSOutlineView }.first)
+        func holds(_ name: String) -> Bool {
+            (0..<outline.numberOfRows).contains { row in
+                let cell = outline.view(atColumn: 0, row: row, makeIfNecessary: true) as? NSTableCellView
+                return cell?.textField?.stringValue == name && (cell?.accessibilityValue() as? String) == "Holds the open note"
+            }
+        }
+        for _ in 0..<200 where crumbs() != ["Ideas", "Q3"] || !holds("Q3") { await settle(0.01) }
+        #expect(crumbs() == ["Ideas", "Q3"])
+        #expect(holds("Ideas") && holds("Q3"))
+        #expect(!holds("top.md"))
     }
 
     @Test func showSidebarReachesTheSplitFromTheText() async throws {
