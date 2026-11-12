@@ -108,7 +108,7 @@ struct AgentPanelTests {
         #expect(chat.state == .ready)
     }
 
-    @Test func anEditTheAgentMadeItselfIsCalledUnmarked() async throws {
+    @Test func anEditTheAgentMadeItselfIsCalledUnnamed() async throws {
         let note = try Note("# Plan\n\nShip on Friday.\n")
         defer { note.close() }
         let chat = try await note.chat()

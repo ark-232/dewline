@@ -419,7 +419,9 @@ final class LiveFile {
             changes[conflict.change] = Change(
                 range: range, origin: landing.origin, marked: true, conflict: true, theirs: conflict.theirs)
         }
-        if landing.marked {
+        // git rewrites many open notes at once: only the key window's note announces and follows its landing.
+        let behind: Bool = if case .git = landing.origin { textView.window?.isKeyWindow != true } else { false }
+        if landing.marked, !behind {
             textView.marks.announce(landing.origin, places: edits.count + landing.conflicts.count)
             if let first = (edits.map(\.change) + landing.conflicts.map(\.change)).min(by: { changes[$0]!.range.location < changes[$1]!.range.location }) {
                 Review.landed(self, first)

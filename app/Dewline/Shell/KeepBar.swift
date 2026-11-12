@@ -25,7 +25,9 @@ final class KeepBar: NSView {
     private(set) var shown = false
     /// Every bar, so a text view's Keep and Revert keys find the change its bar shows.
     private static let bars = NSHashTable<KeepBar>.weakObjects()
+    /// The offer showed, or the doctor found hooks: no more checks this session.
     private static var offeredHooks = false
+    private static var checkingHooks = false
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -122,11 +124,16 @@ final class KeepBar: NSView {
         order = changes.sorted { $0.value.range.location < $1.value.range.location }.map(\.key)
         if focusedChange.map({ changes[$0] == nil }) ?? true { focusedChange = atCaret ?? order.first }
         if order.isEmpty { setUp.isHidden = true }
-        if !Self.offeredHooks, changes.values.contains(where: { $0.origin == .external }) {
-            Self.offeredHooks = true
+        if !Self.offeredHooks, !Self.checkingHooks, changes.values.contains(where: { $0.origin == .external }),
+            ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil
+        {
+            Self.checkingHooks = true
             Task { [weak self] in
                 let hooks = await Task.detached { HookStatus.read() }.value
-                guard !hooks.claude, !hooks.codex, !hooks.cursor, let self, !self.order.isEmpty else { return }
+                Self.checkingHooks = false
+                guard !hooks.claude, !hooks.codex, !hooks.cursor else { return Self.offeredHooks = true }
+                guard let self, self.pending.values.contains(where: { $0.origin == .external }) else { return }
+                Self.offeredHooks = true
                 self.setUp.isHidden = false
             }
         }

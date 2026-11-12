@@ -86,6 +86,8 @@ final class Updates: NSObject, NSMenuItemValidation, SPUUpdaterDelegate, SPUStan
     @ObservationIgnored private var toolObservers: [any NSObjectProtocol] = []
     /// Set while a quit is meant to open the bundle on disk once this process has gone.
     @ObservationIgnored private var relaunchesOnQuit = false
+    /// Set once a restart into an update or the bundle on disk starts its quit; the quit asks nothing.
+    @ObservationIgnored private(set) var restarting = false
     /// Where the running app's bundle lives; a test points it at a copy.
     @ObservationIgnored var bundleURL = Bundle.main.bundleURL
 
@@ -243,7 +245,12 @@ final class Updates: NSObject, NSMenuItemValidation, SPUUpdaterDelegate, SPUStan
     }
 
     private func restart(into version: String, then install: @escaping () -> Void) {
-        whenNoToolWaits(into: version) { [weak self] in self?.whenNotComposing(install) }
+        whenNoToolWaits(into: version) { [weak self] in
+            self?.whenNotComposing {
+                self?.restarting = true
+                install()
+            }
+        }
     }
 
     /// Runs `work` once no `dewline open --wait` client waits on an open document. Until then every window names the
@@ -322,6 +329,7 @@ final class Updates: NSObject, NSMenuItemValidation, SPUUpdaterDelegate, SPUStan
             NSApp.terminate(nil)
             // Back here only when the quit was canceled.
             relaunchesOnQuit = false
+            restarting = false
             NotificationCenter.default.removeObserver(self, name: NSApplication.willTerminateNotification, object: nil)
         }
     }
