@@ -357,7 +357,7 @@ pub struct ClaimFields {
 
 #[derive(Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum Update {
-    /// A late claim named a change already seen; a quiet one is now marked.
+    /// A late claim named a change already seen.
     Relabeled {
         doc: u64,
         change: u64,

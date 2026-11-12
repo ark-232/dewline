@@ -260,7 +260,7 @@ extension AgentChat {
                 + (update["content"]?.array ?? []).compactMap { $0["type"]?.string == "diff" ? $0["path"]?.string : nil }
             for path in paths where !tool.paths.contains(path) { tool.paths.append(path) }
             if let index { replace(index, .tool(tool)) } else { append(.tool(tool)) }
-            if tool.status == "completed", ["edit", "delete", "move"].contains(tool.kind) { checkUnmarked(tool) }
+            if tool.status == "completed", ["edit", "delete", "move"].contains(tool.kind) { checkUnnamed(tool) }
         case "plan":
             let steps = (update["entries"]?.array ?? []).map {
                 Step(content: $0["content"]?.string ?? "", status: $0["status"]?.string ?? "pending")
@@ -279,12 +279,12 @@ extension AgentChat {
         }
     }
 
-    /// An edit the agent made on disk itself, not through Dewline, lands unmarked: the transcript says so once.
-    private func checkUnmarked(_ tool: Tool) {
+    /// An edit the agent made on disk itself, not through Dewline, lands as another app's: the transcript says so once.
+    private func checkUnnamed(_ tool: Tool) {
         for path in tool.paths {
             guard let real = try? writes.resolve(path), !writes.written.contains(real) else { continue }
             let name = (real as NSString).lastPathComponent
-            let text = "\(spec.name) wrote \(name) itself, so the change isn't marked. Set Up hooks to mark it."
+            let text = "\(spec.name) wrote \(name) itself, so its change is marked as another app's. Set Up hooks to name it."
             guard !items.contains(.notice(text, .setUpHooks)) else { continue }
             append(.notice(text, .setUpHooks))
         }

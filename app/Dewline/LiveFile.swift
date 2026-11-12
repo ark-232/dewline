@@ -21,8 +21,7 @@ final class LiveFile {
     let engine: ChangeEngine
     let doc: UInt64
     private(set) var url: URL
-    /// Quiet changes until the next commit, since a late claim can relabel them; marked changes and conflicts until
-    /// they are decided.
+    /// Changes and conflicts until they are decided.
     private(set) var changes: [UInt64: Change] = [:] {
         didSet {
             guard oldValue != changes else { return }

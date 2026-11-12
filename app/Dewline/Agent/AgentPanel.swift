@@ -66,7 +66,7 @@ final class AgentPanelController: NSViewController {
     var defaults = UserDefaults.standard
     /// Where the agents come from: the login shell's supported ones and Settings' added ones.
     var lookUp: @MainActor (UserDefaults, _ again: Bool) async -> [AgentSpec] = { await AgentDiscovery.look(again: $1, defaults: $0) }
-    /// Set Up in a note about unmarked edits.
+    /// Set Up in a note about edits it can't name.
     var setUpHooks: () -> Void = { NSApp.sendAction(#selector(AppDelegate.setUpHooks(_:)), to: nil, from: nil) }
     private(set) var agents: [AgentSpec] = []
     /// One chat per agent and folder; each ends with the window.
