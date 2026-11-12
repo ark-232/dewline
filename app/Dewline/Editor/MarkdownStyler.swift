@@ -429,6 +429,9 @@ extension MarkdownStyler {
                 if reveal { revealed.insert(span.shifted(by: paragraphs.location)) }
                 mark(span, revealed: reveal || source, in: styled)
             }
+            for hit in Links.imports(in: styled.mutableString, range: lines, at: paragraphs.location, of: block) where !source {
+                styled.addAttributes(Links.style, range: hit.range)
+            }
             // An item's later lines hang under its text, past its marker.
             for item in block.spans where item.kind == .item && !source {
                 let item = item.shifted(by: offset)
