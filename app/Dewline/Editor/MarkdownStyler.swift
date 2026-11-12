@@ -432,7 +432,8 @@ extension MarkdownStyler {
         }
         blocks.style(styled, at: paragraphs.location, selection: source ? [whole] : selection)
         if !source {
-            tables.style(styled, at: paragraphs.location, selection: selection)
+            let container = textView?.textContainer
+            tables.style(styled, at: paragraphs.location, selection: selection, width: (container?.size.width ?? 0) - 2 * (container?.lineFragmentPadding ?? 0))
             tasks.style(styled, at: paragraphs.location, selection: selection)
             fences.style(styled, at: paragraphs.location, selection: selection, folds: folds)
             math.style(styled, at: paragraphs.location, selection: selection)
