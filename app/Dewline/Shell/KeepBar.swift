@@ -3,7 +3,8 @@ import MdCore
 
 /// Keep and Revert, along the bottom of the editor while the open note has changes waiting: "Claude changed 3
 /// places", "· 2 other notes" when other notes wait too, the pager "‹ 2 of 3 ›", then Revert and Keep. Keys show in
-/// tooltips only. Keep and Revert act on `focusedChange`, and so do ⌘↩ and ⌥⌘⌫.
+/// tooltips only. Keep and Revert act on `focusedChange`, and so do ⌘↩ and ⌥⌘⌫. The first bar in a session to hold
+/// another app's change, while no agent has hooks, offers hook setup until it hides.
 final class KeepBar: NSView {
     static let height: CGFloat = 36
 
@@ -14,6 +15,7 @@ final class KeepBar: NSView {
     private weak var live: LiveFile?
     private let summary = NSTextField(labelWithString: "")
     private let others = FlowButton("", style: .quiet) {}
+    private let setUp = FlowButton("Name this writer: Set up agent hooks\u{2026}", style: .plain) {}
     private let counter = NSTextField(labelWithString: "")
     private let previous = FlowButton("\u{2039}", style: .quiet) {}
     private let next = FlowButton("\u{203A}", style: .quiet) {}
@@ -23,6 +25,7 @@ final class KeepBar: NSView {
     private(set) var shown = false
     /// Every bar, so a text view's Keep and Revert keys find the change its bar shows.
     private static let bars = NSHashTable<KeepBar>.weakObjects()
+    private static var offeredHooks = false
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -38,6 +41,11 @@ final class KeepBar: NSView {
             NSApp.sendAction(#selector(ShellActions.toggleChanges(_:)), to: nil, from: self)
         }
         others.toolTip = "Changes (\u{21E7}\u{2318}R)"
+        setUp.handler = { [weak self] in
+            self?.setUp.isHidden = true
+            NSApp.sendAction(#selector(AppDelegate.setUpHooks(_:)), to: nil, from: self)
+        }
+        setUp.isHidden = true
         counter.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
         previous.handler = { [weak self] in self?.step(-1) }
         previous.toolTip = "Previous Change (\u{2303}\u{2318}\u{2191})"
@@ -49,7 +57,7 @@ final class KeepBar: NSView {
         revert.toolTip = "Revert (\u{2325}\u{2318}\u{232B})"
         let keep = FlowButton("Keep", style: .filled) { [weak self] in self?.decide(keep: true) }
         keep.toolTip = "Keep (\u{2318}\u{21A9})"
-        let left = NSStackView(views: [summary, others])
+        let left = NSStackView(views: [summary, others, setUp])
         left.spacing = 4
         left.setClippingResistancePriority(.defaultLow, for: .horizontal)
         let pager = NSStackView(views: [previous, counter, next])
@@ -113,6 +121,15 @@ final class KeepBar: NSView {
         let changes = pending
         order = changes.sorted { $0.value.range.location < $1.value.range.location }.map(\.key)
         if focusedChange.map({ changes[$0] == nil }) ?? true { focusedChange = atCaret ?? order.first }
+        if order.isEmpty { setUp.isHidden = true }
+        if !Self.offeredHooks, changes.values.contains(where: { $0.origin == .external }) {
+            Self.offeredHooks = true
+            Task { [weak self] in
+                let hooks = await Task.detached { HookStatus.read() }.value
+                guard !hooks.claude, !hooks.codex, !hooks.cursor, let self, !self.order.isEmpty else { return }
+                self.setUp.isHidden = false
+            }
+        }
         show(!order.isEmpty)
         refresh()
     }
