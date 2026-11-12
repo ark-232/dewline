@@ -841,6 +841,8 @@ private enum LoadsPopover {
             name.textColor = Chrome.color(.ink)
             name.lineBreakMode = .byTruncatingMiddle
             name.toolTip = row.tip
+            // A long path truncates in the middle instead of widening the popover past the screen.
+            name.widthAnchor.constraint(lessThanOrEqualToConstant: 320).isActive = true
             let detail = NSTextField(labelWithString: row.detail)
             detail.font = Chrome.status
             detail.textColor = Chrome.color(.ink2)
