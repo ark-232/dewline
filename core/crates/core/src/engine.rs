@@ -562,19 +562,7 @@ impl Engine {
         let serial = self.serial(doc).ok_or(EngineError::Closed)?;
         let _serial = lock(&serial);
         let (now, wall) = (self.clock)();
-        let (
-            path,
-            private,
-            gitdir,
-            head,
-            bom,
-            base,
-            base_hash,
-            disk,
-            to,
-            seen,
-            generation,
-        ) = {
+        let (path, private, gitdir, head, bom, base, base_hash, disk, to, seen, generation) = {
             let mut state = self.state();
             let State { docs, claims, .. } = &mut *state;
             let d = docs.get_mut(&doc).ok_or(EngineError::Closed)?;
@@ -2002,10 +1990,7 @@ mod tests {
         // The hooks report after the landing: the Unknown change is relabeled.
         fx.replace(&path, "a\nb\nc\n");
         let (late, buffer) = fx.land(doc, &buffer, 3);
-        assert_eq!(
-            (late.origin.clone(), late.marked),
-            (Origin::External, true)
-        );
+        assert_eq!((late.origin.clone(), late.marked), (Origin::External, true));
         fx.tick(4_000);
         let post = claim("PostToolUse", "s1", "t2", &path, "a\nb\nc\n", None);
         assert_eq!(fx.engine.claim(post).unwrap(), []);
