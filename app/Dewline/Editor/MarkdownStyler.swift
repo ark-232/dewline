@@ -429,10 +429,24 @@ extension MarkdownStyler {
                 if reveal { revealed.insert(span.shifted(by: paragraphs.location)) }
                 mark(span, revealed: reveal || source, in: styled)
             }
+            for hit in Links.imports(in: styled.mutableString, range: lines, at: paragraphs.location, of: block) where !source {
+                styled.addAttributes(Links.style, range: hit.range)
+            }
+            // An item's later lines hang under its text, past its marker.
+            for item in block.spans where item.kind == .item && !source {
+                let item = item.shifted(by: offset)
+                let paragraph = styled.mutableString.paragraphRange(for: NSRange(location: item.range.location, length: 0))
+                guard item.content.location <= NSMaxRange(paragraph) else { continue }
+                let style = (styled.attribute(.paragraphStyle, at: paragraph.location, effectiveRange: nil) as? NSParagraphStyle ?? .default).mutableCopy() as! NSMutableParagraphStyle
+                let marker = NSRange(location: paragraph.location, length: item.content.location - paragraph.location)
+                style.headIndent = style.firstLineHeadIndent + styled.attributedSubstring(from: marker).size().width
+                styled.addAttribute(.paragraphStyle, value: style, range: paragraph)
+            }
         }
         blocks.style(styled, at: paragraphs.location, selection: source ? [whole] : selection)
         if !source {
-            tables.style(styled, at: paragraphs.location, selection: selection)
+            let container = textView?.textContainer
+            tables.style(styled, at: paragraphs.location, selection: selection, width: (container?.size.width ?? 0) - 2 * (container?.lineFragmentPadding ?? 0))
             tasks.style(styled, at: paragraphs.location, selection: selection)
             fences.style(styled, at: paragraphs.location, selection: selection, folds: folds)
             math.style(styled, at: paragraphs.location, selection: selection)
@@ -493,7 +507,12 @@ extension MarkdownStyler {
 
     private func mark(_ span: SyntaxSpan, revealed: Bool, in storage: NSMutableAttributedString) {
         for marker in span.markers {
-            if revealed {
+            if span.kind == .item {
+                // A bullet keeps its room, so the text stays put when it shows, and the view draws a dot over it. A
+                // number stays as typed.
+                guard Self.isBullet(at: marker.location, in: storage.mutableString) else { continue }
+                storage.addAttribute(.foregroundColor, value: revealed ? ThemeStore.shared.color(showsSource ? .ink2 : .syntax) : NSColor.clear, range: marker)
+            } else if revealed {
                 let font = storage.attribute(.dewlineMarkerFont, at: marker.location, effectiveRange: nil)!
                 storage.addAttributes([.font: font, .foregroundColor: ThemeStore.shared.color(showsSource ? .ink2 : .syntax)], range: marker)
             } else {
@@ -551,14 +570,28 @@ extension MarkdownStyler {
             let styles = switch span.kind {
             case .heading: if case .heading = block.kind { true } else { false }
             case .quote, .callout: block.kind == .quote || block.kind == .callout
-            case .emphasis, .strong, .strikethrough, .inlineCode, .link: true
+            case .emphasis, .strong, .strikethrough, .inlineCode, .link, .item: true
             case .highlight, .comment, .footnoteReference, .wikiLink, .embed: true
             default: false
             }
             return styles && !block.rendered.contains { NSIntersectionRange($0.range, span.range).length > 0 }
         }.map { span in
-            span.kind == .callout ? SyntaxSpan(kind: .callout, range: span.range, content: NSRange(location: NSMaxRange(span.range), length: 0)) : span
+            switch span.kind {
+            case .callout: SyntaxSpan(kind: .callout, range: span.range, content: NSRange(location: NSMaxRange(span.range), length: 0))
+            // An item's marker shows with the caret beside it, not anywhere in the item.
+            case .item:
+                SyntaxSpan(
+                    kind: .item, range: NSRange(location: span.range.location, length: span.content.location - span.range.location),
+                    content: NSRange(location: span.content.location, length: 0)
+                )
+            default: span
+            }
         }
+    }
+
+    /// Whether the item marker at `index` is a `-`, `*` or `+`.
+    static func isBullet(at index: Int, in text: NSString) -> Bool {
+        [0x2D, 0x2A, 0x2B].contains(text.character(at: index))
     }
 
     private static func touches(_ span: SyntaxSpan, _ selection: [NSRange]) -> Bool {

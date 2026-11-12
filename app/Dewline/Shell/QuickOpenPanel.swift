@@ -856,15 +856,10 @@ final class QuickOpenPanel: NSPanel, NSWindowDelegate, NSTextFieldDelegate, NSTa
         return true
     }
 
-    /// Escape: back from a setting's values, else clears the query down to its prefix, else closes.
+    /// Escape: back from a setting's values, else closes.
     private func cancel() {
         if choices != nil { return leaveChoices() }
-        let query = query
-        let bare = query.first.map { ">@:#?".contains($0) } == true ? String(query.prefix(1)) : ""
-        guard query != bare else { return dismiss() }
-        setQuery(bare)
-        placeCaret()
-        refresh()
+        dismiss()
     }
 
     // MARK: Rows

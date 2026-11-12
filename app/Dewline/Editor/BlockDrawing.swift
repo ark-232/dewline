@@ -41,12 +41,20 @@ final class BlockLine: NSObject {
 }
 
 /// A table line's rules, in points from where its text starts: one between each pair of columns, and for the
-/// delimiter row one across them all.
+/// delimiter row one across them all. A row too wide for the text draws its cells, wrapped in their columns.
 struct TableRule: Equatable {
     let columns: [CGFloat]
     let width: CGFloat
     let across: Bool
     let color: NSColor
+    var cells: [TableCell] = []
+}
+
+/// A cell drawn at `x`, wrapped to `width`, both in points from where its row's text starts.
+struct TableCell: Equatable {
+    let x: CGFloat
+    let width: CGFloat
+    let text: NSAttributedString
 }
 
 /// A task item's box over its hidden `[ ]`, which starts `at` characters into the line.
@@ -146,6 +154,9 @@ final class BlockFragment: NSTextLayoutFragment {
             }
             if rule.across {
                 NSRect(x: left, y: point.y + (layoutFragmentFrame.height / 2).rounded() - 0.5, width: rule.width, height: 1).fill()
+            }
+            for cell in rule.cells {
+                cell.text.draw(with: NSRect(x: left + cell.x, y: point.y, width: cell.width, height: layoutFragmentFrame.height), options: .usesLineFragmentOrigin)
             }
             NSGraphicsContext.restoreGraphicsState()
         case .task(let task):

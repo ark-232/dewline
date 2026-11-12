@@ -402,17 +402,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             as? MainWindowController
     }
 
-    /// The front window's folder, else the notes folder.
+    /// The front window's folder, else the one Settings > General names for new notes.
     private var frontFolder: URL {
-        front?.folder?.url ?? FileActions.notesFolder
+        front?.folder?.url ?? Preferences.shared.newFileFolder
     }
 
-    /// File > New Note: "Untitled.md" in the front window's folder, or in the notes folder, open with the caret ready.
+    /// File > New Note: "Untitled.md" in `frontFolder`, open with the caret ready.
     /// Its first line names it once it saves.
     @objc func newNote(_ sender: Any?) {
         do {
             let url = try FileActions.newNote(in: frontFolder)
-            let controller = front?.folder != nil ? front : openFolder(at: FileActions.notesFolder)?.windowController as? MainWindowController
+            let controller = front?.folder != nil ? front : openFolder(at: Preferences.shared.newFileFolder)?.windowController as? MainWindowController
             guard let controller else { return }
             controller.open(url, newTab: true)
             if let document = NSDocumentController.shared.document(for: url) as? MarkdownDocument {
