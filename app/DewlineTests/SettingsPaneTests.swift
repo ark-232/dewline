@@ -17,7 +17,7 @@ struct SettingsPaneTests {
             let home = URL(filePath: "/Users/someone", directoryHint: .isDirectory)
             let preferences = Preferences(defaults: defaults, home: home)
             #expect(preferences.launchBehavior == .lastFiles)
-            #expect(preferences.newFileFolder.path == "/Users/someone/Documents")
+            #expect(preferences.newFileFolder.path == "/Users/someone/Documents/Dewline")
             #expect(!preferences.showsIgnored)
             #expect(preferences.attachments == .beside)
             #expect(preferences.inbox.path == "/Users/someone/Documents/Dewline/Inbox.md")
@@ -59,7 +59,7 @@ struct SettingsPaneTests {
             defaults.set("cloud", forKey: "DewlineAttachments")
             let preferences = Preferences(defaults: defaults, home: URL(filePath: "/Users/someone", directoryHint: .isDirectory))
             #expect(preferences.launchBehavior == .lastFiles)
-            #expect(preferences.newFileFolder.path == "/Users/someone/Documents")
+            #expect(preferences.newFileFolder.path == "/Users/someone/Documents/Dewline")
             #expect(preferences.attachments == .beside)
         }
     }

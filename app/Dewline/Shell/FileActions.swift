@@ -3,7 +3,7 @@ import AppKit
 /// Making, naming, moving and trashing notes and folders on disk, each one undoable. An open note follows its file.
 @MainActor
 enum FileActions {
-    /// ~/Documents/Dewline: Welcome.md and Inbox.md live here, and ⌘N uses it when no folder is open.
+    /// ~/Documents/Dewline: Welcome.md and Inbox.md live here, and new notes go here unless Settings > General says otherwise.
     static var notesFolder: URL {
         URL(filePath: NSHomeDirectory(), directoryHint: .isDirectory).appending(path: "Documents/Dewline", directoryHint: .isDirectory)
     }
