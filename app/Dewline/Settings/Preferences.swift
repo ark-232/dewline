@@ -92,7 +92,7 @@ final class Preferences {
             defaults.string(forKey: key).flatMap { $0.hasPrefix("/") ? URL(filePath: $0) : nil }
         }
         launchBehavior = defaults.string(forKey: "DewlineOnLaunch").flatMap(LaunchBehavior.init) ?? .lastFiles
-        newFileFolder = path("DewlineNewFileFolder") ?? documents
+        newFileFolder = path("DewlineNewFileFolder") ?? documents.appending(path: "Dewline", directoryHint: .isDirectory)
         showsIgnored = defaults.bool(forKey: "DewlineShowIgnored")
         attachments = defaults.string(forKey: "DewlineAttachments").flatMap(Attachments.init) ?? .beside
         inbox = path(Self.inboxKey) ?? documents.appending(path: "Dewline/Inbox.md")

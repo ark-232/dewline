@@ -3,7 +3,8 @@ import AppKit
 /// GFM tables laid out in place. Outside the selection a row hides its pipes, padding and extra cells, kerns its hidden
 /// characters so each cell starts at its column, and draws rules between the columns; the delimiter row hides and
 /// draws a rule under the head. A row the selection touches, or the head with its delimiter row, shows its source.
-/// Columns are as wide as their widest cell, and only widen while the selection stays in the table.
+/// Columns are as wide as their widest cell, and only widen while the selection stays in the table. A table wider than
+/// the text shrinks its columns toward their longest words, and its rows draw their cells wrapped in their columns.
 @MainActor
 final class Tables {
     enum Alignment {
@@ -58,17 +59,17 @@ final class Tables {
     }
 
     /// Lays out the tables in `styled`, a copy of the storage from `offset` on, for a selection in its coordinates.
-    func style(_ styled: NSMutableAttributedString, at offset: Int, selection: [NSRange]) {
+    func style(_ styled: NSMutableAttributedString, at offset: Int, selection: [NSRange], width: CGFloat) {
         let whole = NSRange(location: offset, length: styled.length)
         revealed = revealed.filter { !NSLocationInRange($0.location, whole) }
         for head in map.blocks(in: whole) where head.kind == .tableHead {
             let table = Table(head: head, rows: rows(after: head))
             guard NSMaxRange(table.range) <= NSMaxRange(whole) else { continue }
-            lay(table, in: styled, at: offset, selection: selection)
+            lay(table, in: styled, at: offset, selection: selection, width: width)
         }
     }
 
-    private func lay(_ table: Table, in styled: NSMutableAttributedString, at offset: Int, selection: [NSRange]) {
+    private func lay(_ table: Table, in styled: NSMutableAttributedString, at offset: Int, selection: [NSRange], width available: CGFloat) {
         guard let headToken = table.head.spans.first(where: { $0.kind == .tableHead })?.shifted(by: table.head.range.location - offset) else { return }
         let store = ThemeStore.shared
         let text = styled.mutableString
@@ -106,11 +107,18 @@ final class Tables {
         widths = widths.map { $0.rounded(.up) }
 
         let gap = (MarkdownStyler.bodyFont.pointSize * 1.5).rounded()
+        let room = available - gap * CGFloat(count - 1)
+        let wraps = available > 0 && widths.reduce(0, +) > room
+        if wraps {
+            let words = lines.map { line in line.cells.prefix(count).map { Self.longestWord(styled.attributedSubstring(from: $0.content)) } }
+            let least = (0..<count).map { column in min(words.map { $0.count > column ? $0[column] : 0 }.max() ?? 0, room / CGFloat(count)) }
+            widths = Self.fit(widths, least: least, into: room)
+        }
         var starts: [CGFloat] = [0]
         for width in widths.dropLast() { starts.append(starts.last! + width + gap) }
         let boundaries = starts.dropFirst().map { $0 - gap / 2 }
-        let rule = { (across: Bool) in
-            BlockLine(.table(TableRule(columns: boundaries, width: starts.last! + widths.last!, across: across, color: store.color(.quoteRule))))
+        let rule = { (across: Bool, cells: [TableCell]) in
+            BlockLine(.table(TableRule(columns: boundaries, width: starts.last! + widths.last!, across: across, color: store.color(.quoteRule), cells: cells)))
         }
 
         for (index, line) in lines.enumerated() {
@@ -121,6 +129,22 @@ final class Tables {
                 revealed.insert(NSRange(location: line.token.location + offset, length: line.token.length))
                 for part in outside.rangeView { styled.addAttribute(.foregroundColor, value: store.color(.syntax), range: NSRange(part)) }
                 if index == 0 { styled.addAttribute(.foregroundColor, value: store.color(.syntax), range: delimiter) }
+                continue
+            }
+            if index == 0, delimiter.length > 0 {
+                styled.addAttributes([.font: MarkdownStyler.hiddenFont, .foregroundColor: NSColor.clear], range: delimiter)
+                styled.addAttribute(.dewlineBlock, value: rule(true, []), range: text.paragraphRange(for: delimiter))
+            }
+            let paragraph = text.paragraphRange(for: NSRange(location: line.range.location, length: 0))
+            if wraps {
+                let cells = line.cells.prefix(count).enumerated().map { column, cell in
+                    let drawn = Self.cell(styled.attributedSubstring(from: cell.content), alignments.count > column ? alignments[column] : .left)
+                    return TableCell(x: starts[column], width: widths[column], text: drawn)
+                }
+                let height = cells.map { $0.text.boundingRect(with: NSSize(width: $0.width, height: .greatestFiniteMagnitude), options: .usesLineFragmentOrigin).height }
+                styled.addAttributes([.font: MarkdownStyler.hiddenFont, .foregroundColor: NSColor.clear], range: line.range)
+                styled.addAttribute(.paragraphStyle, value: store.paragraphStyle(lineHeight: max(height.max() ?? 0, store.bodyLineHeight).rounded(.up)), range: paragraph)
+                styled.addAttribute(.dewlineBlock, value: rule(false, cells), range: paragraph)
                 continue
             }
             for part in outside.rangeView {
@@ -150,12 +174,35 @@ final class Tables {
                 }
             }
             for (at, kern) in kerns { styled.addAttribute(.kern, value: kern, range: NSRange(location: at, length: 1)) }
-            styled.addAttribute(.dewlineBlock, value: rule(false), range: text.paragraphRange(for: NSRange(location: line.range.location, length: 0)))
-            if index == 0, delimiter.length > 0 {
-                styled.addAttributes([.font: MarkdownStyler.hiddenFont, .foregroundColor: NSColor.clear], range: delimiter)
-                styled.addAttribute(.dewlineBlock, value: rule(true), range: text.paragraphRange(for: delimiter))
-            }
+            styled.addAttribute(.dewlineBlock, value: rule(false, []), range: paragraph)
         }
+    }
+
+    /// Column widths that fill `room`: each column keeps its `least` and shares what is left in proportion to how far
+    /// its widest cell reaches past that.
+    private static func fit(_ widths: [CGFloat], least: [CGFloat], into room: CGFloat) -> [CGFloat] {
+        let spare = zip(widths, least).map { max($0 - $1, 0) }
+        let share = max(room - least.reduce(0, +), 0) / max(spare.reduce(0, +), 1)
+        return zip(least, spare).map { ($0 + $1 * min(share, 1)).rounded(.down) }
+    }
+
+    /// The width of a cell's longest word.
+    private static func longestWord(_ cell: NSAttributedString) -> CGFloat {
+        var widest: CGFloat = 0
+        (cell.string as NSString).enumerateSubstrings(in: NSRange(location: 0, length: cell.length), options: .byWords) { _, word, _, _ in
+            widest = max(widest, cell.attributedSubstring(from: word).size().width)
+        }
+        return widest.rounded(.up)
+    }
+
+    /// A cell's text, aligned for drawing in its column.
+    private static func cell(_ text: NSAttributedString, _ alignment: Alignment) -> NSAttributedString {
+        guard alignment != .left else { return text }
+        let aligned = NSMutableAttributedString(attributedString: text)
+        let style = ThemeStore.shared.paragraphStyle(lineHeight: ThemeStore.shared.bodyLineHeight).mutableCopy() as! NSMutableParagraphStyle
+        style.alignment = alignment == .center ? .center : .right
+        aligned.addAttribute(.paragraphStyle, value: style, range: NSRange(location: 0, length: aligned.length))
+        return aligned
     }
 
     /// The alignment of each column in a delimiter row: `:--` left, `:-:` center, `--:` right.

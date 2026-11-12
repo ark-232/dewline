@@ -21,6 +21,8 @@ final class SettingsWindowController: NSWindowController {
         for pane in SettingsPane.allCases {
             let host = NSHostingController(rootView: SettingsPaneView(pane: pane))
             host.sizingOptions = []
+            // The tab view controller titles the window from the selected pane's controller.
+            host.title = pane.rawValue
             host.view.frame.size = Self.size
             let item = NSTabViewItem(viewController: host)
             item.label = pane.rawValue
@@ -45,7 +47,6 @@ private final class SettingsTabs: NSTabViewController {
         super.tabView(tabView, didSelect: tabViewItem)
         if let name = tabViewItem?.identifier as? String {
             UserDefaults.standard.set(name, forKey: SettingsWindowController.paneKey)
-            view.window?.title = name
         }
     }
 }

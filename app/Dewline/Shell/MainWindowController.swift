@@ -30,6 +30,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     private let paneItem: NSSplitViewItem
     /// Whether the editor showed its source before Preview switched it there.
     private var sourceBeforePreview: Bool?
+    /// The right pane collapsed the sidebar to make room, so closing the pane brings it back.
+    private var paneHidSidebar = false
     /// Review's line for a finished agent turn; the Keep bar says it now, so it is never laid out.
     let finished = FinishedLine()
     private(set) var textView: EditorTextView?
@@ -565,13 +567,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         }
     }
 
-    /// Opens the right pane on `tab`. A window too narrow for the sidebar, a 480 pt page and the pane loses the sidebar.
+    /// Opens the right pane on `tab`. A window too narrow for the sidebar, a 480 pt page and the pane loses the sidebar
+    /// until the pane closes.
     func showPane(_ tab: RightPane.Tab) {
         let sidebarItem = split.splitViewItems[0]
         if paneItem.isCollapsed, !sidebarItem.isCollapsed, let window,
             window.frame.width < sidebar.view.frame.width + 480 + RightPane.width
         {
             sidebarItem.isCollapsed = true
+            paneHidSidebar = true
         }
         pane.select(tab)
         if paneItem.isCollapsed {
@@ -583,6 +587,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
 
     func hidePane() {
         paneItem.isCollapsed = true
+        if paneHidSidebar {
+            paneHidSidebar = false
+            split.splitViewItems[0].isCollapsed = false
+        }
         previewShown(false)
     }
 
@@ -833,6 +841,8 @@ private enum LoadsPopover {
             name.textColor = Chrome.color(.ink)
             name.lineBreakMode = .byTruncatingMiddle
             name.toolTip = row.tip
+            // A long path truncates in the middle instead of widening the popover past the screen.
+            name.widthAnchor.constraint(lessThanOrEqualToConstant: 320).isActive = true
             let detail = NSTextField(labelWithString: row.detail)
             detail.font = Chrome.status
             detail.textColor = Chrome.color(.ink2)

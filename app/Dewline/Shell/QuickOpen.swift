@@ -360,21 +360,29 @@ struct MenuCommand {
     ]
 
     /// Every enabled item in `menu` and its submenus, in menu order, after the menus validate their items against the
-    /// key window as the menu bar does when it opens. Separators, hidden items, section headers and `excluding` are left
-    /// out.
+    /// key window as the menu bar does when it opens. Separators, hidden items, section headers, `excluding` and what
+    /// macOS adds to the menu bar are left out.
     static func all(in menu: NSMenu, path: [String] = [], excluding: Selector? = nil) -> [MenuCommand] {
         menu.update()
         return menu.items.flatMap { item -> [MenuCommand] in
             if item.isSeparatorItem || item.isHidden || item.isSectionHeader { return [] }
             if let submenu = item.submenu {
+                guard submenu !== NSApp.servicesMenu else { return [] }
                 return all(in: submenu, path: path + [submenu.title.isEmpty ? item.title : submenu.title], excluding: excluding)
             }
-            guard item.isEnabled, let action = item.action, action != excluding, !item.title.isEmpty else { return [] }
+            guard item.isEnabled, let action = item.action, action != excluding, !item.title.isEmpty, !isSystem(item, action) else { return [] }
             let menus = path.joined(separator: " › ")
             let aliases = words[NSStringFromSelector(action)] ?? []
             let synonyms = ([menus] + aliases).joined(separator: " ")
             return [MenuCommand(item: item, path: menus, title: FuzzyText(item.title), synonyms: FuzzyText(synonyms), aliases: aliases)]
         }
+    }
+
+    /// AutoFill, Dictation, Emoji & Symbols, window tiling and Send Feedback: private actions, or targets in the system's
+    /// frameworks.
+    private static func isSystem(_ item: NSMenuItem, _ action: Selector) -> Bool {
+        NSStringFromSelector(action).hasPrefix("_") || action == #selector(NSApplication.orderFrontCharacterPalette(_:))
+            || item.target.map { Bundle(for: type(of: $0)).bundlePath.hasPrefix("/System/") } == true
     }
 
     /// Commands matching `query`, by title before synonyms, then by match quality, then in menu order; all of them for

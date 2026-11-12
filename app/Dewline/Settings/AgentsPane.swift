@@ -60,7 +60,7 @@ struct AgentsPane: View {
                 SettingsRow(label: "Codex", detail: "In Codex, type /hooks and trust Dewline\u{2019}s.") { installed(hooks.codex) }
                 SettingsRow(label: "Cursor") { installed(hooks.cursor) }
                 SettingsRow(label: "") {
-                    Button("Set Up\u{2026}") { NSApp.sendAction(Self.setUpHooks, to: nil, from: nil) }
+                    Button("Set Up All Hooks\u{2026}") { NSApp.sendAction(Self.setUpHooks, to: nil, from: nil) }
                         .fixedSize()
                         .help(hooks.version ?? "")
                 }

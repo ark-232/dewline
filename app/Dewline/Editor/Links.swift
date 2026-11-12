@@ -82,6 +82,23 @@ enum Links {
         text.removingPercentEncoding ?? text
     }
 
+    /// An agent file's import of a note, as CLAUDE.md writes `@AGENTS.md`: an `@` starting a word, then a relative path
+    /// ending in `.md`, captured.
+    private static let importPattern = try! NSRegularExpression(pattern: #"(?<![\w@/.])@([\w./-]+\.md)\b"#, options: [.caseInsensitive])
+
+    /// The imports in `range` of `text`, which starts at `offset` in the document, that lie outside `block`'s code and
+    /// links: each one's range and its path's, in `text`.
+    static func imports(in text: NSString, range: NSRange, at offset: Int, of block: BlockMap.Block) -> [(range: NSRange, path: NSRange)] {
+        guard block.kind == .paragraph || block.kind == .item, text.range(of: "@", range: range).location != NSNotFound else { return [] }
+        let skipped = block.spans.filter { [.inlineCode, .fencedCode, .link].contains($0.kind) }.map { $0.shifted(by: block.range.location - offset).range }
+        let lines = text.substring(with: range)
+        return importPattern.matches(in: lines, range: NSRange(location: 0, length: (lines as NSString).length)).compactMap { match in
+            let found = NSRange(location: match.range.location + range.location, length: match.range.length)
+            let path = NSRange(location: match.range(at: 1).location + range.location, length: match.range(at: 1).length)
+            return skipped.contains { NSIntersectionRange($0, found).length > 0 } ? nil : (found, path)
+        }
+    }
+
     @MainActor private static var underlines: [NSColor: NSColor] = [:]
 
     /// A link's and a wikilink's look: the note's ink, a thin underline in the accent at 45% (60% in dark), and a tip
@@ -119,12 +136,20 @@ extension EditorTextView {
         }.last { kinds($0.kind) && NSLocationInRange(index, $0.range) }
     }
 
-    /// Follows the link, wikilink, embed, footnote or tag under `point`; false when there is none.
+    /// Follows the link, wikilink, embed, footnote, tag or import under `point`; false when there is none.
     func follow(at point: NSPoint) -> Bool {
-        guard let index = character(at: point), let span = span(at: index, { kind in
+        guard let index = character(at: point) else { return false }
+        let text = textStorage!.mutableString
+        if let block = styler.map.blocks(in: NSRange(location: index, length: 0)).first,
+            let hit = Links.imports(in: text, range: text.lineRange(for: NSRange(location: index, length: 0)), at: 0, of: block)
+                .first(where: { NSLocationInRange(index, $0.range) })
+        {
+            follow(Links.target(of: text.substring(with: hit.path), from: documentFolder))
+            return true
+        }
+        guard let span = span(at: index, { kind in
             [.link, .wikiLink, .embed, .footnoteReference, .footnoteDefinition, .tag].contains(kind)
         }) else { return false }
-        let text = textStorage!.mutableString
         switch span.kind {
         case .link:
             guard let destination = destination(of: span) else { return false }
