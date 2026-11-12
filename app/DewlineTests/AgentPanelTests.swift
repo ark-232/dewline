@@ -108,13 +108,13 @@ struct AgentPanelTests {
         #expect(chat.state == .ready)
     }
 
-    @Test func anEditTheAgentMadeItselfIsCalledUnmarked() async throws {
+    @Test func anEditTheAgentMadeItselfIsCalledUnnamed() async throws {
         let note = try Note("# Plan\n\nShip on Friday.\n")
         defer { note.close() }
         let chat = try await note.chat()
         defer { chat.end() }
         await chat.send("self-write", note: note.url, selection: nil)
-        #expect(chat.items.last == .notice("Fake wrote plan.md itself, so the change isn't marked. Set Up hooks to mark it.", .setUpHooks))
+        #expect(chat.items.last == .notice("Fake wrote plan.md itself, so its change is marked as another app's. Set Up hooks to name it.", .setUpHooks))
     }
 
     @Test func aCrashOffersStartAgain() async throws {

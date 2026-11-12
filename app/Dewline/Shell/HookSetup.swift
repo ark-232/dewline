@@ -24,7 +24,7 @@ enum HookSetup {
         }
     }
 
-    /// Settings > Agents > Set Up…, and the status bar's Set Up: a sheet on `window` naming each file, then the run.
+    /// Settings > Agents > Set Up…, and the Keep bar's offer: a sheet on `window` naming each file, then the run.
     static func install(from window: NSWindow?, command: URL = command(), done: @escaping @MainActor (Bool) -> Void = { _ in }) {
         Task {
             let report = await run(command, ["doctor"], answers: 0)

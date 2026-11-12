@@ -31,6 +31,8 @@ struct HookStatus: Equatable, Sendable {
         process.standardError = FileHandle.nullDevice
         process.standardInput = FileHandle.nullDevice
         guard (try? process.run()) != nil else { return HookStatus(claude: false, codex: false, onPath: onPath) }
+        // A doctor that hangs reads as no hooks after 2 s.
+        DispatchQueue.global().asyncAfter(deadline: .now() + 2) { if process.isRunning { process.terminate() } }
         let lines = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).split(separator: "\n")
         process.waitUntilExit()
         func installed(_ agent: String) -> Bool {

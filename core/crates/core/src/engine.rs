@@ -163,7 +163,7 @@ pub struct Landing {
     pub id: LandingId,
     pub version: u64,
     pub origin: Origin,
-    /// False for a quiet base: no marks, the quiet line instead.
+    /// Every landing is marked; a byte-identical write never lands.
     pub marked: bool,
     /// Whether the buffer was the base, so the landed buffer is the file.
     pub clean: bool,
@@ -247,7 +247,7 @@ pub enum Decision {
 /// What a claim changed, for Swift to act on.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Update {
-    /// A late claim named a change already seen; a quiet one becomes marked.
+    /// A late claim named a change already seen.
     Relabeled {
         doc: DocId,
         change: ChangeId,
@@ -321,7 +321,6 @@ struct Doc {
     path: PathBuf,
     /// Transcripts, `file-history/` and agent settings: never snapshotted.
     private: bool,
-    agent_file: bool,
     gitdir: Option<PathBuf>,
     /// HEAD when the document opened or last took a git landing.
     head: Option<String>,
@@ -435,7 +434,6 @@ impl Engine {
             opened: path.to_owned(),
             private: private(path) || private(&real),
             path: real.clone(),
-            agent_file,
             gitdir: gitdir.clone(),
             head,
             read_only,
@@ -564,20 +562,7 @@ impl Engine {
         let serial = self.serial(doc).ok_or(EngineError::Closed)?;
         let _serial = lock(&serial);
         let (now, wall) = (self.clock)();
-        let (
-            path,
-            private,
-            agent_file,
-            gitdir,
-            head,
-            bom,
-            base,
-            base_hash,
-            disk,
-            to,
-            seen,
-            generation,
-        ) = {
+        let (path, private, gitdir, head, bom, base, base_hash, disk, to, seen, generation) = {
             let mut state = self.state();
             let State { docs, claims, .. } = &mut *state;
             let d = docs.get_mut(&doc).ok_or(EngineError::Closed)?;
@@ -603,7 +588,6 @@ impl Engine {
             (
                 d.path.clone(),
                 d.private,
-                d.agent_file,
                 d.gitdir.clone(),
                 d.head.clone(),
                 d.bom,
@@ -681,14 +665,6 @@ impl Engine {
         if origin != Origin::External && !private {
             self.store.relabel(&path, &to, UNKNOWN, &origin.label())?;
         }
-        let quiet = !dirty
-            && !unmerged
-            && match &origin {
-                Origin::External => !agent_file,
-                Origin::Git { .. } => true,
-                Origin::Agent { .. } | Origin::User | Origin::Collaborator { .. } => false,
-            };
-
         let (edits, covering, conflicts) = if unmerged && buffer != theirs {
             let (start, end, theirs) = differing(buffer, &theirs);
             let card = Conflict { start, end, theirs };
@@ -709,7 +685,7 @@ impl Engine {
         let change = |id: u64, kind| Change {
             id: ChangeId(id),
             origin: origin.clone(),
-            marked: !quiet,
+            marked: true,
             from: base_hash,
             to,
             seen,
@@ -748,7 +724,7 @@ impl Engine {
             id: LandingId(ids[0]),
             version,
             origin: origin.clone(),
-            marked: !quiet,
+            marked: true,
             clean: !dirty,
             time: wall,
             edits: landed_edits,
@@ -1313,7 +1289,6 @@ impl Engine {
         let mut state = self.state();
         let d = state.docs.get_mut(&doc).ok_or_else(closed)?;
         d.private = private(to) || private(&real);
-        d.agent_file = self.agents.matches(to) || self.agents.matches(&real);
         d.opened = to.to_owned();
         d.path = real;
         if gitdir != d.gitdir {
@@ -1638,7 +1613,7 @@ mod tests {
     }
 
     #[test]
-    fn an_outside_write_to_a_clean_buffer_takes_a_quiet_base() {
+    fn an_outside_write_to_a_clean_buffer_lands_marked_as_unknown() {
         let fx = fixture();
         let path = fx.file("notes.md", "# Notes\n\nOne.\n");
         let (doc, text) = opened(&fx.engine, &path);
@@ -1651,7 +1626,7 @@ mod tests {
         let (landing, buffer) = fx.land(doc, &text, 1);
         assert_eq!(
             (landing.origin.clone(), landing.marked, landing.clean),
-            (Origin::External, false, true)
+            (Origin::External, true, true)
         );
         assert_eq!(buffer, "# Notes\n\nOne. Two.\n");
         assert!(fx.engine.unchanged(doc, &buffer).unwrap());
@@ -2012,13 +1987,10 @@ mod tests {
             ("a\nb\n".to_owned(), "claude:s1".to_owned())
         );
 
-        // The hooks report after the landing: the quiet change is relabeled.
+        // The hooks report after the landing: the Unknown change is relabeled.
         fx.replace(&path, "a\nb\nc\n");
         let (late, buffer) = fx.land(doc, &buffer, 3);
-        assert_eq!(
-            (late.origin.clone(), late.marked),
-            (Origin::External, false)
-        );
+        assert_eq!((late.origin.clone(), late.marked), (Origin::External, true));
         fx.tick(4_000);
         let post = claim("PostToolUse", "s1", "t2", &path, "a\nb\nc\n", None);
         assert_eq!(fx.engine.claim(post).unwrap(), []);
@@ -2150,7 +2122,7 @@ mod tests {
     }
 
     #[test]
-    fn git_writes_land_quiet_and_named_and_an_unmerged_path_opens_a_card() {
+    fn git_writes_land_marked_and_named_and_an_unmerged_path_opens_a_card() {
         let fx = fixture();
         let repo = fx.root.join("repo");
         let path = fx.file("repo/CLAUDE.md", "base\n");
@@ -2175,12 +2147,12 @@ mod tests {
         };
         assert_eq!(
             (landing.origin, landing.marked),
-            (switched, false),
-            "git is quiet, even on an agent file"
+            (switched, true),
+            "git is marked"
         );
         assert_eq!(fx.origins(&path)[1].1, "git:Switched branch");
 
-        // An unknown write to an agent file is marked (D23).
+        // An unknown write is marked (D23).
         fx.tick(1_000);
         fx.replace(&path, "theirs\nunknown\n");
         let (landing, buffer) = fx.land(doc, &buffer, 2);
@@ -2262,7 +2234,7 @@ mod tests {
         assert_eq!(fx.engine.snapshots(doc).unwrap().len(), 2);
         fx.replace(&to, "three\n");
         let (landing, _) = fx.land(doc, "two\n", 2);
-        assert!(landing.marked, "an agent file now");
+        assert!(landing.marked, "a moved file's outside write is marked");
 
         fs::remove_file(&to).unwrap();
         let fifo = std::ffi::CString::new(to.as_os_str().as_encoded_bytes()).unwrap();

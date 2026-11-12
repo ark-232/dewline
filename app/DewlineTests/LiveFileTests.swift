@@ -54,19 +54,19 @@ struct LiveFileTests {
         try await until { (try? String(contentsOf: file.url, encoding: .utf8)) == "# Plan\n\nShip on Monday.\n" }
     }
 
-    @Test func aLateClaimMarksAQuietLanding() async throws {
+    @Test func aLateClaimNamesAnUnknownLanding() async throws {
         let file = try OpenFile("# Plan\n")
         defer { file.close() }
         let after = "# Plan\n\nAgent note.\n"
         try Data(after.utf8).write(to: file.url)
         await file.live.refresh()
         #expect(file.textView.string == after)
-        #expect(file.live.changes.values.allSatisfy { !$0.marked })
+        #expect(!file.live.changes.isEmpty && file.live.changes.values.allSatisfy { $0.marked && $0.origin == .external })
         let use = { (hash: String, declared: String?) in
             ControlSocket.Claim.ToolUse(id: "toolu_1", tool: .write, path: file.realpath, hash: hash, declared: declared)
         }
         file.textView.marks.relayout()
-        #expect(file.textView.marks.painted.isEmpty)
+        #expect(!file.textView.marks.painted.isEmpty)
         file.claim(.preToolUse(use(Self.hex("# Plan\n"), Self.hex(after))))
         file.claim(.postToolUse(use(Self.hex(after), nil)))
         try await until { file.live.changes.values.contains { $0.marked && $0.origin == .agent(.claude, session: "s1") } }
