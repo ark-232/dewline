@@ -158,6 +158,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Marks don't outlive the app, so quitting with undecided changes asks first: Keep All quits with the text as it
+    /// stands, Review cancels the quit and shows the first change.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        let waiting = NSDocumentController.shared.documents.compactMap { ($0 as? MarkdownDocument)?.live }
+            .filter { $0.changes.values.contains(where: \.marked) }
+        guard !isTestHost, let file = waiting.first else { return .terminateNow }
+        let names = Set(waiting.flatMap(\.changes.values).filter(\.marked).map { EarlierVersions.writer($0.origin) }).sorted()
+        let others = names.count - 1
+        let alert = NSAlert()
+        alert.messageText = "Keep all changes from \(names[0])" + (others == 0 ? "?" : " and \(others) \(others == 1 ? "other" : "others")?")
+        alert.informativeText = "Changes you haven\u{2019}t kept or reverted aren\u{2019}t marked after Dewline quits."
+        alert.addButton(withTitle: "Keep All")
+        alert.addButton(withTitle: "Review")
+        guard alert.runModal() == .alertSecondButtonReturn else { return .terminateNow }
+        if let first = file.changes.filter(\.value.marked).min(by: { $0.value.range.location < $1.value.range.location }) {
+            file.reveal(first.key, caret: true)
+        }
+        return .terminateCancel
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         control?.stop()
         if !isTestHost { MainWindowController.session().save(to: defaults) }
