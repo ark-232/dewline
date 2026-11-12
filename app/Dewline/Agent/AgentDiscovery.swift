@@ -24,11 +24,9 @@ enum AgentDiscovery {
         let signIn: String
     }
 
-    /// Gemini CLI speaks ACP itself; Claude Code and Codex speak it through adapters (agentclientprotocol.com).
+    /// In the order the panel prefers them. Claude Code and Codex speak ACP through adapters (agentclientprotocol.com);
+    /// Gemini CLI speaks it itself.
     nonisolated static let known = [
-        Known(
-            spec: AgentSpec(name: "Gemini CLI", command: "gemini", arguments: ["--acp"]), commands: ["gemini"],
-            install: "npm install -g @google/gemini-cli", signIn: "gemini"),
         Known(
             spec: AgentSpec(name: "Claude Code", command: "claude-agent-acp", arguments: []),
             commands: ["claude-agent-acp", "claude-code-acp"],
@@ -36,6 +34,9 @@ enum AgentDiscovery {
         Known(
             spec: AgentSpec(name: "Codex", command: "codex-acp", arguments: []), commands: ["codex-acp"],
             install: "npm install -g @agentclientprotocol/codex-acp", signIn: "codex"),
+        Known(
+            spec: AgentSpec(name: "Gemini CLI", command: "gemini", arguments: ["--acp"]), commands: ["gemini"],
+            install: "npm install -g @google/gemini-cli", signIn: "gemini"),
     ]
 
     private static let addedKey = "DewlineAgentPanelAgents"

@@ -147,8 +147,8 @@ struct AgentPanelTests {
         let (path, specs) = AgentDiscovery.parse("/opt/homebrew/bin:/usr/bin:/bin\n/opt/homebrew/bin/gemini\n/Users/me/.npm/bin/claude-code-acp\n")
         #expect(path == "/opt/homebrew/bin:/usr/bin:/bin")
         #expect(specs == [
-            AgentSpec(name: "Gemini CLI", command: "/opt/homebrew/bin/gemini", arguments: ["--acp"]),
             AgentSpec(name: "Claude Code", command: "/Users/me/.npm/bin/claude-code-acp", arguments: []),
+            AgentSpec(name: "Gemini CLI", command: "/opt/homebrew/bin/gemini", arguments: ["--acp"]),
         ])
         #expect(AgentDiscovery.parse("").specs.isEmpty)
     }
@@ -241,6 +241,8 @@ struct AgentPanelTests {
         let panel = AgentPanelController(context: context, window: nil)
         panel.defaults = defaults
         panel.lookUp = { _, _ in agents }
+        // A folder's first open starts nothing, so these start as if the first agent was used here before.
+        if let first = agents.first { AgentDiscovery.remember(first.name, in: note.files, defaults: defaults) }
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 380, height: 620), styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentViewController = panel

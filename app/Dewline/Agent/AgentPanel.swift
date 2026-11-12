@@ -256,14 +256,23 @@ extension AgentPanelController {
 extension AgentPanelController {
     // MARK: Agents and chats
 
-    /// First open: finds the agents, then starts the one last used in this folder, else the first.
+    /// First open: finds the agents, then starts the one last used in this folder. Otherwise it offers the first and
+    /// starts nothing until asked, since an agent found on the PATH may not be signed in.
     func appear(again: Bool = false) async {
         agents = await lookUp(defaults, again)
         popup.removeAllItems()
         popup.addItems(withTitles: agents.map(\.name))
         guard !agents.isEmpty else { return showEmpty() }
         let last = context.folder().flatMap { AgentDiscovery.last(in: $0, defaults: defaults) }
-        let spec = agents.first { $0.name == last } ?? agents[0]
+        guard let spec = agents.first(where: { $0.name == last }) else {
+            chat = nil
+            empty.isHidden = true
+            for view in [scroll, chips, inputBox] { view?.isHidden = false }
+            popup.isHidden = false
+            input.isEditable = false
+            let name = agents[0].name
+            return show(nil, message: "Chat with \(name) about this note. Its edits show up marked in the note.", action: ("Start \(name)", #selector(pickAgent)))
+        }
         await use(spec)
     }
 
