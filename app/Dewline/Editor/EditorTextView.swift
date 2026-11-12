@@ -204,7 +204,7 @@ final class EditorTextView: CaretTextView {
     }
 
     /// Draws the fold disclosures, code wells, callouts, each quote's rule at the column's left edge (a callout's well
-    /// stands alone), and inline math.
+    /// stands alone), list bullets, and inline math.
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
         drawDisclosures(in: rect)
@@ -225,7 +225,27 @@ final class EditorTextView: CaretTextView {
             let bottom = line(at: max(NSMaxRange(range) - 1, range.location))
             NSRect(x: textContainerOrigin.x + (textContainer?.lineFragmentPadding ?? 0), y: top.minY, width: 2, height: bottom.maxY - top.minY).fill()
         }
+        drawBullets(in: visible, line: line(at:))
         drawInlineMath(in: visible, line: line(at:))
+    }
+
+    /// Draws a dot over each hidden `-`, `*` or `+` item marker in `visible`.
+    private func drawBullets(in visible: NSRange, line: (Int) -> NSRect) {
+        let storage = textStorage!
+        for block in styler.map.blocks(in: visible) {
+            for item in block.spans where item.kind == .item {
+                let at = block.range.location + item.range.location
+                guard NSLocationInRange(at, visible), MarkdownStyler.isBullet(at: at, in: storage.mutableString),
+                    storage.attribute(.foregroundColor, at: at, effectiveRange: nil) as? NSColor == NSColor.clear,
+                    let font = storage.attribute(.font, at: at, effectiveRange: nil) as? NSFont, font.pointSize > 1,
+                    let baseline = baseline(at: at)
+                else { continue }
+                let dot = NSAttributedString(string: "\u{2022}", attributes: [.font: font, .foregroundColor: ThemeStore.shared.color(.ink2)])
+                let left = line(at).minX
+                let right = line(at + 1).minX
+                dot.draw(at: NSPoint(x: left + ((right - left - dot.size().width) / 2).rounded(), y: baseline - font.ascender))
+            }
+        }
     }
 
     /// The text's children plus one image per rendered block, labeled with its source, and one checkbox per task box.
